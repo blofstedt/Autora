@@ -186,21 +186,9 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The Usage page now shows what a good result costs. Every request you make is recorded as a task with
-  the kind of work it was (documents, spreadsheets, code, PDF and so on, read from the tools it used),
-  the model that did it, and the money every model call it made, including the look back afterwards. A task
-  counts as good or poor only when you mark it (a tick or a cross in the recent tasks list), when the check
-  you set for your project says so, or when it ends in an error; anything else is left out rather than
-  guessed at, and a price per good result appears once five tasks of a kind have been judged on a model.
-  Nothing changes in the chat. Also in this release: an agent that follows another (a QA agent after an
-  engineer) now starts only when the work left something for it, so a test ping or a question no longer
-  starts a QA pass; the agent that did the work says who goes on. Agents have lost the editable personality
-  and sliders. Each one now starts out genial, like a friendly teammate, and its personality grows by itself
-  from how it talks in Threads, shown as a five-point shape on its page in Mind. You cannot set it, and it
-  only changes how the agent sounds in Threads, never its work or how it works with others. And when an
-  agent hits a bug, a misleading error or a missing capability in Autora itself, it now records it in
-  docs/improvements/ in the repository (or in the install's inbox when there is no checkout), tells you,
-  and offers to work on it or leave it for someone else. Threads also got three fixes: a post now shows
-  when it was last replied to (on the post, in the comments header and in the list), the up and down votes
-  on posts and comments are bigger and easier to see, and a reply opens in a box right under the comment
-  you are answering instead of at the top of the page.
+  Quick replies are quick again. A hello, a thank-you or "this is just a test" is now answered at once:
+  no plan first, no thinking before the answer, and no switch to build. When you write @Name to one of your
+  agents, that agent's report is the answer: the lead no longer takes one more turn afterwards to retell
+  it, which was the thinking that kept going after the reply had already appeared. A greeting sent to an
+  agent is also passed on to it as small talk, so the agent does not think it over either. A real task is
+  unchanged: Agent mode still plans first, and if the agent you asked fails, the lead carries on and says so.

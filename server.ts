@@ -67,6 +67,7 @@ import {
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { ShareGate, SHARE_IDLE_MS, SHARE_MIN_CALLS, SHARE_SYSTEM, listFinished, parseShare, shareBody, shareNote, sharePrompt } from "./server/threadshare";
+import { isSmallTalk } from "./server/quick";
 import { agentBrief, developFromTalk, findAgent, getAgent, handoffTargets, LEAD_ID, listAgents, mentionedAgents, producedWork, recordCollab, recordWork, withoutHandover } from "./server/agents";
 import { agentMind, clusters, remember, teach } from "./server/agentmind";
 import {
@@ -2376,7 +2377,8 @@ async function systemInstructionFor(
       notes.push(
         `The person addressed ${names} directly with @. That is a request for ${asked.length > 1 ? "those colleagues" : "that colleague"}, not for you: ` +
         `start ${asked.length > 1 ? "each" : "them"} with agent_run (agent: ${asked.map((a) => `"${a.name}"`).join(" / ")}, task: what the person asked, with everything it needs, since it has not seen this chat), ` +
-        "then give the person the report in your own words and say who answered. Do the work yourself only if agent_run is refused, and then say so.",
+        "and stop. The report appears in the chat under their name, so do not retell it or add to it: the turn ends when they have answered. " +
+        "Do the work yourself only if agent_run is refused, and then say so.",
       );
     }
   }
@@ -2993,7 +2995,7 @@ const PROGRESS_BEAT_MS = 20_000;
  * started twice in one chain, so two that hand to each other cannot loop.
  */
 async function runAgentTask(
-  from: Session, ref: string, task: string, signal?: AbortSignal,
+  from: Session, ref: string, task: string, signal?: AbortSignal, quick = false,
 ): Promise<{ ok: boolean; summary: string }> {
   const parent = agentRuns.get(from.id);
   const depth = (parent?.depth ?? 0) + 1;
@@ -3039,7 +3041,7 @@ async function runAgentTask(
       emitEvent(from, "agent.progress", "agent", { id: child.id, text: reading.text, steps: reading.steps });
     };
     const watching = setInterval(report, PROGRESS_GAP_MS);
-    const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => {
+    const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true, ...(quick ? { quick } : {}) }).finally(() => {
       clearInterval(watching);
       signal?.removeEventListener("abort", stop);
     });
@@ -3819,6 +3821,8 @@ interface TurnOptions {
   shown?: string;
   /** Notebooks the person attached, which the model is told the contents of. */
   notebooks?: NotebookRef[];
+  /** The message is small talk (see server/quick.ts): no plan, no thinking. Set by beginTurn; a lead passes it on to the agent it asks. */
+  quick?: boolean;
 }
 
 /** Whether this chat has been given a window's manual already (a `tool.manual` event is in its log). */
@@ -3922,11 +3926,18 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   });
   autoLoadTools(session, text);
   if (!opts.automated) noteAsks(session, text, Boolean(unfinished));
+  /* A hello or a thank-you is answered at once: nothing to plan, nothing to think over. */
+  const quick = opts.quick ?? (!opts.automated && !unfinished && attachments.length === 0 && isSmallTalk(text));
   /* Agent mode starts every turn planning, whatever the last one ended in:
-     the agent decides again whether this task needs a plan. */
+     the agent decides again whether this task needs a plan. Small talk does not need one,
+     and the round it would spend switching to build is most of the wait. */
   if (workMode(session.mode) === "agent" && !(unfinished && session.phase === "build")) {
-    session.phase = "plan";
-    emitEvent(session, "mode.switch", "system", { from: null, to: "plan", reason: "" });
+    if (quick) {
+      session.phase = "build";
+    } else {
+      session.phase = "plan";
+      emitEvent(session, "mode.switch", "system", { from: null, to: "plan", reason: "" });
+    }
   }
   session.busy = true;
   // Stop reaches the model call too: without it, a stopped turn went on
@@ -3941,7 +3952,7 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   const taskId = chosen.provider && !chosen.problem
     ? openTask({ session: session.id, provider: chosen.provider, model: chosen.model, version: VERSION, automated: Boolean(opts.automated) })
     : null;
-  const done = withTask(taskId, () => runTurn(session, text, opts));
+  const done = withTask(taskId, () => runTurn(session, text, { ...opts, quick }));
   /* Registered inside the task, so the look back after the turn is billed to it too. */
   void withTask(taskId, () => done
     .then(async (result) => {
@@ -4107,6 +4118,11 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
        this same turn and this same conversation, but it does not speak: what
        it writes is kept, handed to the voice, and said by the voice. */
     let handedOver = false;
+    /* The person wrote @Name and the agent has reported in this chat under its own name (agent.back): the lead
+       has nothing to add, and the round it would spend retelling the report is the thinking that comes after
+       the answer. */
+    const addressedAgents = !agentRuns.has(session.id) && mentionedAgents(text, listAgents()).length > 0;
+    let agentsSpoke = false;
     /* The task the voice handed over, and what the worker has done since --
        the material the voice reads to keep talking while the work is going. */
     let handedTask = "";
@@ -4355,6 +4371,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
                  the wait it saves. Once the work is handed over, the reasoning
                  model thinks as much as it likes: that is the point of it. */
               ...((fast || talkFast) && !handedOver ? { thinking: "off" as const } : {}),
+              /* Small talk is answered without thinking, in every round of the turn. */
+              ...(opts.quick ? { thinking: "off" as const } : {}),
               signal: running.get(session.id)?.signal,
               tools: tools.map((t) => ({
                 name: t.name,
@@ -4567,7 +4585,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           const me = getAgent(agentRuns.get(session.id)?.agent ?? LEAD_ID) ?? getAgent(LEAD_ID)!;
           return {
             self: { id: me.id, name: me.name },
-            run: (agent: string, task: string) => runAgentTask(session, agent, task, running.get(session.id)?.signal),
+            run: (agent: string, task: string) => runAgentTask(session, agent, task, running.get(session.id)?.signal, opts.quick === true),
             mind: {
               domains: () => {
                 const cs = clusters(mind);
@@ -5803,6 +5821,14 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         context.supersedePictures();
         context.supersedeReads(canReadVault);
 
+        /* Asked for by name, and every one of them answered: that is the end of the turn. A failed one is not:
+           the lead goes on, and says so or does the work itself. */
+        if (addressedAgents && !loopStop && !running.get(session.id)?.stopped &&
+            replies.length > 0 && replies.every((r) => r.name === "agent_run" && r.ok)) {
+          agentsSpoke = true;
+          break;
+        }
+
         /* The person has heard nothing from the reasoning model -- it does not
            speak. So the voice reads what was just said and done and says it,
            before the worker's next step leaves another silence. */
@@ -5846,7 +5872,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
     // Nothing came back -- no provider configured, or the call failed. Say
     // something useful rather than leaving the turn blank.
     if (!connected) result.error = active.problem ?? "No model is connected.";
-    if (streamed === 0) {
+    if (streamed === 0 && !agentsSpoke) {
       let reply: string | null;
       if (!connected) {
         reply =
