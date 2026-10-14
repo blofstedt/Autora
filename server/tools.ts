@@ -1405,13 +1405,14 @@ async function runAgents(args: Record<string, any>, ctx: ToolContext): Promise<T
   const ref = String(args.agent ?? "").trim();
   const task = String(args.task ?? "").trim();
   if (!ref || !task) {
-    const absent = !("agent" in args) || !("task" in args);
+    const sent = Object.keys(args).join(", ") || "nothing";
+    const who = listAgents().filter((a) => a.id !== ctx.agents?.self.id).map((a) => a.name).join(", ");
     return {
       ok: false,
-      summary: "Say which agent and what its task is (agent, task)." +
-        (absent
-          ? " The call arrived without them -- if you did send them, they were lost on the way here; resend the call."
-          : ""),
+      summary: `agents run needs two more fields besides action: ${[!ref ? "agent" : "", !task ? "task" : ""].filter(Boolean).join(" and ")}. ` +
+        `This call sent only: ${sent}. Call again with all three, e.g. ` +
+        `{"action":"run","agent":"${who.split(", ")[0] || "<name>"}","task":"<everything it needs to know, it has not seen this chat>"}.` +
+        (who ? ` Agents you can start: ${who}.` : " Use agents list to see who there is."),
     };
   }
   const found = findAgent(ref);
@@ -1516,6 +1517,13 @@ function runNotebook(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
 
   if (action === "create") {
     const title = String(args.title ?? ref).trim();
+    if (!title) {
+      return {
+        ok: false,
+        summary: `notebook create needs a title. This call sent only: ${Object.keys(args).join(", ") || "nothing"}. ` +
+          'Call again as {"action":"create","title":"<name>","purpose":"<what it is for>"}.',
+      };
+    }
     const had = findNotebook(title);
     if (had) {
       return {
@@ -1528,7 +1536,13 @@ function runNotebook(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
     return { ok: true, summary: `Made notebook ${book.id}, "${book.title}". It is on the Notebooks page.`, preview: book.title };
   }
 
-  if (!ref) return { ok: false, summary: "Say which notebook, by id or title (notebook list shows them)." };
+  if (!ref) {
+    return {
+      ok: false,
+      summary: `notebook ${action || "call"} needs notebook (its id or title). This call sent only: ${Object.keys(args).join(", ") || "nothing"}. ` +
+        "Use notebook list to see what there is.",
+    };
+  }
 
   if (action === "add") {
     const { book, made } = notebookFor(ref);

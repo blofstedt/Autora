@@ -186,8 +186,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Models that bend the tool-call format, GLM among them, can now start agents and make notebooks.
-  Calls whose name is repeated in every chunk, whose arguments arrive as the text so far, whose
-  parallel calls share one index, or whose JSON is encoded twice or fenced are put back together
-  instead of losing their arguments. A call that still cannot be read is now reported as garbled,
-  not as cut off at the output limit.
+  Models that fill in only a tool's required field can now start agents and make notebooks. GLM sent
+  agents run with just "action" three times in a row, because agent and task are only needed for run,
+  and our error told it the arguments were lost in transit, so it resent the same call. The error now
+  lists what was sent, what is missing, the agents it can start and a worked example, and the agents
+  and notebook tools carry an example call. Streamed tool calls from vendors that bend the format
+  (repeated names, cumulative or double-encoded arguments, parallel calls on one index) are also put
+  back together, and unreadable arguments are reported as garbled rather than as an output-limit cut.

@@ -94,7 +94,9 @@ export const filesSPECS: ToolSpec[] = [
       "and check every source is in it and every claim cites one); add (artifacts, or a note with " +
       "title/text/cites; position to insert); edit (entry and title/text/cites, or no entry to change " +
       "the notebook's title/purpose); remove (entry; the file stays an artifact); move (entry, position); " +
-      "export (the whole notebook as one Markdown artifact, files as numbered exhibits).",
+      "export (the whole notebook as one Markdown artifact, files as numbered exhibits). " +
+      "Every action beyond list needs more than action: e.g. {\"action\":\"create\",\"title\":\"Case file\",\"purpose\":\"...\"} or " +
+      "{\"action\":\"add\",\"notebook\":\"Case file\",\"artifacts\":[\"file_...\"],\"text\":\"what it shows\"}.",
     parameters: {
       type: "object",
       properties: {
@@ -138,7 +140,8 @@ export const filesSPECS: ToolSpec[] = [
       "(agent); move (agent, reports_to and/or position: its boss, and its place among that boss's agents). Call an " +
       "agent when its 'call it when' fits the job and it would do the part better than you; for anything you can do in " +
       "a step or two, do it yourself. Prefer edit or merge to hire. An agent cannot be started from inside a chain " +
-      "more than three deep.",
+      "more than three deep. run needs all of action, agent and task: " +
+      "{\"action\":\"run\",\"agent\":\"Sabrina\",\"task\":\"...\"}.",
     parameters: {
       type: "object",
       properties: {

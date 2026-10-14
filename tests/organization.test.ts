@@ -304,10 +304,14 @@ await test("the agents tool lists the map and starts an agent, but not the one t
   assert.equal((await runTool(spec, { action: "run", agent: "Editor" }, ctx())).ok, false, "a task is required");
   const self = await runTool(spec, { action: "run", agent: "Editor", task: "x" }, ctx({ id: editor.id, name: "Editor" }));
   assert.match(self.summary, /That is you/);
-  // A call that arrived without agent/task gets the pipe hint, so the model
-  // is told to resend rather than to debug the tool.
+  // A run sent with only its action (a model that fills required fields and
+  // skips the rest) is told what it sent, what is missing and an example,
+  // not to resend the same call.
   const pipe = await runTool(spec, { action: "run" }, ctx());
-  assert.match(pipe.summary, /lost on the way here/);
+  assert.match(pipe.summary, /needs two more fields besides action: agent and task/);
+  assert.match(pipe.summary, /sent only: action/);
+  assert.match(pipe.summary, /"task":/);
+  assert.doesNotMatch(pipe.summary, /lost on the way/);
 });
 
 await test("the thread tool posts as the agent that is asking, or as another by name", async () => {
