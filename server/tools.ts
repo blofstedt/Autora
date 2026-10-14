@@ -1892,7 +1892,7 @@ export async function runTool(
   if (bad) {
     const missing = (spec.parameters.required ?? []).filter((k) => args?.[k] === undefined || args?.[k] === null);
     const pipe = missing.length
-      ? " The arguments may have been lost on the way here -- resend the call with them set; a long call is the likeliest to lose them."
+      ? ` Call it again with ${missing.map((k) => `"${k}"`).join(" and ")} filled in (a value for each, not left out); sending the same call again will be refused the same way.`
       : "";
     return { ok: false, summary: bad + pipe };
   }

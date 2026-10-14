@@ -35,7 +35,29 @@ const MIN_TERMINAL_FAILURES = 3;
 /** Outcomes older than this say nothing about today. */
 const MAX_AGE_S = 7 * 24 * 3600;
 
-const history: Record<string, Outcome[]> = readDoc<Record<string, Outcome[]>>("tool-health") ?? {};
+/**
+ * A refusal because the call itself was wrong -- an argument left out, mistyped, or unreadable -- says nothing about
+ * the tool. Counted, it made a tool look broken ("failed 18 of the last 20 times") when a model had only been leaving
+ * out a field, and the note then told every later turn to expect the same, so agents stopped trying a tool that works.
+ */
+export function isInputMistake(text: string): boolean {
+  return /^Not run: .* (was called without|was called wrongly|takes an object of arguments|was not loaded; it is now)/.test(text) ||
+    /^Not run: the arguments of this .* call were not valid JSON/.test(text) ||
+    /^Not run: this .* call was cut off at the output limit/.test(text) ||
+    /^Say which agent and what its task is/.test(text) ||
+    /^agents run needs two more fields/.test(text) ||
+    /^notebook (create needs a title|\w+ needs notebook)/.test(text);
+}
+
+const history: Record<string, Outcome[]> = (() => {
+  const stored = readDoc<Record<string, Outcome[]>>("tool-health") ?? {};
+  // What was recorded before this rule: take the input mistakes back out.
+  for (const key of Object.keys(stored)) {
+    stored[key] = stored[key].filter((o) => o.ok || !isInputMistake(o.error ?? ""));
+    if (stored[key].length === 0) delete stored[key];
+  }
+  return stored;
+})();
 const save = () => saveDoc("tool-health", () => history);
 
 /** The host a URL points at, without the scheme or the path. */
@@ -88,6 +110,7 @@ export function recordOutcome(
 ) {
   const at = opts.at ?? Math.floor(Date.now() / 1000);
   const error = ok ? null : firstLine(result);
+  if (!ok && isInputMistake(error ?? "")) return;
   const key = keyOf(tool, opts.target ?? "");
   history[key] = [...(history[key] ?? []), { ts: at, ok, error }].slice(-KEEP);
   save();

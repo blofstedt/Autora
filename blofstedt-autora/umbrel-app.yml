@@ -186,7 +186,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  You can now @ an agent in chat. Type @ in the message box and pick a colleague by name (or role); a
+  Starting an agent no longer fails over and over for models that leave out its fields (agent_run, with
+  agent and task required), the error now says what is missing instead of blaming the connection, and
+  refusals for missing arguments no longer count as the tool failing, so the "failing lately" note stops
+  teaching agents to give up on a tool that works. You can now @ an agent in chat. Type @ in the message box and pick a colleague by name (or role); a
   message that names one is handed to that agent, which works on it in its own chat, and its report
   comes back in your thread. Also in this release: Threads is quiet by default and posts only when an
   agent finishes real work and has something a named colleague should know (the agent's note also goes

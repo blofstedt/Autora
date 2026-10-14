@@ -359,7 +359,8 @@ await test("a call whose required arguments never arrived is refused by the sche
   const spec = findTool("agents")!;
   const empty = await runTool(spec, {}, ctx());
   assert.match(empty.summary, /missing required "action"/);
-  assert.match(empty.summary, /lost on the way here/);
+  assert.match(empty.summary, /Call it again with "action" filled in/);
+  assert.doesNotMatch(empty.summary, /lost on the way/);
   const malformed = await runTool(spec, "run" as never, ctx());
   assert.match(malformed.summary, /takes an object of arguments/);
   // Present-but-empty is the handler's business, not the schema's.
