@@ -32,7 +32,7 @@ import { ensureHostNames } from "./server/hosts";
 import { attachDictation } from "./server/dictation";
 import { missingPathIn, pathHint } from "./server/hints";
 import { MANUAL_IDS, manualId, manualText, type ManualId } from "./server/handbook";
-import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "./server/toolload";
+import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, mcpServerOf, unloadedIndex, withoutUnloaded } from "./server/toolload";
 import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
 import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
 import {
@@ -43,7 +43,7 @@ import { WebPush } from "./server/webpush";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
 import {
-  connect as connectMcp, disconnect as disconnectMcp, mcpToolsGeneration,
+  connect as connectMcp, disconnect as disconnectMcp, mcpToolsGeneration, mcpTools,
   setSecretLookup as setMcpSecretLookup,
 } from "./server/mcp";
 import os from "node:os";
@@ -2573,7 +2573,7 @@ async function systemInstructionFor(
   const agreed = autonomyBriefing();
   if (agreed) notes.push(agreed);
 
-  const unloaded = own ? unloadedIndex(loadedTools(own)) : null;
+  const unloaded = own ? unloadedIndex(loadedTools(own), mcpServerSummary()) : null;
   if (unloaded) notes.push(unloaded);
 
   const done = pastToolCalls(sessionId);
@@ -3158,6 +3158,8 @@ async function threadLifeStep(): Promise<void> {
     lifeNudge.delete(agent.id);
     const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])), Boolean(gifKeys().giphy || gifKeys().tenor), start);
     const raw = await backgroundCall("threads", system, prompt, FORUM_TOKENS, 0.95);
+    // A look is a model call whatever it decides, so it counts against the ceiling; only posts used to.
+    lifeGate.note(Date.now());
     const choice = parseChoice(raw);
     if (choice.action === "none") noteUnreadable(agent.name, raw);
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
@@ -3187,7 +3189,6 @@ async function threadLifeStep(): Promise<void> {
       addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me, gif });
       if (to?.kind === "agent") recordCollab(me.id, to.id, true, 2); // a conversation between colleagues builds a little rapport
     } else if (said.action === "like") toggleLike(said.post, me, said.comment);
-    lifeGate.note(Date.now());
   } catch (err) {
     log("info", "threads", `step failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
@@ -3248,9 +3249,13 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
       const system = lifeSystem(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), byId, gifs);
       const prompt = owed ? replyPrompt(post, trigger, agent.id) : reviewPrompt(post, trigger, agent.id, seen);
       const raw = await backgroundCall("threads", system, prompt, FORUM_TOKENS, 0.95);
+      lifeGate.note(Date.now());
       let said = reactionOf(raw, post, owed ? trigger : null);
       if (!said) noteUnreadable(agent.name, raw);
-      if (!said && owed) said = reactionOf(await backgroundCall("threads", system, `${prompt}\n\nReply with the one JSON comment object and nothing else.`, FORUM_TOKENS, 0.95), post, trigger);
+      if (!said && owed) {
+        said = reactionOf(await backgroundCall("threads", system, `${prompt}\n\nReply with the one JSON comment object and nothing else.`, FORUM_TOKENS, 0.95), post, trigger);
+        lifeGate.note(Date.now());
+      }
       reactSeen.set(key, post.comments.length);
       lifeLook.set(agent.id, Date.now());
       lifeNudge.delete(agent.id);
@@ -3269,7 +3274,6 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
       addComment(postRef, { text: vetLinks(clean.text, knownText(agent)), parent: said.reply_to, by: me, gif });
       const to = said.reply_to ? post.comments.find((c) => c.id === said!.reply_to)?.by : post.by;
       if (to?.kind === "agent") recordCollab(me.id, to.id, true, 2);
-      lifeGate.note(Date.now());
       reactSeen.set(key, (getPost(postRef)?.comments.length ?? 0));
       return true;
     };
@@ -3496,7 +3500,7 @@ const BACKGROUND_CALL_MS = 90_000;
  * AUTORA_COMPACTION_MODEL names a cheaper model of that provider to use for
  * these instead. Its cost goes in the ledger like any call.
  */
-async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number, temperature = 0.2): Promise<string> {
+async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number, temperature = 0.2, retryEmpty = false): Promise<string> {
   const active = resolveProvider();
   if (!active.provider || active.problem) throw new Error(active.problem ?? "No model is connected.");
   /* Unwatched work -- folding old turns, learning, remarks -- runs on the provider's
@@ -3521,8 +3525,10 @@ async function backgroundCall(sessionId: string, system: string, prompt: string,
   }, () => undefined);
   let turn = await ask(maxTokens);
   /* A model that thinks whatever it is told (GLM through some gateways) spends a small budget
-     on thinking and answers with nothing. Once more with room for both. */
-  if (!turn.text.trim()) {
+     on thinking and answers with nothing. Once more with room for both -- only for work that
+     must have an answer (the compaction summary): Threads and reflection may answer with
+     nothing, and a retry at four times the budget would multiply what they cost. */
+  if (retryEmpty && !turn.text.trim()) {
     const first = turn.usage;
     turn = await ask(maxTokens * 4);
     turn.usage = { ...turn.usage, input: turn.usage.input + first.input, output: turn.usage.output + first.output };
@@ -3790,8 +3796,18 @@ const allToolsOn = () => process.env.AUTORA_LAZY_TOOLS !== "1";
    turn loop asks every round, and each round used to re-scan the whole
    conversation to return the same set. */
 const loadedCache = new WeakMap<Session, { upTo: number; set: Set<string> }>();
+/** The connected MCP servers and how many tools each would add to the list. */
+function mcpServerSummary(): { server: string; tools: number }[] {
+  const count = new Map<string, number>();
+  for (const t of mcpTools()) {
+    const server = mcpServerOf(t.name);
+    if (server) count.set(server, (count.get(server) ?? 0) + 1);
+  }
+  return [...count].map(([server, tools]) => ({ server, tools }));
+}
+
 function loadedTools(session: Session): Set<string> {
-  if (allToolsOn()) return new Set(familyIds());
+  if (allToolsOn()) return new Set([...familyIds(), "mcp:*"]);
   const events = session.events;
   const cached = loadedCache.get(session);
   if (cached && cached.upTo === events.length) return cached.set;
@@ -3806,6 +3822,8 @@ function loadedTools(session: Session): Set<string> {
     else if (e.kind === "tool.call") {
       const name = String(e.payload?.name ?? "");
       for (const f of FAMILIES) if (f.match(name)) set.add(f.id);
+      const server = mcpServerOf(name);
+      if (server) set.add(`mcp:${server}`);
     }
   }
   loadedCache.set(session, { upTo: events.length, set });
@@ -3827,7 +3845,7 @@ function pdfInChat(session: Session): boolean {
 function autoLoadTools(session: Session, text: string) {
   if (allToolsOn()) return;
   const have = loadedFromLog(session.events);
-  for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session), lazy: true })) {
+  for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session), lazy: true, mcpServers: mcpServerSummary().map((m) => m.server) })) {
     if (!have.has(id)) emitEvent(session, "tools.enable", "system", { family: id, why: "wanted" });
   }
 }
@@ -3882,7 +3900,9 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
          once, and again with the look back's own ideas when it has them. */
       const first = offerNextSteps(session, text, startSeq, result, opts, []);
       doneWhileAway(session, result, began, opts);
-      const ideas = await reflect(session, text, startSeq, previousReply, result);
+      /* A job or watcher runs the same prompt again and again; looking back at each run is one more model
+         call per firing that teaches the same thing. The person's own turns are the ones worth learning from. */
+      const ideas = opts.automated ? [] : await reflect(session, text, startSeq, previousReply, result);
       if (ideas.length > 0) {
         const steps = offerNextSteps(session, text, startSeq, result, opts, ideas, first);
         if (steps.length > 0) log("info", "learning", `${session.id}: ${steps.length} next steps offered`);
@@ -4401,6 +4421,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             "record of task state. Output only that record.",
           prompt,
           2048,
+          0.2,
+          true,
         );
 
       const compacted = (report: CompactionReport) => {
@@ -4581,7 +4603,19 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           return result;
         },
         enableTools: (family) => {
-          if (!FAMILIES.some((f) => f.id === family)) return { ok: false, summary: `There is no set called "${family}". The sets are: ${familyIds().join(", ")}.` };
+          /* An MCP server may be asked for as mcp:github or as github. */
+          const bare = family.replace(/^mcp:/, "");
+          const server = mcpServerSummary().find((m) => m.server === bare);
+          if (server && !FAMILIES.some((f) => f.id === family)) {
+            const id = `mcp:${server.server}`;
+            if (loadedTools(session).has(id)) return { ok: true, summary: `${id} is already in your list.` };
+            emitEvent(session, "tools.enable", "agent", { family: id, why: "asked" }, span);
+            return { ok: true, summary: `The ${server.tools} ${server.server} tools are in your list from your next step.` };
+          }
+          if (!FAMILIES.some((f) => f.id === family)) {
+            const servers = mcpServerSummary().map((m) => `mcp:${m.server}`);
+            return { ok: false, summary: `There is no set called "${family}". The sets are: ${[...familyIds(), ...servers].join(", ")}.` };
+          }
           if (loadedTools(session).has(family)) return { ok: true, summary: `${family} is already in your list.` };
           emitEvent(session, "tools.enable", "agent", { family, why: "asked" }, span);
           return { ok: true, summary: `${family} tools are in your list from your next step.` };
@@ -5630,6 +5664,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           }
         }
         const checkpoint = watch.endRound();
+        if (!loopStop) loopStop = watch.stallStop();
         const last = replies[replies.length - 1];
         if (checkpoint && last) last.result += `\n\n${checkpoint}`;
         /* An item was finished this round and code changed since the check last

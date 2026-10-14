@@ -104,6 +104,20 @@ interface LoadEvent {
   payload: Record<string, any>;
 }
 
+/**
+ * An MCP tool is `mcp__<server>__<tool>` (server/mcp.ts). Each connected server
+ * is a set of its own, `mcp:<server>`: one box had 192 such tools connected
+ * (Google alone 110), and sending all of their schemas on every step cost far
+ * more than every built-in tool put together.
+ */
+export function mcpServerOf(toolName: string): string | null {
+  const m = /^mcp__([^_](?:[^_]|_(?!_))*)__/.exec(toolName);
+  return m ? m[1] : null;
+}
+
+/** A word the person might use for a server: "home assistant" for homeassistant. */
+const squash = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
 /** What the log says was brought in: asked for, or already used. */
 export function loadedFromLog(events: readonly LoadEvent[]): Set<string> {
   const out = new Set<string>();
@@ -112,6 +126,8 @@ export function loadedFromLog(events: readonly LoadEvent[]): Set<string> {
     else if (e.kind === "tool.call") {
       const name = String(e.payload?.name ?? "");
       for (const f of FAMILIES) if (f.match(name)) out.add(f.id);
+      const server = mcpServerOf(name);
+      if (server) out.add(`mcp:${server}`);
     }
   }
   return out;
@@ -127,6 +143,8 @@ interface LoadContext {
   all?: boolean;
   /** Bring families in only as they are wanted (the person's words, use, tools_enable). Off by default: every tool is a default tool. */
   lazy?: boolean;
+  /** Connected MCP servers, by the name in their tools (`mcp__<server>__...`): one the person names is brought in. */
+  mcpServers?: readonly string[];
 }
 
 /** The families in the model's list this step. */
@@ -137,24 +155,32 @@ export function loadedFamilies(ctx: LoadContext): Set<string> {
   if (ctx.hasPdf) out.add("pdf");
   const said = ctx.said ?? "";
   if (said) for (const f of FAMILIES) if (f.words.test(said)) out.add(f.id);
+  if (said && ctx.mcpServers?.length) {
+    const flat = squash(said);
+    for (const server of ctx.mcpServers) if (server.length >= 3 && flat.includes(squash(server))) out.add(`mcp:${server}`);
+  }
   return out;
 }
 
 /** Tools out of the list: those of a family that is not loaded. */
 export function withoutUnloaded<T extends { name: string }>(tools: readonly T[], loaded: ReadonlySet<string>): T[] {
   return tools.filter((t) => {
+    const server = mcpServerOf(t.name);
+    if (server) return loaded.has("mcp:*") || loaded.has(`mcp:${server}`);
     const f = FAMILIES.find((x) => x.match(t.name));
     return !f || loaded.has(f.id);
   });
 }
 
 /** The one-line index of what is not in the list, or null when everything is. */
-export function unloadedIndex(loaded: ReadonlySet<string>): string | null {
+export function unloadedIndex(loaded: ReadonlySet<string>, mcp: readonly { server: string; tools: number }[] = []): string | null {
   const left = FAMILIES.filter((f) => !loaded.has(f.id));
-  if (left.length === 0) return null;
+  const servers = loaded.has("mcp:*") ? [] : mcp.filter((m) => !loaded.has(`mcp:${m.server}`));
+  if (left.length === 0 && servers.length === 0) return null;
   return [
     "More tools exist that are not in your list now, to keep it short. Load one with tools_enable (family), and its tools are there on your next step:",
     ...left.map((f) => `- ${f.id}: ${f.about}`),
+    ...servers.map((m) => `- mcp:${m.server}: the ${m.tools} tools of the connected ${m.server} server`),
   ].join("\n");
 }
 

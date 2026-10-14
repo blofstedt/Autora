@@ -186,11 +186,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  GLM can now start agents, make notebooks and fold long chats. Starting an agent and making a notebook
-  are their own tools (agent_run, notebook_create) with the needed fields required, because GLM sent
-  agents run with only "action" three times in a row. When a multi-action tool still gets too little,
-  the error says what was sent, what is missing and shows an example call instead of blaming the
-  connection. Background work such as folding old turns now switches thinking off for GLM and on
-  OpenRouter, and retries once with a bigger budget when the answer comes back empty, which is why
-  compaction kept failing with "the summariser returned nothing". Streamed tool calls from vendors
-  that bend the format are put back together too.
+  Lower token use, and agents that cannot run in circles. Connected MCP servers no longer send every
+  tool on every step (one box paid for 192 of them each time): a server's tools come in when you name
+  it, when it is used, or when the agent asks. Threads now counts every model call against its hourly
+  and daily ceiling, not only the ones that posted. A failing context fold waits longer each time
+  instead of retrying every minute with the whole history. The agent can no longer schedule a plain
+  task more often than every 15 minutes (a watcher is the way to wait for a change), scheduled runs
+  skip the look-back model call, and a turn is stopped after 32 rounds in a row that changed nothing.
+  GLM can start agents and make notebooks (agent_run, notebook_create), and its folding no longer
+  fails on an empty summary.

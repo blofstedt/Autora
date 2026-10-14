@@ -165,4 +165,29 @@ await test("endWriting without beginWriting is harmless", () => {
   assert.equal(engine.isWriting, false);
 });
 
+await test("a fold that keeps failing is retried later each time, not every minute", async () => {
+  const { engine } = past();
+  const realNow = Date.now;
+  let clock = 1_000_000_000_000;
+  Date.now = () => clock;
+  const fail = async () => "";
+  try {
+    assert.equal(engine.maybeCompact("system", fail), true);
+    await tick();
+    await tick();
+    clock += 61_000;
+    assert.equal(engine.maybeCompact("system", fail), true, "after one failure: a minute is enough");
+    await tick();
+    await tick();
+    clock += 61_000;
+    assert.equal(engine.maybeCompact("system", fail), false, "after two: a minute is not");
+    clock += 61_000;
+    assert.equal(engine.maybeCompact("system", fail), true, "after two: two minutes is");
+    await tick();
+    await tick();
+  } finally {
+    Date.now = realNow;
+  }
+});
+
 console.log(`\n${passed} passed`);

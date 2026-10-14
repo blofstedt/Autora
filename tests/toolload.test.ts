@@ -4,7 +4,7 @@
  *   npx tsx tests/toolload.test.ts
  */
 import assert from "node:assert/strict";
-import { FAMILIES, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "../server/toolload";
+import { FAMILIES, loadedFamilies, loadedFromLog, mcpServerOf, unloadedIndex, withoutUnloaded } from "../server/toolload";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -15,6 +15,28 @@ const names = (...n: string[]) => n.map((name) => ({ name }));
 const all = names("terminal", "pdf_edit", "pdf_read", "widget_show", "mcp_offer", "schedule", "pre_authorise", "notebook", "browser_open");
 
 console.log("tool loading");
+
+test("an MCP server's tools stay out until it is named, used or asked for", () => {
+  const tools = names("terminal", "mcp__google__drive_search", "mcp__google__gmail_send", "mcp__home_assistant__light_on", "mcp__github__create_issue");
+  const servers = ["google", "home_assistant", "github"];
+  const shown = (said: string, events: any[] = []) =>
+    withoutUnloaded(tools, loadedFamilies({ events, said, lazy: true, mcpServers: servers })).map((t) => t.name);
+  assert.deepEqual(shown("fix the failing test"), ["terminal"]);
+  assert.deepEqual(shown("open an issue on GitHub"), ["terminal", "mcp__github__create_issue"]);
+  assert.deepEqual(shown("turn on the light with home assistant"), ["terminal", "mcp__home_assistant__light_on"]);
+  assert.deepEqual(shown("hello", [ev("tool.call", { name: "mcp__google__drive_search" })]),
+    ["terminal", "mcp__google__drive_search", "mcp__google__gmail_send"]);
+  assert.deepEqual(shown("hello", [ev("tools.enable", { family: "mcp:github" })]), ["terminal", "mcp__github__create_issue"]);
+  assert.equal(withoutUnloaded(tools, new Set(["mcp:*"])).length, tools.length, "the escape hatch brings every server in");
+  assert.equal(mcpServerOf("mcp__home_assistant__light_on"), "home_assistant");
+  assert.equal(mcpServerOf("terminal"), null);
+});
+
+test("the index names each unloaded MCP server and its size, and drops it once loaded", () => {
+  const index = unloadedIndex(new Set(FAMILIES.map((f) => f.id)), [{ server: "google", tools: 110 }])!;
+  assert.match(index, /mcp:google: the 110 tools/);
+  assert.equal(unloadedIndex(new Set([...FAMILIES.map((f) => f.id), "mcp:google"]), [{ server: "google", tools: 110 }]), null);
+});
 
 test("a fresh chat is shown the core tools and not the specialist sets", () => {
   const shown = withoutUnloaded(all, loadedFamilies({ events: [], lazy: true })).map((t) => t.name);

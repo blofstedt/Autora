@@ -141,6 +141,7 @@ const LOOP_LIMITS: Record<keyof LoopWatchConfig, [number, number]> = {
   staleAfter: [2, 200],
   checkEvery: [1, 500],
   stallAfter: [3, 200],
+  stallStops: [2, 50],
 };
 
 /** The knobs were fixed in code and invisible, so a turn could be stopped by

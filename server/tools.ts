@@ -29,6 +29,7 @@ import type { LedgerResult } from "./ledger";
 import type { RequirementResult } from "./requirements";
 import { checkEntry } from "./mindrules";
 import { checkArgs } from "./argcheck";
+import { nextRun } from "./scheduler";
 import { officeDir, runOfficeTool } from "./office";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
@@ -1730,6 +1731,9 @@ const CAP_LONG_MS = 900_000;
 export const AGENT_RUN_CAP_MS = 600_000;
 /** Chains: an agent may hand on to more, and each of those is capped too. */
 const CAP_AGENT_MS = AGENT_RUN_CAP_MS * 3 + 60_000;
+
+/** The closest two runs of a task without a watcher may be, when the agent sets it up. */
+const MIN_PLAIN_JOB_MS = 15 * 60_000;
 /** How long the second attempt waits before it goes. */
 const RETRY_BACKOFF_MS = 1_500;
 
@@ -2127,6 +2131,21 @@ async function runToolUnredacted(
           }
           : null;
         if (watch && !watch.target) return { ok: false, summary: "A watcher needs something to watch." };
+        /* A task with no watcher is a whole model turn every time it fires, tools and context included.
+           An agent polling for something every few minutes burns a turn per look; a watcher costs one
+           only when the thing changed. */
+        if (cron && !watch) {
+          const first = nextRun(cron, new Date());
+          const second = first ? nextRun(cron, first) : null;
+          if (first && second && second.getTime() - first.getTime() < MIN_PLAIN_JOB_MS) {
+            return {
+              ok: false,
+              summary: `"${cron}" runs the task more often than every ${MIN_PLAIN_JOB_MS / 60_000} minutes, and each run is a full model turn. ` +
+                "To wait for something to change, use a watcher (watch: a command, page or file): it costs a turn only when what it sees differs. " +
+                `Otherwise pick a time at least ${MIN_PLAIN_JOB_MS / 60_000} minutes apart.`,
+            };
+          }
+        }
         const enabled = args.enabled === undefined ? true : Boolean(args.enabled);
         if (id) {
           const changed = jobs.update(id, { name: name || undefined, cron: cron || undefined, prompt, watch, enabled });
