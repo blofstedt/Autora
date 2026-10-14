@@ -195,4 +195,7 @@ releaseNotes: >-
   the model, and Cost per good result shows planner and builder as a pair so you can see whether the split
   pays. Background work (condensing, learning, remarks) can have its own cheap model. Each agent on the
   Organization page can also have a model of its own: a cheap one for routine work, a strong one for hard
-  work. Autora is told which, so it sends each job to the right agent. Leave them all empty and nothing changes. Also: plainer, shorter wording across Settings, Usage and the other left-hand menus.
+  work. Autora is told which, so it sends each job to the right agent. The planner, the background model and
+  an agent's model can each be on a different provider from your main one (a Claude planner over a DeepSeek
+  builder, say), each using its own key and priced on its own account; if that provider stops answering, the
+  turn carries on with your main model and says so. Leave them all empty and nothing changes. Also: plainer, shorter wording across Settings, Usage and the other left-hand menus.

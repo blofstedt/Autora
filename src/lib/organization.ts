@@ -134,13 +134,15 @@ export const createAgent = (input: AgentPatch) =>
   call<{ agent: Agent }>("/api/agents", json("POST", input)).then((d) => d.agent);
 export const updateAgent = (id: string, patch: AgentPatch) =>
   call<{ agent: Agent }>(`/api/agents/${id}`, json("PATCH", patch)).then((d) => d.agent);
-/** What an agent's model can be chosen from: the provider in use, its main model and its models. */
+/** What an agent's model can be chosen from: every provider that can be reached, and the main model. */
+export type ModelChoice = { id: string; label: string; input: number; output: number; note?: string; priced?: boolean };
 export type AgentModels = {
+  /** The main provider and model. */
   provider: string | null;
   label: string | null;
   main: string | null;
-  listable: boolean;
-  models: { id: string; label: string; input: number; output: number; note?: string; priced?: boolean }[];
+  /** Every provider that can be reached now, the main one first among them. */
+  providers: { id: string; label: string; models: ModelChoice[] }[];
 };
 export const fetchAgentModels = () => call<AgentModels>("/api/agents-models");
 

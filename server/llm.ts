@@ -606,11 +606,30 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
  * that.
  */
 export function anthropicMessages(call: ChatCall): any[] {
+  /* Anthropic takes a tool id only of [a-zA-Z0-9_-], and only once in a
+     conversation. Ids come from whichever vendor made the call -- Gemini's are
+     ours and repeat every round ("read_file-0"), and some gateways put a colon
+     in theirs -- so with a planner or an agent on another vendor, the history
+     Anthropic reads carries ids it would refuse. Each call gets a safe id of
+     its own here, and its result the same one. */
+  const used = new Set<string>();
+  let open = new Map<string, string[]>();
+  const fresh = (raw: string) => {
+    const base = (raw || "call").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60) || "call";
+    let id = base;
+    for (let n = 1; used.has(id); n += 1) id = `${base}_${n}`;
+    used.add(id);
+    return id;
+  };
+  const resultId = (raw: string) => {
+    const waiting = open.get(raw);
+    return waiting?.length ? waiting.shift()! : fresh(raw);
+  };
   const out = call.messages.map((message) => {
     if (message.role === "tool") {
       const blocks: any[] = (message.replies ?? []).map((reply) => ({
         type: "tool_result",
-        tool_use_id: reply.id,
+        tool_use_id: resultId(reply.id),
         content: reply.result,
         ...(reply.ok ? {} : { is_error: true }),
       }));
@@ -632,8 +651,11 @@ export function anthropicMessages(call: ChatCall): any[] {
       content.push({ type: "image", source: { type: "base64", media_type: img.mime, data: img.data } });
     }
     if (message.text) content.push({ type: "text", text: message.text });
+    if (message.role === "assistant") open = new Map();
     for (const use of message.calls ?? []) {
-      content.push({ type: "tool_use", id: use.id, name: use.name, input: use.args });
+      const id = fresh(use.id);
+      open.set(use.id, [...(open.get(use.id) ?? []), id]);
+      content.push({ type: "tool_use", id, name: use.name, input: use.args });
     }
     return {
       role: message.role,

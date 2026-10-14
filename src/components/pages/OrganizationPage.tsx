@@ -261,6 +261,8 @@ function AgentEditor({
   const [model, setModel] = useState<AgentModel | null | undefined>(undefined);
   const [catalog, setCatalog] = useState<AgentModels | null>(null);
   const [picking, setPicking] = useState(false);
+  /* Which provider's models the picker shows: the agent's own, or the main one. */
+  const [vendor, setVendor] = useState(agent?.model?.provider ?? "");
   useEffect(() => {
     if (agent?.builtin) return;
     let alive = true;
@@ -382,52 +384,65 @@ function AgentEditor({
         )}
       </div>
 
-      {!agent?.builtin && catalog?.provider && (
-        <div className="org-field">
-          Model
-          <button
-            type="button"
-            className="set-select mp-open"
-            onClick={() => setPicking(true)}
-            aria-haspopup="dialog"
-            aria-label="The model it builds with"
-          >
-            <span>
-              {own
-                ? catalog.models.find((m) => m.id === own.model)?.label ?? own.model
-                : `Same as the main model (${catalog.main ?? "none chosen"})`}
+      {!agent?.builtin && catalog?.provider && (() => {
+        const offered = catalog.providers;
+        const reachable = own ? offered.find((p) => p.id === own.provider) : undefined;
+        const from = offered.find((p) => p.id === vendor) ?? offered.find((p) => p.id === catalog.provider) ?? offered[0];
+        const named = (o: AgentModel) => {
+          const there = offered.find((p) => p.id === o.provider);
+          const label = there?.models.find((m) => m.id === o.model)?.label ?? o.model;
+          return o.provider === catalog.provider ? label : `${label} (${there?.label ?? o.provider})`;
+        };
+        return (
+          <div className="org-field">
+            Model
+            <div className="org-model-row">
+              {offered.length > 1 && (
+                <select value={from?.id ?? ""} onChange={(e) => setVendor(e.target.value)} aria-label="Provider to choose its model from">
+                  {offered.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+              )}
+              <button
+                type="button"
+                className="set-select mp-open"
+                onClick={() => setPicking(true)}
+                aria-haspopup="dialog"
+                aria-label="The model it builds with"
+              >
+                <span>{own ? named(own) : `Same as the main model (${catalog.main ?? "none chosen"})`}</span>
+                <IconChevron size={13} />
+              </button>
+            </div>
+            <span className="jf-hint">
+              {own && !reachable
+                ? "Its provider has no key now, so it runs on the main model. Add the key in Settings, or choose again."
+                : own
+                  ? "It builds with this model. Planning still uses the Planner from Settings, when one is set."
+                  : "Give it a cheaper model for routine work, or a stronger one for hard work."}
+              {own && (
+                <>
+                  {" "}
+                  <button type="button" className="btn ghost" onClick={() => { dirty.current = true; setModel(null); }}>
+                    Use the main model
+                  </button>
+                </>
+              )}
             </span>
-            <IconChevron size={13} />
-          </button>
-          <span className="jf-hint">
-            {own && own.provider !== catalog.provider
-              ? `Chosen for another provider, so it runs on the main model while ${catalog.label} is in use. Choose again.`
-              : own
-                ? "It builds with this model. Planning still uses the Planner from Settings, when one is set."
-                : "Give it a cheaper model for routine work, or a stronger one for hard work."}
-            {own && (
-              <>
-                {" "}
-                <button type="button" className="btn ghost" onClick={() => { dirty.current = true; setModel(null); }}>
-                  Use the main model
-                </button>
-              </>
+            {picking && from && (
+              <ModelPicker
+                vendor={`${from.label} · ${form.name || "new agent"}`}
+                models={from.models}
+                model={own?.provider === from.id ? own.model : ""}
+                busy={false}
+                listable={false}
+                onPick={(id) => { dirty.current = true; setModel({ provider: from.id, model: id }); setPicking(false); }}
+                onRefresh={() => undefined}
+                onClose={() => setPicking(false)}
+              />
             )}
-          </span>
-          {picking && (
-            <ModelPicker
-              vendor={`${catalog.label} · ${form.name || "new agent"}`}
-              models={catalog.models}
-              model={own?.provider === catalog.provider ? own.model : ""}
-              busy={false}
-              listable={false}
-              onPick={(id) => { dirty.current = true; setModel({ provider: catalog.provider!, model: id }); setPicking(false); }}
-              onRefresh={() => undefined}
-              onClose={() => setPicking(false)}
-            />
-          )}
-        </div>
-      )}
+          </div>
+        );
+      })()}
 
       {!agent?.builtin && (
         <label className="org-check">

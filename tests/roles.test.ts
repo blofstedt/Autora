@@ -11,9 +11,12 @@
  * planner that is a different model, never in a spoken turn, and at most
  * MAX_ESCALATIONS times a turn; a project check has to fail twice in a row to
  * count; the settings round-trip and the task ledger records the pair only when
- * the planner actually ran. An Organization agent's own model replaces the main
- * model for its chat only while the provider it was chosen for is in use, says
- * why when it is not, and is never set on the lead.
+ * the planner actually ran. A planner or background model may be another
+ * provider's, reached with that provider's own key, and falls back to the main
+ * model (saying why) when that key is gone. An Organization agent's own model
+ * replaces the main model for its chat, on its own provider when that can be
+ * reached, says why when it cannot, and is never set on the lead. Anthropic is
+ * sent tool ids it accepts, unique and paired, whoever made the calls.
  *
  *   npx tsx tests/roles.test.ts
  */
@@ -26,11 +29,12 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "autora-roles-"));
 process.env.AUTORA_STATE_DIR = dir;
 
 const {
-  Escalation, MAX_ESCALATIONS, backgroundModelOf, conversationModels, escalationNote, hasPlanner, workModel,
+  Escalation, MAX_ESCALATIONS, agentModelFor, backgroundTarget, conversationTargets, escalationNote, hasPlanner,
+  targetName, workTarget,
 } = await import("../server/roles");
 const { state, resolveProvider } = await import("../server/state");
 const { openTask, withTask, noteRound, closeTask, taskSummary } = await import("../server/taskledger");
-const { agentModelFor } = await import("../server/roles");
+const { anthropicMessages } = await import("../server/llm");
 const { createAgent, updateAgent, getAgent, agentLine, LEAD_ID } = await import("../server/agents");
 
 let passed = 0;
@@ -45,42 +49,52 @@ async function test(name: string, fn: () => void | Promise<void>) {
   }
 }
 
-const roles = (over: Partial<{ model: string; plannerModel: string; fastModel: string; backgroundModel: string }> = {}) => ({
-  model: "cheap", plannerModel: "", fastModel: "", backgroundModel: "", ...over,
+const main = { provider: "deepseek", key: "k-ds", baseUrl: "https://ds" };
+const at = (model: string, provider = "deepseek") =>
+  ({ provider, model, key: `k-${provider}`, baseUrl: `https://${provider}` });
+const roles = (over: Partial<{ model: string; fastModel: string; planner: ReturnType<typeof at> | null; background: ReturnType<typeof at> | null }> = {}) => ({
+  ...main, model: "cheap", fastModel: "", planner: null, background: null, ...over,
 });
+const model = (t: { model: string }) => t.model;
 
 await test("no planner: every round is the main model's, as before roles", () => {
   const r = roles();
   assert.equal(hasPlanner(r), false);
-  assert.equal(workModel(r, "plan"), "cheap");
-  assert.equal(workModel(r, "build"), "cheap");
+  assert.equal(model(workTarget(r, "plan")), "cheap");
+  assert.equal(model(workTarget(r, "build")), "cheap");
   /* Naming the main model again is no planner either. */
-  assert.equal(hasPlanner(roles({ plannerModel: "cheap" })), false);
+  assert.equal(hasPlanner(roles({ planner: at("cheap") })), false);
+  /* The same id on another vendor is another model. */
+  assert.equal(hasPlanner(roles({ planner: at("cheap", "openrouter") })), true);
 });
 
-await test("a planner plans and the main model builds", () => {
-  const r = roles({ plannerModel: "smart" });
+await test("a planner plans and the main model builds, each with its own key", () => {
+  const r = roles({ planner: at("claude-sonnet-4-5", "anthropic") });
   assert.equal(hasPlanner(r), true);
-  assert.equal(workModel(r, "plan"), "smart");
-  assert.equal(workModel(r, "build"), "cheap");
+  assert.deepEqual(workTarget(r, "plan"), at("claude-sonnet-4-5", "anthropic"));
+  assert.deepEqual(workTarget(r, "build"), { ...main, model: "cheap" });
+  assert.equal(targetName(workTarget(r, "plan"), "deepseek", (id) => id.toUpperCase()), "claude-sonnet-4-5 (ANTHROPIC)");
+  assert.equal(targetName(workTarget(r, "build"), "deepseek"), "cheap");
 });
 
 await test("background work keeps its old rule unless told otherwise", () => {
-  assert.equal(backgroundModelOf(roles()), "cheap");
-  assert.equal(backgroundModelOf(roles({ fastModel: "fast" })), "fast");
-  assert.equal(backgroundModelOf(roles({ fastModel: "fast", backgroundModel: "tiny" })), "tiny");
-  assert.equal(backgroundModelOf(roles({ backgroundModel: "tiny" }), " env-model "), "env-model");
-  assert.equal(backgroundModelOf(roles({ backgroundModel: "tiny" }), "  "), "tiny");
+  assert.equal(model(backgroundTarget(roles())), "cheap");
+  assert.equal(model(backgroundTarget(roles({ fastModel: "fast" }))), "fast");
+  assert.deepEqual(backgroundTarget(roles({ fastModel: "fast", background: at("tiny", "openai") })), at("tiny", "openai"));
+  /* The environment's override is a model of the main provider. */
+  assert.deepEqual(backgroundTarget(roles({ background: at("tiny", "openai") }), " env-model "), { ...main, model: "env-model" });
+  assert.equal(model(backgroundTarget(roles({ background: at("tiny") }), "  ")), "tiny");
 });
 
-await test("the context window counts every model that may answer", () => {
-  const r = roles({ plannerModel: "smart" });
-  assert.deepEqual(conversationModels(r, "agent"), ["cheap", "smart"]);
-  assert.deepEqual(conversationModels(r, "plan"), ["cheap", "smart"]);
+await test("the context window counts every model that may answer, on its own provider", () => {
+  const r = roles({ planner: at("smart", "anthropic") });
+  const names = (list: { provider: string; model: string }[]) => list.map((t) => `${t.provider}/${t.model}`);
+  assert.deepEqual(names(conversationTargets(r, "agent")), ["deepseek/cheap", "anthropic/smart"]);
+  assert.deepEqual(names(conversationTargets(r, "plan")), ["deepseek/cheap", "anthropic/smart"]);
   /* Build mode never plans, so the planner's window does not bind it. */
-  assert.deepEqual(conversationModels(r, "build"), ["cheap"]);
-  assert.deepEqual(conversationModels(r, "agent", "fast"), ["cheap", "smart", "fast"]);
-  assert.deepEqual(conversationModels(roles(), "agent", "cheap"), ["cheap"]);
+  assert.deepEqual(names(conversationTargets(r, "build")), ["deepseek/cheap"]);
+  assert.deepEqual(names(conversationTargets(r, "agent", "fast")), ["deepseek/cheap", "anthropic/smart", "deepseek/fast"]);
+  assert.deepEqual(names(conversationTargets(roles(), "agent", "cheap")), ["deepseek/cheap"]);
 });
 
 const building = { work: "agent" as const, phase: "build" as const, planner: true, spoken: false };
@@ -141,19 +155,42 @@ await test("the note names the planner and says when it is the last hand-back", 
   assert.match(escalationNote("x", "smart", 0), /last time/);
 });
 
-await test("the settings carry the roles to the resolved provider", () => {
+await test("the settings carry the roles to the resolved provider, on any provider with a key", () => {
   state.provider = "deepseek";
   state.keys.deepseek = "sk-test";
   state.models.deepseek = "deepseek-flash";
   state.plannerModels.deepseek = "deepseek-v4-pro";
   state.backgroundModels.deepseek = "deepseek-flash";
-  const r = resolveProvider();
+  let r = resolveProvider();
   assert.equal(r.model, "deepseek-flash");
-  assert.equal(r.plannerModel, "deepseek-v4-pro");
-  assert.equal(r.backgroundModel, "deepseek-flash");
-  assert.equal(workModel(r, "plan"), "deepseek-v4-pro");
+  assert.deepEqual(workTarget(r, "plan"), { provider: "deepseek", model: "deepseek-v4-pro", key: "sk-test", baseUrl: r.baseUrl });
+  assert.equal(r.background?.model, "deepseek-flash");
+  assert.deepEqual(r.roleProblems, []);
+
+  /* The planner on Anthropic: reached with Anthropic's own key and address. */
+  state.plannerProviders.deepseek = "anthropic";
+  state.plannerModels.deepseek = "claude-sonnet-4-5";
+  state.keys.anthropic = "sk-ant-test";
+  r = resolveProvider();
+  const plan = workTarget(r, "plan");
+  assert.equal(plan.provider, "anthropic");
+  assert.equal(plan.key, "sk-ant-test");
+  assert.match(plan.baseUrl, /anthropic/);
+  assert.equal(workTarget(r, "build").key, "sk-test", "the builder keeps DeepSeek's key");
+
+  /* Anthropic's key removed: the main model plans, and Settings says why. */
+  delete state.keys.anthropic;
+  const before = { ...process.env };
+  delete process.env.ANTHROPIC_API_KEY;
+  r = resolveProvider();
+  Object.assign(process.env, before);
+  assert.equal(hasPlanner(r), false);
+  assert.equal(workTarget(r, "plan").model, "deepseek-flash");
+  assert.match(r.roleProblems.join(" "), /planner \(claude-sonnet-4-5\) is on Anthropic[^,]*, which has no key/);
+
+  state.plannerProviders.deepseek = "";
   state.plannerModels.deepseek = "";
-  assert.equal(workModel(resolveProvider(), "plan"), "deepseek-flash");
+  assert.equal(workTarget(resolveProvider(), "plan").model, "deepseek-flash");
 });
 
 await test("the task ledger keeps the pair only when both models worked", () => {
@@ -177,19 +214,57 @@ await test("the task ledger keeps the pair only when both models worked", () => 
   assert.deepEqual(cells, ["->cheap", "->smart", "smart>cheap"]);
 });
 
-await test("an agent's own model builds its chat, only on the provider it was chosen for", () => {
-  const active = { provider: "deepseek", model: "deepseek-flash", plannerModel: "deepseek-v4-pro" };
-  const none = agentModelFor(active, { name: "Ada" });
+await test("an agent's own model builds its chat, on its own provider when it can be reached", () => {
+  const active = roles({ model: "deepseek-flash", fastModel: "deepseek-flash", planner: at("deepseek-v4-pro") });
+  const reach = (id: string) => (id === "openrouter" ? { key: "k-or", baseUrl: "https://or" } : null);
+  const none = agentModelFor(active, { name: "Ada" }, reach);
   assert.equal(none.active, active, "no model of its own: Settings' choice, untouched");
   assert.equal(none.note, null);
-  const own = agentModelFor(active, { name: "Ada", model: { provider: "deepseek", model: "deepseek-v4-pro" } });
+  const own = agentModelFor(active, { name: "Ada", model: { provider: "deepseek", model: "deepseek-v4-pro" } }, reach);
   assert.equal(own.active.model, "deepseek-v4-pro");
-  assert.equal(own.active.plannerModel, "deepseek-v4-pro", "the planner stays Settings' own");
-  assert.equal(own.note, null);
-  const elsewhere = agentModelFor(active, { name: "Ada", model: { provider: "openrouter", model: "z-ai/glm" } }, (id) => id.toUpperCase());
-  assert.equal(elsewhere.active.model, "deepseek-flash", "another vendor's id is never sent here");
-  assert.match(elsewhere.note ?? "", /Ada's model \(z-ai\/glm\) is for OPENROUTER.*DEEPSEEK.*deepseek-flash/);
-  assert.equal(agentModelFor({ provider: "", model: "" }, { name: "Ada", model: { provider: "x", model: "y" } }).note, null);
+  assert.equal(own.active.key, "k-ds");
+  assert.deepEqual(own.active.planner, active.planner, "the planner stays Settings' own");
+  const there = agentModelFor(active, { name: "Ada", model: { provider: "openrouter", model: "z-ai/glm" } }, reach);
+  assert.deepEqual(
+    [there.active.provider, there.active.model, there.active.key, there.active.baseUrl, there.active.fastModel],
+    ["openrouter", "z-ai/glm", "k-or", "https://or", ""],
+    "another provider's model, reached with that provider's key",
+  );
+  assert.equal(there.note, null);
+  const lost = agentModelFor(active, { name: "Ada", model: { provider: "anthropic", model: "claude" } }, reach, (id) => id.toUpperCase());
+  assert.equal(lost.active.model, "deepseek-flash", "a provider with no key is never called");
+  assert.match(lost.note ?? "", /Ada's model \(claude\) is on ANTHROPIC, which has no key now, so it runs on deepseek-flash/);
+  assert.equal(agentModelFor({ ...roles(), provider: "" }, { name: "Ada", model: { provider: "x", model: "y" } }, reach).note, null);
+});
+
+await test("Anthropic is sent tool ids it accepts: safe, unique, and paired with their results", () => {
+  /* A history another vendor wrote: Gemini's ids repeat every round, and a gateway's carry a colon. */
+  const messages = [
+    { role: "user" as const, text: "go" },
+    { role: "assistant" as const, calls: [{ id: "read_file-0", name: "read_file", args: { path: "a" } }] },
+    { role: "tool" as const, replies: [{ id: "read_file-0", name: "read_file", result: "A", ok: true }] },
+    { role: "assistant" as const, calls: [
+      { id: "read_file-0", name: "read_file", args: { path: "b" } },
+      { id: "functions.terminal:1", name: "terminal", args: { command: "ls" } },
+    ] },
+    { role: "tool" as const, replies: [
+      { id: "functions.terminal:1", name: "terminal", result: "ls out", ok: true },
+      { id: "read_file-0", name: "read_file", result: "B", ok: true },
+    ] },
+    { role: "assistant" as const, calls: [{ id: "toolu_01AbC", name: "read_file", args: {} }] },
+    { role: "tool" as const, replies: [{ id: "toolu_01AbC", name: "read_file", result: "C", ok: true }] },
+  ];
+  const out = anthropicMessages({ provider: "anthropic", model: "m", key: "", baseUrl: "", system: "", messages });
+  const uses = out.flatMap((m: any) => m.content.filter((b: any) => b.type === "tool_use"));
+  const results = out.flatMap((m: any) => m.content.filter((b: any) => b.type === "tool_result"));
+  const ids = uses.map((b: any) => b.id);
+  assert.equal(new Set(ids).size, ids.length, "every id once");
+  for (const id of ids) assert.match(id, /^[a-zA-Z0-9_-]+$/);
+  assert.ok(ids.includes("toolu_01AbC"), "an id Anthropic made itself is left as it was");
+  /* Each result answers the call it was made for. */
+  const byId = new Map(uses.map((b: any) => [b.id, b]));
+  const path = (r: any) => (byId.get(r.tool_use_id) as any)?.input?.path ?? (byId.get(r.tool_use_id) as any)?.input?.command;
+  assert.deepEqual(results.map((r: any) => [r.content, path(r)]), [["A", "a"], ["ls out", "ls"], ["B", "b"], ["C", undefined]]);
 });
 
 await test("an agent's model is saved, cleared, checked, and never the lead's", () => {
