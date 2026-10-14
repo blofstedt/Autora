@@ -98,6 +98,21 @@ await test("the pin is whitespace-trimmed on the way out", async () => {
   assert.deepEqual(body.provider, { only: ["chutes"], allow_fallbacks: false });
 });
 
+await test("a call that wants no thinking switches GLM's off, and a chat turn leaves it alone", async () => {
+  // Background calls (the compaction summary) have a small token budget that
+  // thinking would spend whole, leaving an empty answer.
+  const send = async (provider: string, model: string, thinking?: "off") => {
+    bodies.length = 0;
+    await streamChat({ provider, model, key: "k", baseUrl: base, system: "", messages: [{ role: "user", text: "hi" }], thinking }, () => undefined);
+    return bodies[0];
+  };
+  assert.deepEqual((await send("openrouter", MODEL, "off")).reasoning, { enabled: false });
+  assert.deepEqual((await send("openrouter", MODEL, "off")).thinking, { type: "disabled" });
+  const turn = await send("openrouter", MODEL);
+  assert.equal("reasoning" in turn || "thinking" in turn, false);
+  assert.equal("thinking" in (await send("openai", "gpt-5", "off")), false, "a vendor that does not know the field is not sent it");
+});
+
 // ------------------------------------------------------------- the state --
 
 await test("a pin is stored with its model, read back, and cleared", async () => {

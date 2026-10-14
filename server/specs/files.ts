@@ -126,6 +126,38 @@ export const filesSPECS: ToolSpec[] = [
     },
   },
   {
+    name: "notebook_create",
+    group: "files",
+    description:
+      "Make a new notebook (the same as notebook with action create, with the fields spelled out). " +
+      "title is its name; purpose is a line on what it is for. Then file things in it with notebook add.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "The notebook's name, like \"Smith case\"." },
+        purpose: { type: "string", description: "What the notebook is for, in a sentence." },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "agent_run",
+    group: "files",
+    description:
+      "Start one of the agents on the Organization page on a task, in a chat of its own, and wait for its report " +
+      "(the same as agents with action run, with the fields spelled out). Both fields are needed: agent is its " +
+      "name (agents list shows who there is and when to call each), task is everything it must know, since it has " +
+      "not seen this chat. Call an agent when its 'call it when' fits and it would do the part better than you.",
+    parameters: {
+      type: "object",
+      properties: {
+        agent: { type: "string", description: "The agent's name or id (agent_...)." },
+        task: { type: "string", description: "What it should do, complete enough to work from alone." },
+      },
+      required: ["agent", "task"],
+    },
+  },
+  {
     name: "agents",
     group: "files",
     description:

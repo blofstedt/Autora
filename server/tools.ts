@@ -511,6 +511,10 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `save artifact ${args.name}${args.notebook ? ` into notebook "${args.notebook}"` : ""}`;
     case "notebook":
       return `notebook ${args.action ?? ""}${args.notebook ? ` "${args.notebook}"` : args.title ? ` "${args.title}"` : ""}`;
+    case "agent_run":
+      return `agents run${args.agent ? ` "${args.agent}"` : ""}`;
+    case "notebook_create":
+      return `notebook create${args.title ? ` "${args.title}"` : ""}`;
     case "agents":
       return `agents ${args.action ?? ""}${args.agent ? ` "${args.agent}"` : ""}`;
     case "thread":
@@ -1779,7 +1783,7 @@ export function capFor(spec: ToolSpec, args: Record<string, any>): number {
   /* Waiting is the whole job: the person has to read, click, type a password
      or solve a puzzle, and no cap of ours may cut that short. */
   if (spec.name === "ask_user" || spec.name === "browser_handoff") return 0;
-  if (spec.name === "agents") return CAP_AGENT_MS;
+  if (spec.name === "agents" || spec.name === "agent_run") return CAP_AGENT_MS;
   if (SHELL_TOOLS.has(spec.name)) {
     return Math.max(CAP_TERMINAL_MS, toolSettings().terminal.timeout * 1000 + 10_000);
   }
@@ -3116,6 +3120,12 @@ async function runToolUnredacted(
 
       case "agents":
         return await runAgents(args, ctx);
+
+      case "agent_run":
+        return await runAgents({ ...args, action: "run" }, ctx);
+
+      case "notebook_create":
+        return runNotebook({ ...args, action: "create" }, ctx);
 
       case "thread":
         return runThread(args, ctx);

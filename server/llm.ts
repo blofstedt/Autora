@@ -483,6 +483,13 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
       // Only DeepSeek takes this, and only when the caller asked either way:
       // left alone, its own default stands.
       ...(deepseek && call.thinking ? { thinking: { type: call.thinking === "off" ? "disabled" : "enabled" } } : {}),
+      /* GLM thinks first too, and Z.ai (and gateways that pass the field on)
+         switch it off with the same `thinking` block. OpenRouter has its own
+         `reasoning` switch, honoured per model and ignored where a model cannot
+         turn thinking off. Only when the caller said "off": a chat turn keeps
+         whatever the model does by default. */
+      ...(!deepseek && call.thinking === "off" && /glm/i.test(call.model) ? { thinking: { type: "disabled" } } : {}),
+      ...(call.thinking === "off" && openrouter ? { reasoning: { enabled: false } } : {}),
       messages: openAiMessages(call),
       ...(call.tools?.length
         ? {
@@ -531,6 +538,8 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
     }
     // Kept, not shown: DeepSeek needs it sent back with the rest of the turn.
     if (typeof delta?.reasoning_content === "string") reasoning += delta.reasoning_content;
+    // OpenRouter and some gateways name it `reasoning`.
+    else if (typeof delta?.reasoning === "string") reasoning += delta.reasoning;
 
     for (const part of delta?.tool_calls ?? []) addToolDelta(building, part);
 

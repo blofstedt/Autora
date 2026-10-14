@@ -186,10 +186,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Models that fill in only a tool's required field can now start agents and make notebooks. GLM sent
-  agents run with just "action" three times in a row, because agent and task are only needed for run,
-  and our error told it the arguments were lost in transit, so it resent the same call. The error now
-  lists what was sent, what is missing, the agents it can start and a worked example, and the agents
-  and notebook tools carry an example call. Streamed tool calls from vendors that bend the format
-  (repeated names, cumulative or double-encoded arguments, parallel calls on one index) are also put
-  back together, and unreadable arguments are reported as garbled rather than as an output-limit cut.
+  GLM can now start agents, make notebooks and fold long chats. Starting an agent and making a notebook
+  are their own tools (agent_run, notebook_create) with the needed fields required, because GLM sent
+  agents run with only "action" three times in a row. When a multi-action tool still gets too little,
+  the error says what was sent, what is missing and shows an example call instead of blaming the
+  connection. Background work such as folding old turns now switches thinking off for GLM and on
+  OpenRouter, and retries once with a bigger budget when the answer comes back empty, which is why
+  compaction kept failing with "the summariser returned nothing". Streamed tool calls from vendors
+  that bend the format are put back together too.

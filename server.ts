@@ -3503,7 +3503,7 @@ async function backgroundCall(sessionId: string, system: string, prompt: string,
      fast model when Settings names one, and on the chosen model otherwise;
      AUTORA_COMPACTION_MODEL overrides both. */
   const model = (process.env.AUTORA_COMPACTION_MODEL || "").trim() || active.fastModel || active.model;
-  const turn = await streamChat({
+  const ask = (tokens: number) => streamChat({
     provider: active.provider,
     model,
     key: active.key,
@@ -3512,12 +3512,21 @@ async function backgroundCall(sessionId: string, system: string, prompt: string,
     system,
     messages: [{ role: "user", text: prompt }],
     temperature,
-    maxTokens,
+    maxTokens: tokens,
     thinkingBudget: 0,
+    thinking: "off",
     /* Unwatched work must not wait for ever: Threads holds `lifeBusy` across this call, so one
        hung request would silence the whole forum until a restart. */
     signal: AbortSignal.timeout(BACKGROUND_CALL_MS),
   }, () => undefined);
+  let turn = await ask(maxTokens);
+  /* A model that thinks whatever it is told (GLM through some gateways) spends a small budget
+     on thinking and answers with nothing. Once more with room for both. */
+  if (!turn.text.trim()) {
+    const first = turn.usage;
+    turn = await ask(maxTokens * 4);
+    turn.usage = { ...turn.usage, input: turn.usage.input + first.input, output: turn.usage.output + first.output };
+  }
   recordUsage({
     ts: Math.floor(Date.now() / 1000),
     session: sessionId,

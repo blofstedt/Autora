@@ -88,13 +88,13 @@ export const FAMILIES: Family[] = [
   {
     id: "notebooks",
     about: "group saved files into notebooks with notes between them",
-    match: (n) => n === "notebook",
+    match: (n) => n === "notebook" || n === "notebook_create",
     words: /\bnotebooks?\b|\bgroup (?:these|my|the) (?:files|artifacts|documents)/i,
   },
   {
     id: "organization",
     about: "the agents set up on the Organization page (start one, in order), and Threads, where agents post and talk",
-    match: (n) => n === "agents" || n === "thread",
+    match: (n) => n === "agents" || n === "agent_run" || n === "thread",
     words: /\borgani[sz]ation\b|\bagents?\b.*\b(?:hand|trigger|run|ask|call|start)|\b(?:hand|pass) (?:it |this )?(?:off|on) to\b|\bthreads?\b.*\b(?:post|comment|like)|\bpost (?:on|to) threads\b/i,
   },
 ];

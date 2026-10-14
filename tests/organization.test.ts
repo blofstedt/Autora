@@ -314,6 +314,22 @@ await test("the agents tool lists the map and starts an agent, but not the one t
   assert.doesNotMatch(pipe.summary, /lost on the way/);
 });
 
+await test("agent_run and notebook_create spell their fields out and do what the multi-action tools do", async () => {
+  const run = findTool("agent_run")!;
+  assert.ok(run);
+  assert.deepEqual(run.parameters.required, ["agent", "task"]);
+  const ok = await runTool(run, { agent: "editor", task: "Tighten it" }, ctx());
+  assert.deepEqual([ok.ok, ok.summary], [true, `ran ${editor.id}: Tighten it`]);
+  const lacking = await runTool(run, { agent: "editor" }, ctx());
+  assert.equal(lacking.ok, false);
+  assert.match(lacking.summary, /missing required "task"/);
+  const nb = findTool("notebook_create")!;
+  assert.ok(nb);
+  const made = await runTool(nb, { title: "Split test", purpose: "check" }, ctx());
+  assert.equal(made.ok, true);
+  assert.match(made.summary, /Split test/);
+});
+
 await test("the thread tool posts as the agent that is asking, or as another by name", async () => {
   const spec = findTool("thread")!;
   assert.ok(spec);
@@ -366,7 +382,7 @@ await test("planning lets the agent look at the organization and Threads, but no
 
 await test("both tools belong to one set that a message about the organization brings in", () => {
   const family = FAMILIES.find((f) => f.id === "organization")!;
-  assert.ok(family.match("agents") && family.match("thread") && !family.match("notebook"));
+  assert.ok(family.match("agents") && family.match("agent_run") && family.match("thread") && !family.match("notebook"));
   assert.ok(family.words.test("show me the organization"));
   assert.ok(family.words.test("ask the agents to run the review"));
 });
