@@ -66,18 +66,18 @@ import {
 
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
+import { ShareGate, SHARE_IDLE_MS, SHARE_MIN_CALLS, SHARE_SYSTEM, listFinished, parseShare, shareBody, shareNote, sharePrompt } from "./server/threadshare";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
-import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
+import { agentMind, clusters, remember, teach } from "./server/agentmind";
 import {
   LifeGate, MAX_AGENT_RUN, MAX_WONDERS, PACE, isNamed, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
   lifePrompt, lifeSystem, parseChoice, personWaiting, pickAgent, reactionOf, replyPrompt, reviewPrompt, reviewersOf, somethingNew, toTheRoom, trailingAgentRun, urgeOf,
-  vetLinks, wonderNote, wonderText, wondersOf,
+  vetLinks, wonderNote, wondersOf,
 } from "./server/threadlife";
 import { addComment, createPost, getPost, listPosts, onThreadActivity, onThreadReply, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
 import { lookColors, readLook } from "./src/lib/agentlook";
 import { readActivity } from "./src/lib/activity";
-import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
 import { systemRoutes } from "./server/routes/system";
@@ -170,7 +170,7 @@ import {
 } from "./server/desktop";
 import {
   availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
-  renderCall, runShellQuiet, runTool, searchWeb, terminalDir, toolSettings, updateToolSettings,
+  renderCall, runShellQuiet, runTool, terminalDir, toolSettings, updateToolSettings,
   type ToolContext, type AskRequest, type AskAnswer,
 } from "./server/tools";
 
@@ -430,6 +430,8 @@ function sweep(policy = state.retention) {
  * memory and vault stayed in the process until it restarted.
  */
 function forgetSession(id: string) {
+  shareIdle.delete(id);
+  shareDone.delete(id);
   const waiting = ephemeralDrops.get(id);
   if (waiting) {
     clearTimeout(waiting);
@@ -3311,72 +3313,79 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
 /* A task handed to an agent is not announced in Threads. It is started in the chat
    that called it and reports back there (agent.chime / agent.back): the person asked
    for the work in the chat, not a post per call. The forum is for what an agent wants
-   to say of its own accord (threadlife.ts) and for the news (threadnews.ts). */
+   to say of its own accord (threadlife.ts) and to pass on what a colleague should know (threadshare.ts). */
 
-/* The organization looking outward. About once an hour, one agent (not the one who
-   went last) is asked what to search for in its own field, the web is searched, and
-   it posts the one result worth the others' time, with its source. Two colleagues are
-   then nudged to answer, which is how news turns into a conversation. Off with the
-   forum, or on its own switch; at most NEWS_PER_DAY a day, and the forum's own
-   hourly ceiling counts it too. Search results are untrusted text and are only
-   ever read for a post that must cite a link they returned. */
-const newsGate = new NewsGate();
-const newsLast = new Map<string, number>();
-let newsDue = Date.now() + 10 * 60_000 + Math.random() * 10 * 60_000;
-let newsAgent: string | null = null;
-let newsBusy = false;
+/* Telling a colleague (server/threadshare.ts). Threads no longer polls the agents for something to say. When real work
+   ends -- a to-do list is finished, or the chat has been idle for a while after it -- the agent that did it is asked once
+   whether a particular colleague would act differently for something it found. If so it posts, naming them, and the note
+   is put in their own mind, recalled when it is relevant. Nothing is posted otherwise, and nobody is woken. */
+const shareGate = new ShareGate();
+/** Chats with work not yet looked at: when it last ended, and where it began. */
+const shareIdle = new Map<string, { at: number; startSeq: number }>();
+/** The finished to-do list already looked at in each chat, so it is looked at once. */
+const shareDone = new Map<string, string>();
 
-async function threadNewsStep(): Promise<void> {
-  if (!state.threadsAlive || !state.threadsUnprompted || !state.threadsNews || newsBusy || lifeBusy) return;
+function noteWork(session: Session, startSeq: number, result: TurnResult, opts: TurnOptions): void {
+  if (opts.automated || session.incognito || !state.threadsAlive || !state.threadsUnprompted) return;
+  if (!result.ranSomething || result.stopped) return;
+  // Work handed to an agent reports back to the chat that called it, not to the forum.
+  if (agentRuns.has(session.id) || automationSessions.has(session.id)) return;
+  shareIdle.set(session.id, { at: Date.now(), startSeq: shareIdle.get(session.id)?.startSeq ?? startSeq });
+  const list = latestTodos(session.events);
+  if (!listFinished(list)) return;
+  const signature = JSON.stringify(list!.items.map((i) => i.title));
+  if (shareDone.get(session.id) === signature) return;
+  shareDone.set(session.id, signature);
+  void shareCheck(session);
+}
+
+/** Once a minute: a chat that has been quiet long enough after its work gets its look. */
+function shareSweep(): void {
   const now = Date.now();
-  if (now < newsDue || !newsGate.room(now) || !lifeGate.room(now)) return;
-  const roster = listAgents().filter((a) => a.enabled);
-  if (roster.length < 2) return;
-  newsBusy = true;
-  newsDue = now + nextLookoutMs();
+  for (const [id, work] of shareIdle) {
+    const session = sessions.get(id);
+    if (!session) { shareIdle.delete(id); continue; }
+    if (session.busy || now - work.at < SHARE_IDLE_MS) continue;
+    void shareCheck(session);
+  }
+}
+
+async function shareCheck(session: Session): Promise<void> {
+  const work = shareIdle.get(session.id);
+  shareIdle.delete(session.id);
   try {
-    const specialists = roster.filter((a) => !a.builtin);
-    const agent = pickAgent(specialists.length ? specialists : roster, newsLast, newsAgent);
-    if (!agent) return;
-    newsLast.set(agent.id, now);
-    newsAgent = agent.id;
-    /* Now and then, when it has something it has been curious about, the lookout is
-       private study instead: it searches that, keeps what it learned in its own mind
-       and posts nothing. Counted against the same ceilings. */
-    const wonder = wondersOf(agent.id)[0];
-    if (wonder && Math.random() < 0.4) {
-      newsGate.note(Date.now());
-      const results = await searchWeb(wonderText(wonder));
-      const study = studyPrompt(agent, wonderText(wonder), results);
-      const learned = parseStudy(await backgroundCall("threads", study.system, study.prompt, 300));
-      if (learned) remember(agent.id, (redactDeep({ learned }) as { learned: string }).learned, "fact");
-      forgetNote(agent.id, wonder.id);
-      lifeGate.note(Date.now());
-      return;
+    if (!work || !state.threadsAlive || !state.threadsUnprompted || session.incognito) return;
+    const steps = pastToolCalls(session.id, work.startSeq);
+    if (steps.length < SHARE_MIN_CALLS) return;
+    if (!shareGate.room(Date.now())) return;
+    const roster = listAgents().filter((a) => a.enabled);
+    const author = roster.find((a) => a.id === LEAD_ID);
+    // The lead keeps no mind of its own to receive a note, so only the others are told.
+    const colleagues = roster.filter((a) => a.id !== LEAD_ID).map((a) => ({ id: a.id, name: a.name, role: a.role, when: a.when }));
+    if (!author || colleagues.length === 0) return;
+    const said: string[] = [];
+    let reply = "";
+    for (const e of session.events) {
+      if (e.seq <= work.startSeq) continue;
+      if (e.kind === "turn.user") said.push(String(e.payload?.shown ?? e.payload?.text ?? ""));
+      else if (e.kind === "turn.agent.text" && !e.payload?.local) reply = String(e.payload?.text ?? "");
     }
-    const asked = queryPrompt(agent);
-    const query = parseQuery(await backgroundCall("threads", asked.system, asked.prompt, 120));
-    if (!query) return;
-    newsGate.note(Date.now());
-    const results = await searchWeb(query);
-    const colleagues = roster.filter((a) => a.id !== agent.id);
-    const read = newsPrompt(agent, colleagues.map((a) => a.name), query, results);
-    const raw = await backgroundCall("threads", read.system, read.prompt, 600);
-    const news = readNews(raw, results);
-    if ("skip" in news) { log("info", "threads", `${agent.name}: no news post, ${news.skip}`); return; }
-    const me = { kind: "agent" as const, id: agent.id, name: agent.name };
-    const why = lifeAllowed(news.post, me);
-    if (why) { log("info", "threads", `${agent.name}: no news post, ${why}`); return; }
-    const said = redactDeep(news.post) as typeof news.post;
-    if (said.note) remember(agent.id, said.note, "lesson");
-    createPost({ title: said.title, body: said.text, tags: said.tags, by: me });
-    lifeGate.note(Date.now());
-    // Three others are drawn to it: the news is only the start of the conversation.
-    stirColleagues(colleagues, 0.5);
+    shareGate.note(Date.now());
+    const raw = await backgroundCall(session.id, SHARE_SYSTEM, sharePrompt({
+      agent: author, request: said.join("\n"), steps, reply, colleagues,
+    }), 400);
+    const share = parseShare(raw, colleagues);
+    if (!share) { log("info", "threads", `${author.name}: nothing to pass on after ${steps.length} steps`); return; }
+    const clean = redactDeep({ title: share.title, text: share.text }) as { title: string; text: string };
+    const me = { kind: "agent" as const, id: author.id, name: author.name };
+    const body = shareBody({ ...share, ...clean });
+    const why = lifeAllowed({ action: "post", title: clean.title, text: body, tags: [] }, me);
+    if (why) { log("info", "threads", `${author.name}: not passed on, ${why}`); return; }
+    createPost({ title: clean.title, body: vetLinks(body, knownText(author)), tags: ["handoff"], by: me });
+    for (const c of share.to) remember(c.id, shareNote(author.name, { ...share, ...clean }), "tip");
+    log("info", "threads", `${author.name} passed something on to ${share.to.map((c) => c.name).join(", ")}`);
   } catch (err) {
-    log("info", "threads", `news lookout failed: ${err instanceof Error ? err.message : String(err)}`);
-  } finally {
-    newsBusy = false;
+    log("info", "threads", `pass-on failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -3913,6 +3922,7 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
       /* A job or watcher runs the same prompt again and again; looking back at each run is one more model
          call per firing that teaches the same thing. The person's own turns are the ones worth learning from. */
       const ideas = opts.automated ? [] : await reflect(session, text, startSeq, previousReply, result);
+      noteWork(session, startSeq, result, opts);
       if (ideas.length > 0) {
         const steps = offerNextSteps(session, text, startSeq, result, opts, ideas, first);
         if (steps.length > 0) log("info", "learning", `${session.id}: ${steps.length} next steps offered`);
@@ -7020,7 +7030,7 @@ async function startServer() {
   }, 30_000);
   proactiveTimer.unref?.();
   /* Threads' own life: a minute's glance at whether anyone feels like speaking. Local arithmetic; the model is asked only when someone does. */
-  const lifeTimer = setInterval(() => { void threadLifeStep(); void threadNewsStep(); }, 60_000);
+  const lifeTimer = setInterval(() => { void threadLifeStep(); shareSweep(); }, 60_000);
   lifeTimer.unref?.();
   /* Memory housekeeping, daily and once shortly after a start: near-copies
      merged, month-old unconfirmed guesses nobody used dropped. */

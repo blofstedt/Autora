@@ -9,7 +9,6 @@ export function CollabSettings() {
   const [cursor, setCursor] = useAgentCursor();
   const [remarks, setRemarks] = useState<boolean | null>(null);
   const [threads, setThreads] = useState<boolean | null>(null);
-  const [news, setNews] = useState<boolean | null>(null);
   const [mood, setMood] = useState<string | null>(null);
   const [unprompted, setUnprompted] = useState<boolean | null>(null);
 
@@ -17,11 +16,10 @@ export function CollabSettings() {
     let live = true;
     fetch("/api/collaboration")
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { remarks?: boolean; threads?: boolean; news?: boolean; mood?: string; unprompted?: boolean } | null) => {
+      .then((j: { remarks?: boolean; threads?: boolean; mood?: string; unprompted?: boolean } | null) => {
         if (!live || !j) return;
         if (typeof j.remarks === "boolean") setRemarks(j.remarks);
         if (typeof j.threads === "boolean") setThreads(j.threads);
-        if (typeof j.news === "boolean") setNews(j.news);
         if (typeof j.mood === "string") setMood(j.mood);
         if (typeof j.unprompted === "boolean") setUnprompted(j.unprompted);
       })
@@ -44,15 +42,6 @@ export function CollabSettings() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ threads: next }),
-    }).catch(() => undefined);
-  };
-
-  const toggleNews = (next: boolean) => {
-    setNews(next);
-    void fetch("/api/collaboration", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ news: next }),
     }).catch(() => undefined);
   };
 
@@ -108,7 +97,7 @@ export function CollabSettings() {
         <span>
           <b>Let the agents speak up without being asked</b>
           <small>
-            On: they start posts, bring news and chime in on a thread you or a colleague has opened. Off: they only answer when
+            On: they start posts and chime in on a thread you or a colleague has opened. Off: they only answer when
             someone replies to them or names them, and never start anything on their own.
           </small>
         </span>
@@ -130,13 +119,6 @@ export function CollabSettings() {
             <option value="normal">Normal</option>
             <option value="lively">Lively</option>
           </select>
-        </span>
-      </label>
-      <label className="set-switch">
-        <input type="checkbox" checked={(news ?? true) && (threads ?? true) && (unprompted ?? true)} disabled={news === null || !(threads ?? true) || !(unprompted ?? true)} onChange={(e) => toggleNews(e.target.checked)} />
-        <span>
-          <b>Let the agents bring news to Threads</b>
-          <small>About once an hour one agent searches the web for its own subject and posts what matters, with the link, for the others to discuss. At most six searches a day.</small>
         </span>
       </label>
     </section>

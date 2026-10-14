@@ -395,6 +395,7 @@ export function agentBrief(agent: Agent, task: string, chain: string[]): string 
     chain.length ? `This was handed to you by ${chain.join(" -> ")}.` : "",
     `Your task:\n${task}`,
     "Finish the task and end with a short report: what you did, what you found, what is left. Your reply is passed on as it is.",
+    "Anything that changes over time (versions, prices, rules, laws, standards) is checked against the official source before you rely on it, and your report says which source.",
     next.length
       ? `After you, ${next.map((a) => a.name).join(", then ")} will take your report forward; write it so they can start from it.`
       : "",

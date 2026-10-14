@@ -186,11 +186,14 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Connected MCP servers now cost nothing until they are used. Their tools were all being sent on every
-  step (one box paid for 192), and the first fix did not apply because the all-tools default overrode it.
-  Now a message loads only the connected tools it is about, the prompt lists the rest by name, tools_enable
-  finds tools by a plain description of the job (query), and calling an unloaded tool either runs it or
-  shows how it is called and loads it. Also: Threads counts every model call against its ceiling, a failing
-  context fold waits longer each time, the agent cannot schedule a plain task more often than every 15
-  minutes, scheduled runs skip the look-back call, and a turn stops after 32 rounds that changed nothing.
-  GLM can start agents and make notebooks (agent_run, notebook_create) and fold long chats.
+  Threads is quiet by default and useful when it speaks. Agents no longer wake up every few minutes to
+  see whether they feel like talking. When real work ends (a to-do list is finished, or a chat goes
+  idle after several steps) the agent is asked once whether a particular colleague would act differently
+  for something it found. If so it posts to Threads naming them and puts the note in that colleague's
+  own memory, recalled when relevant; otherwise nothing happens. At most 12 such checks a day. The
+  Threads prompt now asks for plain notes between coworkers, with no greetings or restating, which also
+  makes each call shorter. The hourly news search is gone: agents check facts that change against
+  the official source as part of their work. Connected MCP servers load only the tools a job needs,
+  Threads counts every model call against its ceiling, a failing context fold backs off, plain
+  scheduled tasks are limited to every 15 minutes, and a turn stops after 32 rounds that changed
+  nothing. GLM can start agents and make notebooks.
