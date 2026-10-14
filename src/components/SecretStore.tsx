@@ -258,7 +258,7 @@ export function SecretStore() {
           <div className="ss-ico"><IconShield size={18} /></div>
           <div>
             <h3>Secret Store &amp; Environment Variables</h3>
-            <span className="ss-sub">Zero-leak credentials store for terminal subprocesses &amp; API tools</span>
+            <span className="ss-sub">Secrets for terminal commands and API tools</span>
           </div>
         </div>
 
@@ -280,9 +280,8 @@ export function SecretStore() {
       <div className="ss-note">
         <span className="ss-note-ico"><IconLock size={16} /></span>
         <div>
-          <strong>Zero Conversation Logging:</strong> Sensitive variables defined here
-          are strictly redacted from conversation history, transcript messages, and WebSocket broadcasts. When commands run
-          or APIs execute, matching secret values are automatically masked as <code>[REDACTED_SECRET]</code>.
+          <strong>Never logged:</strong> secrets here are blanked from chat history, transcripts
+          and live updates. When a command or API call runs, matching values show as <code>[REDACTED_SECRET]</code>.
         </div>
       </div>
 

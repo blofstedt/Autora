@@ -152,11 +152,10 @@ export function McpPage({ topSlot }: {
       <div className="page-inner">
         <div className="page-toolbar">
           <p className="jf-hint page-lede">
-            Model Context Protocol servers give the agent more tools. Autora starts
-            a local one from a command, or connects to one at a URL; its tools are
-            offered to the agent from its next step. Autora also offers to set one
-            up in a conversation when a server would do the job better than the
-            browser — those are marked here.
+            MCP servers give the agent more tools. Start a local one from a command
+            or connect to one by URL, and the agent can use it from its next step.
+            Autora may also offer one mid-chat when it beats the browser; those
+            are marked here.
           </p>
           {!draft && !topSlot && (
             <button className="btn primary" onClick={() => setDraft({ ...blank })}>
@@ -179,9 +178,8 @@ export function McpPage({ topSlot }: {
           <section className="set-card mcp-suggest">
             <h3>Suggested for you</h3>
             <p className="jf-hint">
-              From what this install already shows: a key it holds, or a word you have used. The
-              agent offers these in a conversation too, when one would do the job better than
-              the browser.
+              Based on a key you have saved or a word you have used. The agent
+              offers these in chat too, when one beats the browser.
             </p>
             {suggested.map((s) => (
               <article className="mcp-suggest-row" key={s.id}>
@@ -258,9 +256,8 @@ export function McpPage({ topSlot }: {
               </>
             )}
             <p className="jf-hint">
-              Secret values are stored in the settings file and shown masked here; leave a masked value
-              as it is to keep it. A value written <code>{"${secret:NAME}"}</code> is read from
-              Settings › API Keys › Secrets instead, so the key itself never sits in this form.
+              Secret values are saved in the settings file and shown masked; leave one as is to keep it.
+              Write <code>{"${secret:NAME}"}</code> to read it from Settings › API Keys › Secrets instead.
             </p>
             <div className="jf-actions">
               <button className="btn ghost" onClick={() => setDraft(null)}>Cancel</button>

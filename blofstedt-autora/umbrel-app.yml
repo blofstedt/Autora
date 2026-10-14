@@ -186,11 +186,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Quick replies are quick again. A hello, a thank-you or "this is just a test" is now answered at once:
-  no plan first, no thinking before the answer, and no switch to build. When you write @Name to one of your
-  agents, that agent's report is the answer: the lead no longer takes one more turn afterwards to retell
-  it, which was the thinking that kept going after the reply had already appeared. A greeting sent to an
-  agent is also passed on to it as small talk, so the agent does not think it over either. A real task is
-  unchanged: Agent mode still plans first, and if the agent you asked fails, the lead carries on and says so.
-  A model that insists on thinking (some OpenRouter ones, such as GLM flash) used to fail the quick reply with
-  "Reasoning is mandatory"; it is now asked again without the switch and answers, at its own pace.
+  Plainer wording across the left-hand menus. Settings, Usage (Billing and Cost per good result), Tools,
+  Integrations, the Secret Store, Credentials and the sidebar's own tooltips now say the same things in fewer
+  words: shorter hints, shorter error messages, and no repeated explanations. Nothing works differently, and
+  every button keeps its name.

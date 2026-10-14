@@ -288,7 +288,7 @@ export function Settings({
       .catch((cause: unknown) =>
         setError(
           cause instanceof TypeError
-            ? "Could not reach the server. It may still be starting up after an update."
+            ? "Can't reach the server. It may be restarting after an update."
             : `Could not read settings: ${
                 cause instanceof Error ? cause.message : String(cause)
               }.`,
@@ -600,7 +600,7 @@ export function Settings({
             >
               <b>Automatic</b>
               <span>
-                Use the first connected provider, in this order:{" "}
+                The first connected one, in this order:{" "}
                 {state.auto_order
                   .map((id) => state.catalog.find((p) => p.id === id)?.label ?? id)
                   .join(", ")}
@@ -629,7 +629,7 @@ export function Settings({
           {choiceCards.length < state.catalog.length && (
             <button className="setup-more set-show-all" onClick={() => setAllProviders(true)}>
               {connectedCards.length === 0
-                ? "No provider is connected yet — add a key below, or show every provider"
+                ? "Nothing connected yet. Add a key below, or show every provider"
                 : `Show all ${state.catalog.length} providers`}
             </button>
           )}
@@ -638,10 +638,9 @@ export function Settings({
         <section className="set-card">
           <h3>Providers and models</h3>
           <p className="jf-hint set-providers-hint">
-            Add a key for any vendor and pick its model. Each provider keeps its
-            own choice, so switching back and forth costs nothing. Prices are the
-            vendors' published rates as of {state.prices_checked} and are what the
-            billing card counts with.
+            Add a key and pick a model. Each provider remembers its own choice.
+            Prices are published rates as of {state.prices_checked}, and are
+            what Usage counts with.
           </p>
           {connectedCards.map(providerRow)}
           {otherCards.length > 0 && (
@@ -655,9 +654,9 @@ export function Settings({
             </details>
           )}
           <p className="set-note set-where">
-            Keys saved here are written to <code>{state.state_file}</code> on the
-            server, readable only by the account Autora runs as. Keys set in the
-            environment stay there and are used when the app has none of its own.
+            Keys are saved to <code>{state.state_file}</code>, readable only by
+            the account Autora runs as. A key from the environment is used when
+            none is saved here.
           </p>
         </section>
 
@@ -669,8 +668,8 @@ export function Settings({
           <section className="set-card">
             <h3>Model providers</h3>
             <p className="jf-hint">
-              One key per vendor. Typing replaces the saved key; clearing it
-              removes it. Which provider and model answer is chosen under Model &amp; tools.
+              One key per vendor. Typing replaces it; clearing removes it. Pick
+              the provider and model under Model &amp; tools.
             </p>
             {state.credentials.filter((c) => c.role === "model").map((c) => (
               <KeyField
@@ -686,8 +685,8 @@ export function Settings({
               />
             ))}
             <p className="set-note set-where">
-              Keys saved here are written to <code>{state.state_file}</code> on the
-              server, readable only by the account Autora runs as.
+              Keys are saved to <code>{state.state_file}</code>, readable only by
+              the account Autora runs as.
             </p>
           </section>
         )}
@@ -716,15 +715,15 @@ export function Settings({
         <section className="set-card">
           <h3>Limits</h3>
           <p className="jf-hint">
-            When a turn counts as stuck in a loop, and how long old work is kept.
-            0 days means never delete on age alone.
+            When a turn counts as looping, and how long old work is kept.
+            0 days means never delete by age.
           </p>
           <div className="limit-grid">
             {loop && ([
-              ["warnAt", "Note a repeat after", "repeats of the same call"],
-              ["stopAt", "Stop the turn after", "repeats"],
-              ["staleAfter", "Note no progress after", "calls in a row"],
-              ["checkEvery", "Ask it to check itself every", "rounds"],
+              ["warnAt", "Warn after", "repeats of one call"],
+              ["stopAt", "Stop after", "repeats"],
+              ["staleAfter", "Flag no progress after", "calls in a row"],
+              ["checkEvery", "Self-check every", "rounds"],
             ] as [keyof LoopConfig, string, string][]).map(([key, label, unit]) => (
               <label className="tool-opt" key={key}>
                 <span className="tool-label">{label}</span>
@@ -739,9 +738,9 @@ export function Settings({
               </label>
             ))}
             {keep && ([
-              ["sessionDays", "Delete sessions older than", "days (0 = never)"],
+              ["sessionDays", "Delete sessions after", "days (0 = never)"],
               ["keepSessions", "Always keep the newest", "sessions"],
-              ["artifactDays", "Delete artifacts older than", "days (0 = never)"],
+              ["artifactDays", "Delete artifacts after", "days (0 = never)"],
               ["keepArtifacts", "Always keep the newest", "artifacts"],
             ] as [keyof RetentionPolicy, string, string][]).map(([key, label, unit]) => (
               <label className="tool-opt" key={key}>
@@ -766,9 +765,9 @@ export function Settings({
         <section className="set-card">
           <h3>Project check</h3>
           <p className="jf-hint">
-            A command Autora runs itself when the agent says it is finished and has changed
-            something — your linter, tests or build, in the terminal's directory. A failure sends
-            the agent back with the real output; a pass ends the turn. Leave it empty for none.
+            Runs when the agent says it is done and has changed something: your
+            linter, tests or build, in the terminal's directory. A failure sends
+            the agent back with the output. Leave empty for none.
           </p>
           <input
             className="set-prompt"
@@ -782,7 +781,7 @@ export function Settings({
           />
           <div className="limit-grid">
             <label className="tool-opt">
-              <span className="tool-label">Run it at most</span>
+              <span className="tool-label">Run at most</span>
               <input
                 type="number"
                 min={1}
@@ -800,9 +799,8 @@ export function Settings({
         <section className="set-card">
           <h3>Standing instructions</h3>
           <p className="jf-hint">
-            Added to Autora's own instructions on every turn — house rules like
-            "be concise" or "never guess; say you do not know". Applies to open
-            sessions from their next turn.
+            House rules added to every turn, like "be concise" or "say when you
+            don't know". Open sessions pick them up on their next turn.
           </p>
           <textarea
             className="set-prompt"
@@ -830,8 +828,7 @@ export function Settings({
           <section className="set-card">
             <h3>Voice keys</h3>
             <p className="jf-hint">
-              Speech in and out. These are read when Autora starts, so a change
-              here takes effect after a restart.
+              Speech in and out. Read at startup, so changes need a restart.
             </p>
             {voiceKeys.map((c) => (
               <KeyField
@@ -925,7 +922,7 @@ function ProviderRow({
         setChecked({ ok: false, text: body.detail ?? "The key was refused." });
         return;
       }
-      setChecked({ ok: true, text: `Key works — ${body.models} models available.${keyDraft ? " Saved." : ""}` });
+      setChecked({ ok: true, text: `Key works. ${body.models} models available.${keyDraft ? " Saved." : ""}` });
       // A key that just passed is the one they meant: keep it.
       if (keyDraft) onKeySave(keyDraft);
       const fresh = await fetch(`/api/providers/${card.id}/models`).then((r) => r.json());
@@ -1052,8 +1049,8 @@ function ProviderRow({
           </label>
           <p className="jf-hint">
             {fast
-              ? "Live voice answers with this one instantly, then hands over to the model above when the task needs thinking or tools."
-              : "Live voice answers with the model above. Name a faster model here to have it answer aloud at once and hand the harder questions over."}
+              ? "Voice answers with this one at once, then hands over to the model above for anything needing thought or tools."
+              : "Voice uses the model above. Name a faster one to answer aloud at once and hand harder questions over."}
             {fast ? (
               <>
                 {" "}
@@ -1128,7 +1125,7 @@ function ProviderRow({
           {chosen?.note && <p className="prov-price">{chosen.label} · {chosen.note}</p>}
           {typing && model && (
             <p className="prov-price">
-              {listed ? price(card.models.find((m) => m.id === model)!) : "Not in the price list — turns on this model are counted but not billed."}
+              {listed ? price(card.models.find((m) => m.id === model)!) : "Not in the price list. Turns are counted but not priced."}
             </p>
           )}
 
@@ -1144,8 +1141,7 @@ function ProviderRow({
             />
           </label>
           <p className="jf-hint">
-            Leave as it is unless you are going through a proxy or running the
-            model yourself.
+            Leave as is unless you use a proxy or run the model yourself.
           </p>
           {card.pinnable && (
             <label className="jf-row">
@@ -1162,11 +1158,10 @@ function ProviderRow({
           )}
           {card.pinnable && (
             <p className="jf-hint">
-              {card.label} serves one model from several providers, so a turn may
-              be answered by a different one each time. Name one here to pin
-              the model chosen above to it: the slug {card.label} lists for that
-              model (deepinfra, chutes). Empty leaves the choice to {card.label}.
-              {pinHeld && ` The endpoint saved is holding ${pinHeld}, and is not in force while another model is chosen.`}
+              {card.label} may answer from a different host each turn. Name one
+              (deepinfra, chutes) to pin the model above to it. Empty leaves it
+              to {card.label}.
+              {pinHeld && ` This pin is for ${pinHeld}, so it is off while another model is chosen.`}
             </p>
           )}
         </div>
@@ -1241,12 +1236,10 @@ function ToolsCard({
     <section className="set-card">
       <h3>Tools</h3>
       <p className="jf-hint">
-        What the agent can reach. Each of these is real: the terminal runs
-        commands on the machine Autora is installed on, the browser opens real
-        pages, computer control drives whichever machine is running the relay,
-        and memory outlives the session. Turning one off removes it from the
-        model's tools entirely — the agent is then told that group is switched
-        off, rather than left to work out why it cannot do something.
+        What the agent can reach. The terminal runs commands on this machine,
+        the browser opens real pages, computer control drives the machine
+        running the relay, and memory outlives the session. Turning one off
+        removes it from the agent's tools, and it is told so.
       </p>
 
       {error && <p className="set-warn">{error}</p>}
@@ -1283,11 +1276,11 @@ function ToolsCard({
 
               {config.enabled && (
                 <>
-                  <p className="jf-hint">Runs without asking (yolo mode).</p>
+                  <p className="jf-hint">Runs without asking.</p>
 
                   {group.group === "browser" && (
                     <div className="set-note is-boxed">
-                      <strong>Browser &amp; OAuth notice:</strong> Most identity providers (Google, GitHub, Cloudflare) block automated Chromium browsers from completing interactive OAuth / SSO logins. When encountering a login or CAPTCHA, click <em>&ldquo;take control&rdquo;</em> on the browser card to type directly, or provide an API token via the <strong>Workspace Secrets</strong> store below.
+                      <strong>Sign-ins:</strong> Google, GitHub and Cloudflare often block automated browsers at login. For a login or CAPTCHA, press <em>&ldquo;take control&rdquo;</em> on the browser card and type it yourself, or give the agent an API token in <strong>Workspace Secrets</strong>.
                     </div>
                   )}
 
@@ -1443,8 +1436,8 @@ function VersionCard({ server }: { server: string | null }) {
       </div>
       {stale && (
         <p className="set-warn">
-          Your browser is holding an older copy of the app. Reload the page —
-          the banner at the top does it properly, clearing the cache first.
+          Your browser has an old copy of the app. Reload with the banner at
+          the top, which clears the cache first.
         </p>
       )}
     </section>
@@ -1533,10 +1526,9 @@ function TrustThisServer() {
     <section className="set-card">
       <h3>Trust this server</h3>
       <p className="jf-hint">
-        Your devices do not know this server, so they warn about it, refuse it a
-        microphone, and will not install it to a home screen. Install the
-        certificate below on a device and all three stop: it becomes an ordinary
-        trusted site there.
+        Devices don't know this server, so they warn about it, block the
+        microphone and won't install it to a home screen. Install the
+        certificate and all three stop.
       </p>
       <a className="btn primary set-ca" href="/autora-ca.crt" download>
         Download certificate
@@ -1549,9 +1541,8 @@ function TrustThisServer() {
         Trust Settings to switch it on.
       </p>
       <p className="set-warn">
-        Install it only on devices you own. A certificate you trust can vouch for
-        any site to that device, so this one is worth exactly as much as the
-        server holding its key.
+        Install it only on devices you own. A trusted certificate can vouch for
+        any site on that device, so it is only as safe as the server holding its key.
       </p>
     </section>
   );

@@ -81,10 +81,9 @@ export function AutomationCard() {
     <section className="set-card">
       <h3>Automation budget</h3>
       <p className="jf-hint">
-        What scheduled jobs and watchers may cost. A watcher on something that changes often pays a
-        fresh session every time it fires, so this is where that is bounded. A job held back keeps
-        its schedule and runs again after midnight; a run stopped part-way runs again at its next
-        time. Nothing is switched off or deleted.
+        A daily cap on what jobs and watchers may spend. A watcher on something that changes often starts a fresh
+        session every time it fires. A held-back job runs again after midnight; a stopped run, at its next time.
+        Nothing is switched off or deleted.
       </p>
 
       <label className="opt-check">
@@ -125,7 +124,7 @@ export function AutomationCard() {
               onChange={(e) => e.target.value && change({ runUsd: Number(e.target.value) })}
             />
           </label>
-          <p className="jf-hint">Both in US dollars, which is what the provider bills in.</p>
+          <p className="jf-hint">Both in US dollars.</p>
         </>
       )}
 

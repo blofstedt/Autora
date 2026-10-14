@@ -122,7 +122,7 @@ export function NotifyCard() {
     return (
       <section className="set-card">
         <h3>Phone notifications</h3>
-        <p className="set-warn">The settings could not be read.</p>
+        <p className="set-warn">Couldn't read the settings.</p>
       </section>
     );
   }
@@ -131,9 +131,8 @@ export function NotifyCard() {
     <section className="set-card notify-card">
       <h3>Phone notifications</h3>
       <p className="jf-hint">
-        Autora can tell you when it needs you, when a schedule runs, when it notices something, and when a long task
-        finishes while you are away. A line or two each; the chat has the rest, one tap away. Nothing is sent during
-        your quiet hours: it is held, and arrives as one message when they end.
+        Get told when Autora needs you, a schedule runs, it notices something, or a long task finishes while you are
+        away. Each is a line or two, with the chat one tap away. Quiet hours hold them and send one message at the end.
       </p>
 
       <label className="set-check">

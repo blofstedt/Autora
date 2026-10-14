@@ -71,8 +71,8 @@ export function TimeZoneCard() {
     <section className="set-card">
       <h3>Time zone</h3>
       <p className="jf-hint">
-        The clock your schedules, watchers and quiet hours run on. It is {nowIn(effective)} there now
-        ({effective}{zone.timezone ? "" : ", the machine's own"}).
+        The clock for schedules, watchers and quiet hours. It is {nowIn(effective)} there now
+        ({effective}{zone.timezone ? "" : ", this machine's"}).
       </p>
       <label className="jf-row">
         <span>Zone</span>
