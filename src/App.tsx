@@ -85,6 +85,8 @@ import { DictateButton } from "./components/DictateButton";
 import { AttachButton, CameraButton } from "./components/AttachButton";
 import { SpendBar, type Usage } from "./components/SpendBar";
 import { SlashMenu } from "./components/SlashMenu";
+import { MentionMenu } from "./components/MentionMenu";
+import { applyMention, mentionAt, mentionMatches, type Mentionable } from "./lib/mentions";
 import { resolve as resolveCommand, suggest as suggestCommands, type Command } from "./lib/commands";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
@@ -1089,6 +1091,40 @@ export function App() {
   const slashOpen = slashOffered.length > 0 && !slashDismissed;
   const slashActive = Math.min(slashAt, Math.max(slashOffered.length - 1, 0));
 
+  // ------------------------------------------------------------ @-mentions --
+  /** The agents that can be addressed, fetched the first time an "@" is typed. */
+  const [mentionable, setMentionable] = useState<Mentionable[] | null>(null);
+  const [caret, setCaret] = useState(0);
+  const [mentionAtIndex, setMentionAtIndex] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
+  const typing = useMemo(() => (readOnly ? null : mentionAt(draft, caret)), [draft, caret, readOnly]);
+  useEffect(() => {
+    if (!typing || mentionable) return;
+    let alive = true;
+    void fetch("/api/agents").then((r) => r.json()).then((j: { agents?: (Mentionable & { enabled: boolean; builtin?: boolean })[] }) => {
+      if (alive) setMentionable((j.agents ?? []).filter((a) => a.enabled && !a.builtin).map(({ id, name, role }) => ({ id, name, role })));
+    }).catch(() => { if (alive) setMentionable([]); });
+    return () => { alive = false; };
+  }, [typing, mentionable]);
+  const mentionOffered = useMemo(
+    () => (typing && mentionable ? mentionMatches(mentionable, typing.query) : []),
+    [typing, mentionable],
+  );
+  const mentionOpen = mentionOffered.length > 0 && !mentionDismissed && !slashOpen;
+  const mentionActive = Math.min(mentionAtIndex, Math.max(mentionOffered.length - 1, 0));
+  const pickMention = useCallback((agent: Mentionable) => {
+    if (!typing) return;
+    const next = applyMention(draft, caret, typing.from, agent.name);
+    setDraft(next.text);
+    setCaret(next.caret);
+    window.setTimeout(() => {
+      const box = composerRef.current;
+      if (!box) return;
+      box.focus();
+      box.setSelectionRange(next.caret, next.caret);
+    }, 0);
+  }, [typing, draft, caret]);
+
   const runCommand = useCallback((command: Command, arg: string) => {
     // Waiting on its argument: leave it in the box to be finished.
     if (command.arg && !arg) {
@@ -2091,6 +2127,14 @@ export function App() {
                       onOpen={() => navigate("analytics")}
                     />
                   )}
+                  {mentionOpen && (
+                    <MentionMenu
+                      agents={mentionOffered}
+                      active={mentionActive}
+                      onHover={setMentionAtIndex}
+                      onPick={pickMention}
+                    />
+                  )}
                   {slashOpen && (
                     <SlashMenu
                       commands={slashOffered}
@@ -2112,9 +2156,12 @@ export function App() {
                     disabled={readOnly}
                     onChange={(e) => {
                       setDraft(e.target.value);
+                      setCaret(e.target.selectionStart ?? e.target.value.length);
                       setSlashDismissed(false);
+                      setMentionDismissed(false);
                       noticeTyping();
                     }}
+                    onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
                     onBlur={() => setAttention(0)}
                     onPaste={(e) => {
                       // Files on the clipboard (a screenshot, a copied picture) are attached;
@@ -2131,6 +2178,25 @@ export function App() {
                         : file)));
                     }}
                     onKeyDown={(e) => {
+                      if (mentionOpen) {
+                        const n = mentionOffered.length;
+                        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                          e.preventDefault();
+                          setMentionAtIndex((mentionActive + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+                          return;
+                        }
+                        // Enter writes a line elsewhere; with the menu open it picks. Ctrl/Cmd/Alt+Enter still sends.
+                        if (e.key === "Tab" || (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey)) {
+                          e.preventDefault();
+                          pickMention(mentionOffered[mentionActive]);
+                          return;
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setMentionDismissed(true);
+                          return;
+                        }
+                      }
                       if (slashOpen) {
                         const n = slashOffered.length;
                         if (e.key === "ArrowDown" || e.key === "ArrowUp") {

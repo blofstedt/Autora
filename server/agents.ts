@@ -448,3 +448,19 @@ export function bondOf(id: string, other: string): number {
   return getAgent(id)?.bonds?.[other] ?? BOND_START;
 }
 
+
+/**
+ * The enabled agents a message addresses with an @ ("@Sabrina, can you look at this lease?"). The name must stand alone
+ * (not inside an address or a longer word), case does not matter, and the lead is not one to address: it is already
+ * who is being talked to. At most three, in the order they were named.
+ */
+export function mentionedAgents<T extends { id: string; name: string; enabled: boolean }>(text: string, agents: readonly T[]): T[] {
+  const found: { at: number; agent: T }[] = [];
+  for (const agent of agents) {
+    if (!agent.enabled || agent.id === LEAD_ID || !agent.name.trim()) continue;
+    const escaped = agent.name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = new RegExp(`(^|[^\\w@.])@${escaped}(?![\\w])`, "i").exec(text);
+    if (m) found.push({ at: m.index, agent });
+  }
+  return found.sort((a, b) => a.at - b.at).slice(0, 3).map((f) => f.agent);
+}

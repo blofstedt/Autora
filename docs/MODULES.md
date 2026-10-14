@@ -305,6 +305,7 @@ Spectra's fetched renderer is most of what is on disk.
     in whole), the console note lists the rest by short name, `tools_enable` takes `query` / `tools` / `family`, and
     calling an unloaded one by name runs it if its arguments fit the schema, else loads it and replies with its
     signature. A server's tool count is not a cost until its tools are loaded.
+  - `@Name` in a message (`mentionedAgents` in `agents.ts`; the menu is `MentionMenu.tsx` over `lib/mentions.ts`, in the message box beside the slash menu): `systemInstructionFor` adds a turn note telling the lead the person addressed that colleague, so it starts it with `agent_run` and relays the report. The lead itself, a switched-off agent, a longer word and an address (`bob@Tom.com`) are not mentions; a chat that is itself an agent's task is not re-routed.
   - `trace.ts`: `GET /api/sessions/:id/trace`, read from the log.
   - `suggest.ts`: what to suggest, from what is actually on the install --
     one-tap tasks for a new chat, a schedule offered once, next-step chips

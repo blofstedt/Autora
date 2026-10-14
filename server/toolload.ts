@@ -95,7 +95,7 @@ export const FAMILIES: Family[] = [
     id: "organization",
     about: "the agents set up on the Organization page (start one, in order), and Threads, where agents post and talk",
     match: (n) => n === "agents" || n === "agent_run" || n === "thread",
-    words: /\borgani[sz]ation\b|\bagents?\b.*\b(?:hand|trigger|run|ask|call|start)|\b(?:hand|pass) (?:it |this )?(?:off|on) to\b|\bthreads?\b.*\b(?:post|comment|like)|\bpost (?:on|to) threads\b/i,
+    words: /\borgani[sz]ation\b|\B@[a-z]|\bagents?\b.*\b(?:hand|trigger|run|ask|call|start)|\b(?:hand|pass) (?:it |this )?(?:off|on) to\b|\bthreads?\b.*\b(?:post|comment|like)|\bpost (?:on|to) threads\b/i,
   },
 ];
 

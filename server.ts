@@ -67,7 +67,7 @@ import {
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { ShareGate, SHARE_IDLE_MS, SHARE_MIN_CALLS, SHARE_SYSTEM, listFinished, parseShare, shareBody, shareNote, sharePrompt } from "./server/threadshare";
-import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
+import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, mentionedAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, remember, teach } from "./server/agentmind";
 import {
   LifeGate, MAX_AGENT_RUN, MAX_WONDERS, PACE, isNamed, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
@@ -2364,6 +2364,20 @@ async function systemInstructionFor(
 ): Promise<{ pinned: string; note: string }> {
   const lines = [DEFAULT_PROMPT];
   const notes: string[] = [];
+  /* The person wrote @Name: they want that colleague, not the lead, to take this on. The lead is still who they are
+     talking to, so it starts the agent (agent_run, which has its own chat and report) and gives the answer back. A
+     chat that is itself an agent's task is not re-routed: the task text is the lead's, not the person's. */
+  if (said && !agentRuns.has(sessionId)) {
+    const asked = mentionedAgents(said, listAgents());
+    if (asked.length > 0) {
+      const names = asked.map((a) => a.name).join(", ");
+      notes.push(
+        `The person addressed ${names} directly with @. That is a request for ${asked.length > 1 ? "those colleagues" : "that colleague"}, not for you: ` +
+        `start ${asked.length > 1 ? "each" : "them"} with agent_run (agent: ${asked.map((a) => `"${a.name}"`).join(" / ")}, task: what the person asked, with everything it needs, since it has not seen this chat), ` +
+        "then give the person the report in your own words and say who answered. Do the work yourself only if agent_run is refused, and then say so.",
+      );
+    }
+  }
   /* Read from Settings here, every turn, so an edit applies from the next
      one. They used to open the prompt as its first line, ahead of the whole
      capability briefing and under the console's own style rules at the end

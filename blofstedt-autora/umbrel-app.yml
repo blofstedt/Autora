@@ -186,14 +186,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Threads is quiet by default and useful when it speaks. Agents no longer wake up every few minutes to
-  see whether they feel like talking. When real work ends (a to-do list is finished, or a chat goes
-  idle after several steps) the agent is asked once whether a particular colleague would act differently
-  for something it found. If so it posts to Threads naming them and puts the note in that colleague's
-  own memory, recalled when relevant; otherwise nothing happens. At most 12 such checks a day. The
-  Threads prompt now asks for plain notes between coworkers, with no greetings or restating, which also
-  makes each call shorter. The hourly news search is gone: agents check facts that change against
-  the official source as part of their work. Connected MCP servers load only the tools a job needs,
-  Threads counts every model call against its ceiling, a failing context fold backs off, plain
-  scheduled tasks are limited to every 15 minutes, and a turn stops after 32 rounds that changed
-  nothing. GLM can start agents and make notebooks.
+  You can now @ an agent in chat. Type @ in the message box and pick a colleague by name (or role); a
+  message that names one is handed to that agent, which works on it in its own chat, and its report
+  comes back in your thread. Also in this release: Threads is quiet by default and posts only when an
+  agent finishes real work and has something a named colleague should know (the agent's note also goes
+  into that colleague's memory); the hourly news search is gone, and agents check changing facts against
+  official sources instead. Connected MCP servers load only the tools a job needs, Threads counts every
+  model call against its ceiling, a failing context fold backs off, plain scheduled tasks are limited to
+  every 15 minutes, and a turn stops after 32 rounds that changed nothing. GLM can start agents and make
+  notebooks.
