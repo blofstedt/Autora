@@ -304,10 +304,30 @@ await test("the agents tool lists the map and starts an agent, but not the one t
   assert.equal((await runTool(spec, { action: "run", agent: "Editor" }, ctx())).ok, false, "a task is required");
   const self = await runTool(spec, { action: "run", agent: "Editor", task: "x" }, ctx({ id: editor.id, name: "Editor" }));
   assert.match(self.summary, /That is you/);
-  // A call that arrived without agent/task gets the pipe hint, so the model
-  // is told to resend rather than to debug the tool.
+  // A run sent with only its action (a model that fills required fields and
+  // skips the rest) is told what it sent, what is missing and an example,
+  // not to resend the same call.
   const pipe = await runTool(spec, { action: "run" }, ctx());
-  assert.match(pipe.summary, /lost on the way here/);
+  assert.match(pipe.summary, /needs two more fields besides action: agent and task/);
+  assert.match(pipe.summary, /sent only: action/);
+  assert.match(pipe.summary, /"task":/);
+  assert.doesNotMatch(pipe.summary, /lost on the way/);
+});
+
+await test("agent_run and notebook_create spell their fields out and do what the multi-action tools do", async () => {
+  const run = findTool("agent_run")!;
+  assert.ok(run);
+  assert.deepEqual(run.parameters.required, ["agent", "task"]);
+  const ok = await runTool(run, { agent: "editor", task: "Tighten it" }, ctx());
+  assert.deepEqual([ok.ok, ok.summary], [true, `ran ${editor.id}: Tighten it`]);
+  const lacking = await runTool(run, { agent: "editor" }, ctx());
+  assert.equal(lacking.ok, false);
+  assert.match(lacking.summary, /missing required "task"/);
+  const nb = findTool("notebook_create")!;
+  assert.ok(nb);
+  const made = await runTool(nb, { title: "Split test", purpose: "check" }, ctx());
+  assert.equal(made.ok, true);
+  assert.match(made.summary, /Split test/);
 });
 
 await test("the thread tool posts as the agent that is asking, or as another by name", async () => {
@@ -339,7 +359,8 @@ await test("a call whose required arguments never arrived is refused by the sche
   const spec = findTool("agents")!;
   const empty = await runTool(spec, {}, ctx());
   assert.match(empty.summary, /missing required "action"/);
-  assert.match(empty.summary, /lost on the way here/);
+  assert.match(empty.summary, /Call it again with "action" filled in/);
+  assert.doesNotMatch(empty.summary, /lost on the way/);
   const malformed = await runTool(spec, "run" as never, ctx());
   assert.match(malformed.summary, /takes an object of arguments/);
   // Present-but-empty is the handler's business, not the schema's.
@@ -362,7 +383,7 @@ await test("planning lets the agent look at the organization and Threads, but no
 
 await test("both tools belong to one set that a message about the organization brings in", () => {
   const family = FAMILIES.find((f) => f.id === "organization")!;
-  assert.ok(family.match("agents") && family.match("thread") && !family.match("notebook"));
+  assert.ok(family.match("agents") && family.match("agent_run") && family.match("thread") && !family.match("notebook"));
   assert.ok(family.words.test("show me the organization"));
   assert.ok(family.words.test("ask the agents to run the review"));
 });

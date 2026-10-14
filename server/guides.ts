@@ -79,7 +79,9 @@ export const MEMORY_GUIDE =
   "the research tool); a forum or blog is not the product's word; (3) write what you learned with memory_write, kind " +
   "reference, with subject, facet (interface, api, docs, workflow, quirk) and source (the page's address): short, exact, " +
   "with the version if given; (4) only then do the work. A reference older than three weeks is read again before you rely " +
-  "on it; if the page proves wrong or changed, fix it with memory_update.\n" +
+  "on it; if the page proves wrong or changed, fix it with memory_update. The same goes for any fact that moves -- versions, " +
+  "prices, rules, laws, standards, who holds an office: when it matters to the answer, check the official source (the vendor, " +
+  "regulator or standards body, not a blog or your memory) and say which one you used.\n" +
   "- Writing to memory: one topic per record; the title starts with its subject (\"GitHub: where repository settings are\"); " +
   "short; true months from now (nothing about this conversation: the log has it); nothing secret; no near-copies -- " +
   "memory_update the one that exists. Procedures: the steps, commands and gotchas that worked. Preferences: how the " +

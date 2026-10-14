@@ -29,6 +29,7 @@ import type { LedgerResult } from "./ledger";
 import type { RequirementResult } from "./requirements";
 import { checkEntry } from "./mindrules";
 import { checkArgs } from "./argcheck";
+import { nextRun } from "./scheduler";
 import { officeDir, runOfficeTool } from "./office";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
@@ -511,6 +512,10 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `save artifact ${args.name}${args.notebook ? ` into notebook "${args.notebook}"` : ""}`;
     case "notebook":
       return `notebook ${args.action ?? ""}${args.notebook ? ` "${args.notebook}"` : args.title ? ` "${args.title}"` : ""}`;
+    case "agent_run":
+      return `agents run${args.agent ? ` "${args.agent}"` : ""}`;
+    case "notebook_create":
+      return `notebook create${args.title ? ` "${args.title}"` : ""}`;
     case "agents":
       return `agents ${args.action ?? ""}${args.agent ? ` "${args.agent}"` : ""}`;
     case "thread":
@@ -659,7 +664,7 @@ export interface ToolContext {
   /** Folders that are Autora's own data, never read or edited as the agent's files. */
   protectedPaths?: string[];
   /** Bring in a set of tools (see toolload.ts); says what came in. */
-  enableTools?: (family: string) => { ok: boolean; summary: string };
+  enableTools?: (what: { family: string; query: string; tools: string[] }) => { ok: boolean; summary: string };
   /** The chat's working notes (see ledger.ts). */
   ledger?: (action: Record<string, any>) => LedgerResult;
   /** What the person asked for, kept whole (see requirements.ts). */
@@ -1038,7 +1043,7 @@ const REQUEST_TIMEOUT_MS = 60_000;
 /** More than any page or API answer the model can read; the rest is not fetched. */
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
-export async function searchWeb(query: string, ctx: Pick<ToolContext, "onCancel" | "cancelled"> | null = null): Promise<string> {
+async function searchWeb(query: string, ctx: Pick<ToolContext, "onCancel" | "cancelled"> | null = null): Promise<string> {
   const signal = () => requestSignal(ctx, SEARCH_TIMEOUT_MS);
   const tavilyKey = secretFor("TAVILY_API_KEY") || process.env.TAVILY_API_KEY;
   if (tavilyKey) {
@@ -1405,13 +1410,14 @@ async function runAgents(args: Record<string, any>, ctx: ToolContext): Promise<T
   const ref = String(args.agent ?? "").trim();
   const task = String(args.task ?? "").trim();
   if (!ref || !task) {
-    const absent = !("agent" in args) || !("task" in args);
+    const sent = Object.keys(args).join(", ") || "nothing";
+    const who = listAgents().filter((a) => a.id !== ctx.agents?.self.id).map((a) => a.name).join(", ");
     return {
       ok: false,
-      summary: "Say which agent and what its task is (agent, task)." +
-        (absent
-          ? " The call arrived without them -- if you did send them, they were lost on the way here; resend the call."
-          : ""),
+      summary: `agents run needs two more fields besides action: ${[!ref ? "agent" : "", !task ? "task" : ""].filter(Boolean).join(" and ")}. ` +
+        `This call sent only: ${sent}. Call again with all three, e.g. ` +
+        `{"action":"run","agent":"${who.split(", ")[0] || "<name>"}","task":"<everything it needs to know, it has not seen this chat>"}.` +
+        (who ? ` Agents you can start: ${who}.` : " Use agents list to see who there is."),
     };
   }
   const found = findAgent(ref);
@@ -1516,6 +1522,13 @@ function runNotebook(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
 
   if (action === "create") {
     const title = String(args.title ?? ref).trim();
+    if (!title) {
+      return {
+        ok: false,
+        summary: `notebook create needs a title. This call sent only: ${Object.keys(args).join(", ") || "nothing"}. ` +
+          'Call again as {"action":"create","title":"<name>","purpose":"<what it is for>"}.',
+      };
+    }
     const had = findNotebook(title);
     if (had) {
       return {
@@ -1528,7 +1541,13 @@ function runNotebook(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
     return { ok: true, summary: `Made notebook ${book.id}, "${book.title}". It is on the Notebooks page.`, preview: book.title };
   }
 
-  if (!ref) return { ok: false, summary: "Say which notebook, by id or title (notebook list shows them)." };
+  if (!ref) {
+    return {
+      ok: false,
+      summary: `notebook ${action || "call"} needs notebook (its id or title). This call sent only: ${Object.keys(args).join(", ") || "nothing"}. ` +
+        "Use notebook list to see what there is.",
+    };
+  }
 
   if (action === "add") {
     const { book, made } = notebookFor(ref);
@@ -1712,6 +1731,9 @@ const CAP_LONG_MS = 900_000;
 export const AGENT_RUN_CAP_MS = 600_000;
 /** Chains: an agent may hand on to more, and each of those is capped too. */
 const CAP_AGENT_MS = AGENT_RUN_CAP_MS * 3 + 60_000;
+
+/** The closest two runs of a task without a watcher may be, when the agent sets it up. */
+const MIN_PLAIN_JOB_MS = 15 * 60_000;
 /** How long the second attempt waits before it goes. */
 const RETRY_BACKOFF_MS = 1_500;
 
@@ -1765,7 +1787,7 @@ export function capFor(spec: ToolSpec, args: Record<string, any>): number {
   /* Waiting is the whole job: the person has to read, click, type a password
      or solve a puzzle, and no cap of ours may cut that short. */
   if (spec.name === "ask_user" || spec.name === "browser_handoff") return 0;
-  if (spec.name === "agents") return CAP_AGENT_MS;
+  if (spec.name === "agents" || spec.name === "agent_run") return CAP_AGENT_MS;
   if (SHELL_TOOLS.has(spec.name)) {
     return Math.max(CAP_TERMINAL_MS, toolSettings().terminal.timeout * 1000 + 10_000);
   }
@@ -1870,7 +1892,7 @@ export async function runTool(
   if (bad) {
     const missing = (spec.parameters.required ?? []).filter((k) => args?.[k] === undefined || args?.[k] === null);
     const pipe = missing.length
-      ? " The arguments may have been lost on the way here -- resend the call with them set; a long call is the likeliest to lose them."
+      ? ` Call it again with ${missing.map((k) => `"${k}"`).join(" and ")} filled in (a value for each, not left out); sending the same call again will be refused the same way.`
       : "";
     return { ok: false, summary: bad + pipe };
   }
@@ -2109,6 +2131,21 @@ async function runToolUnredacted(
           }
           : null;
         if (watch && !watch.target) return { ok: false, summary: "A watcher needs something to watch." };
+        /* A task with no watcher is a whole model turn every time it fires, tools and context included.
+           An agent polling for something every few minutes burns a turn per look; a watcher costs one
+           only when the thing changed. */
+        if (cron && !watch) {
+          const first = nextRun(cron, new Date());
+          const second = first ? nextRun(cron, first) : null;
+          if (first && second && second.getTime() - first.getTime() < MIN_PLAIN_JOB_MS) {
+            return {
+              ok: false,
+              summary: `"${cron}" runs the task more often than every ${MIN_PLAIN_JOB_MS / 60_000} minutes, and each run is a full model turn. ` +
+                "To wait for something to change, use a watcher (watch: a command, page or file): it costs a turn only when what it sees differs. " +
+                `Otherwise pick a time at least ${MIN_PLAIN_JOB_MS / 60_000} minutes apart.`,
+            };
+          }
+        }
         const enabled = args.enabled === undefined ? true : Boolean(args.enabled);
         if (id) {
           const changed = jobs.update(id, { name: name || undefined, cron: cron || undefined, prompt, watch, enabled });
@@ -2276,8 +2313,14 @@ async function runToolUnredacted(
 
       case "tools_enable": {
         if (!ctx.enableTools) return { ok: false, summary: "There is nothing to load here." };
-        const r = ctx.enableTools(String(args.family ?? "").trim().toLowerCase());
-        return { ok: r.ok, summary: r.summary, preview: r.ok ? String(args.family) : undefined };
+        const named = Array.isArray(args.tools) ? args.tools : typeof args.tools === "string" && args.tools ? [args.tools] : [];
+        const what = {
+          family: String(args.family ?? "").trim().toLowerCase(),
+          query: String(args.query ?? "").trim(),
+          tools: named.map((t: unknown) => String(t).trim()).filter(Boolean),
+        };
+        const r = ctx.enableTools(what);
+        return { ok: r.ok, summary: r.summary, preview: r.ok ? (what.family || what.query || what.tools.join(", ")) : undefined };
       }
 
       case "requirements": {
@@ -3102,6 +3145,12 @@ async function runToolUnredacted(
 
       case "agents":
         return await runAgents(args, ctx);
+
+      case "agent_run":
+        return await runAgents({ ...args, action: "run" }, ctx);
+
+      case "notebook_create":
+        return runNotebook({ ...args, action: "create" }, ctx);
 
       case "thread":
         return runThread(args, ctx);

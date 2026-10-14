@@ -208,15 +208,59 @@ function brokenArgs(raw: string): boolean {
   }
 }
 
-function parseArgs(raw: string): Record<string, any> {
-  const text = raw.trim();
+export function parseArgs(raw: string): Record<string, any> {
+  let text = raw.trim();
   if (!text) return {};
+  /* Some gateways wrap the JSON in a code fence, and some models (GLM among
+     them) encode the object twice, so it parses to a string holding the real
+     JSON. Peel both rather than call the arguments lost. */
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
+  if (fenced) text = fenced[1];
   try {
-    const parsed = JSON.parse(text);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    let parsed: unknown = JSON.parse(text);
+    for (let depth = 0; depth < 2 && typeof parsed === "string"; depth += 1) parsed = JSON.parse(parsed);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, any>) : {};
   } catch {
     return {};
   }
+}
+
+/** A tool call being assembled from a stream's deltas. */
+export interface BuildingCall {
+  id: string;
+  name: string;
+  args: string;
+}
+
+/**
+ * Fold one streamed tool-call delta into the calls being built.
+ *
+ * The OpenAI wire format sends the id and name once, then argument fragments,
+ * all against an index. Vendors differ: some resend the whole name in every
+ * chunk, some send the arguments so far rather than the next piece, and some
+ * leave the index off or reuse it for a second parallel call, telling the calls
+ * apart only by id. Taken literally these give "agentsagents", doubled JSON, or
+ * two calls fused into one unparseable string whose arguments are then lost.
+ */
+export function addToolDelta(building: Map<number, BuildingCall>, part: any): void {
+  let slot = Number(part.index ?? 0);
+  const id = part.id ? String(part.id) : "";
+  if (id) {
+    // The same index under a new id is a new call, not more of the old one.
+    for (const [at, held] of building) {
+      if (held.id === id) slot = at;
+    }
+    const held = building.get(slot);
+    if (held && held.id && held.id !== id) slot = Math.max(...building.keys()) + 1;
+  }
+  const found = building.get(slot) ?? { id: "", name: "", args: "" };
+  if (id) found.id = id;
+  const name = part.function?.name ? String(part.function.name) : "";
+  if (name && name !== found.name) found.name = found.name && name.startsWith(found.name) ? name : found.name + name;
+  const piece = part.function?.arguments;
+  if (typeof piece === "string" && piece) found.args = found.args && piece.startsWith(found.args) ? piece : found.args + piece;
+  else if (piece && typeof piece === "object") found.args = JSON.stringify(piece);
+  building.set(slot, found);
 }
 
 /** The readable sentence inside a vendor's error body, which is variously a
@@ -439,6 +483,13 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
       // Only DeepSeek takes this, and only when the caller asked either way:
       // left alone, its own default stands.
       ...(deepseek && call.thinking ? { thinking: { type: call.thinking === "off" ? "disabled" : "enabled" } } : {}),
+      /* GLM thinks first too, and Z.ai (and gateways that pass the field on)
+         switch it off with the same `thinking` block. OpenRouter has its own
+         `reasoning` switch, honoured per model and ignored where a model cannot
+         turn thinking off. Only when the caller said "off": a chat turn keeps
+         whatever the model does by default. */
+      ...(!deepseek && call.thinking === "off" && /glm/i.test(call.model) ? { thinking: { type: "disabled" } } : {}),
+      ...(call.thinking === "off" && openrouter ? { reasoning: { enabled: false } } : {}),
       messages: openAiMessages(call),
       ...(call.tools?.length
         ? {
@@ -465,7 +516,7 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
      for a slot carries the id and name, and every chunk after it carries more
      of the argument JSON. So they are assembled by index and only parsed once
      the stream is done. */
-  const building = new Map<number, { id: string; name: string; args: string }>();
+  const building = new Map<number, BuildingCall>();
   let cutOff = false;
 
   for await (const payload of sse(res)) {
@@ -487,15 +538,10 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
     }
     // Kept, not shown: DeepSeek needs it sent back with the rest of the turn.
     if (typeof delta?.reasoning_content === "string") reasoning += delta.reasoning_content;
+    // OpenRouter and some gateways name it `reasoning`.
+    else if (typeof delta?.reasoning === "string") reasoning += delta.reasoning;
 
-    for (const part of delta?.tool_calls ?? []) {
-      const slot = Number(part.index ?? 0);
-      const found = building.get(slot) ?? { id: "", name: "", args: "" };
-      if (part.id) found.id = String(part.id);
-      if (part.function?.name) found.name += String(part.function.name);
-      if (part.function?.arguments) found.args += String(part.function.arguments);
-      building.set(slot, found);
-    }
+    for (const part of delta?.tool_calls ?? []) addToolDelta(building, part);
 
     if (chunk.usage) {
       usage = {

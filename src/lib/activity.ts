@@ -194,6 +194,7 @@ function doing(name: string, args: Record<string, any>): string {
     case "artifact_save": return args.name ? `Saving ${args.name}` : "Saving a file";
     case "artifact_list": return "Looking through saved files";
     case "artifact_read": return "Reading a saved file";
+    case "notebook_create": return "Making a notebook";
     case "notebook":
       return args.action === "read" ? "Reading a notebook"
         : args.action === "list" ? "Looking through notebooks"
@@ -229,6 +230,10 @@ function doing(name: string, args: Record<string, any>): string {
        the default and read "Using agents", which said none of it. The agent's
        own progress is shown under this line by its own card (agent.chime and
        agent.progress), so this says only whose report the turn is waiting on. */
+    case "agent_run": {
+      const who = String(args.agent ?? "").trim();
+      return who ? `Waiting for ${who}\u2019s report` : "Waiting for an agent\u2019s report";
+    }
     case "agents": {
       const action = String(args.action ?? "").trim().toLowerCase();
       const who = String(args.agent ?? "").trim();

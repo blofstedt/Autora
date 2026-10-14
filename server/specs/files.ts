@@ -94,7 +94,9 @@ export const filesSPECS: ToolSpec[] = [
       "and check every source is in it and every claim cites one); add (artifacts, or a note with " +
       "title/text/cites; position to insert); edit (entry and title/text/cites, or no entry to change " +
       "the notebook's title/purpose); remove (entry; the file stays an artifact); move (entry, position); " +
-      "export (the whole notebook as one Markdown artifact, files as numbered exhibits).",
+      "export (the whole notebook as one Markdown artifact, files as numbered exhibits). " +
+      "Every action beyond list needs more than action: e.g. {\"action\":\"create\",\"title\":\"Case file\",\"purpose\":\"...\"} or " +
+      "{\"action\":\"add\",\"notebook\":\"Case file\",\"artifacts\":[\"file_...\"],\"text\":\"what it shows\"}.",
     parameters: {
       type: "object",
       properties: {
@@ -124,6 +126,38 @@ export const filesSPECS: ToolSpec[] = [
     },
   },
   {
+    name: "notebook_create",
+    group: "files",
+    description:
+      "Make a new notebook (the same as notebook with action create, with the fields spelled out). " +
+      "title is its name; purpose is a line on what it is for. Then file things in it with notebook add.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "The notebook's name, like \"Smith case\"." },
+        purpose: { type: "string", description: "What the notebook is for, in a sentence." },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "agent_run",
+    group: "files",
+    description:
+      "Start one of the agents on the Organization page on a task, in a chat of its own, and wait for its report " +
+      "(the same as agents with action run, with the fields spelled out). Both fields are needed: agent is its " +
+      "name (agents list shows who there is and when to call each), task is everything it must know, since it has " +
+      "not seen this chat. Call an agent when its 'call it when' fits and it would do the part better than you.",
+    parameters: {
+      type: "object",
+      properties: {
+        agent: { type: "string", description: "The agent's name or id (agent_...)." },
+        task: { type: "string", description: "What it should do, complete enough to work from alone." },
+      },
+      required: ["agent", "task"],
+    },
+  },
+  {
     name: "agents",
     group: "files",
     description:
@@ -138,7 +172,8 @@ export const filesSPECS: ToolSpec[] = [
       "(agent); move (agent, reports_to and/or position: its boss, and its place among that boss's agents). Call an " +
       "agent when its 'call it when' fits the job and it would do the part better than you; for anything you can do in " +
       "a step or two, do it yourself. Prefer edit or merge to hire. An agent cannot be started from inside a chain " +
-      "more than three deep.",
+      "more than three deep. run needs all of action, agent and task: " +
+      "{\"action\":\"run\",\"agent\":\"Sabrina\",\"task\":\"...\"}.",
     parameters: {
       type: "object",
       properties: {

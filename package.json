@@ -1,7 +1,7 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.236",
+  "version": "0.9.237",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -19,7 +19,7 @@
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",
     "@google/genai": "^2.23.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "express": "^4.21.2",
     "fflate": "^0.8.3",
     "pdfjs-dist": "^6.3.289",

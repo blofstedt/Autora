@@ -32,7 +32,7 @@ import { ensureHostNames } from "./server/hosts";
 import { attachDictation } from "./server/dictation";
 import { missingPathIn, pathHint } from "./server/hints";
 import { MANUAL_IDS, manualId, manualText, type ManualId } from "./server/handbook";
-import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "./server/toolload";
+import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, mcpServerOf, preloadMcp, searchMcp, shortName, signatureOf, unloadedIndex, withoutUnloaded } from "./server/toolload";
 import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
 import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
 import {
@@ -43,7 +43,7 @@ import { WebPush } from "./server/webpush";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
 import {
-  connect as connectMcp, disconnect as disconnectMcp, mcpToolsGeneration,
+  connect as connectMcp, disconnect as disconnectMcp, mcpToolsGeneration, mcpTools,
   setSecretLookup as setMcpSecretLookup,
 } from "./server/mcp";
 import os from "node:os";
@@ -66,18 +66,18 @@ import {
 
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
-import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
-import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
+import { ShareGate, SHARE_IDLE_MS, SHARE_MIN_CALLS, SHARE_SYSTEM, listFinished, parseShare, shareBody, shareNote, sharePrompt } from "./server/threadshare";
+import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, mentionedAgents, recordCollab, recordWork } from "./server/agents";
+import { agentMind, clusters, remember, teach } from "./server/agentmind";
 import {
   LifeGate, MAX_AGENT_RUN, MAX_WONDERS, PACE, isNamed, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
   lifePrompt, lifeSystem, parseChoice, personWaiting, pickAgent, reactionOf, replyPrompt, reviewPrompt, reviewersOf, somethingNew, toTheRoom, trailingAgentRun, urgeOf,
-  vetLinks, wonderNote, wonderText, wondersOf,
+  vetLinks, wonderNote, wondersOf,
 } from "./server/threadlife";
 import { addComment, createPost, getPost, listPosts, onThreadActivity, onThreadReply, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
 import { lookColors, readLook } from "./src/lib/agentlook";
 import { readActivity } from "./src/lib/activity";
-import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
 import { systemRoutes } from "./server/routes/system";
@@ -170,7 +170,7 @@ import {
 } from "./server/desktop";
 import {
   availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
-  renderCall, runShellQuiet, runTool, searchWeb, terminalDir, toolSettings, updateToolSettings,
+  renderCall, runShellQuiet, runTool, terminalDir, toolSettings, updateToolSettings,
   type ToolContext, type AskRequest, type AskAnswer,
 } from "./server/tools";
 
@@ -430,6 +430,8 @@ function sweep(policy = state.retention) {
  * memory and vault stayed in the process until it restarted.
  */
 function forgetSession(id: string) {
+  shareIdle.delete(id);
+  shareDone.delete(id);
   const waiting = ephemeralDrops.get(id);
   if (waiting) {
     clearTimeout(waiting);
@@ -2362,6 +2364,20 @@ async function systemInstructionFor(
 ): Promise<{ pinned: string; note: string }> {
   const lines = [DEFAULT_PROMPT];
   const notes: string[] = [];
+  /* The person wrote @Name: they want that colleague, not the lead, to take this on. The lead is still who they are
+     talking to, so it starts the agent (agent_run, which has its own chat and report) and gives the answer back. A
+     chat that is itself an agent's task is not re-routed: the task text is the lead's, not the person's. */
+  if (said && !agentRuns.has(sessionId)) {
+    const asked = mentionedAgents(said, listAgents());
+    if (asked.length > 0) {
+      const names = asked.map((a) => a.name).join(", ");
+      notes.push(
+        `The person addressed ${names} directly with @. That is a request for ${asked.length > 1 ? "those colleagues" : "that colleague"}, not for you: ` +
+        `start ${asked.length > 1 ? "each" : "them"} with agent_run (agent: ${asked.map((a) => `"${a.name}"`).join(" / ")}, task: what the person asked, with everything it needs, since it has not seen this chat), ` +
+        "then give the person the report in your own words and say who answered. Do the work yourself only if agent_run is refused, and then say so.",
+      );
+    }
+  }
   /* Read from Settings here, every turn, so an edit applies from the next
      one. They used to open the prompt as its first line, ahead of the whole
      capability briefing and under the console's own style rules at the end
@@ -2573,7 +2589,7 @@ async function systemInstructionFor(
   const agreed = autonomyBriefing();
   if (agreed) notes.push(agreed);
 
-  const unloaded = own ? unloadedIndex(loadedTools(own)) : null;
+  const unloaded = own ? unloadedIndex(loadedTools(own), mcpTools()) : null;
   if (unloaded) notes.push(unloaded);
 
   const done = pastToolCalls(sessionId);
@@ -3158,6 +3174,8 @@ async function threadLifeStep(): Promise<void> {
     lifeNudge.delete(agent.id);
     const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])), Boolean(gifKeys().giphy || gifKeys().tenor), start);
     const raw = await backgroundCall("threads", system, prompt, FORUM_TOKENS, 0.95);
+    // A look is a model call whatever it decides, so it counts against the ceiling; only posts used to.
+    lifeGate.note(Date.now());
     const choice = parseChoice(raw);
     if (choice.action === "none") noteUnreadable(agent.name, raw);
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
@@ -3187,7 +3205,6 @@ async function threadLifeStep(): Promise<void> {
       addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me, gif });
       if (to?.kind === "agent") recordCollab(me.id, to.id, true, 2); // a conversation between colleagues builds a little rapport
     } else if (said.action === "like") toggleLike(said.post, me, said.comment);
-    lifeGate.note(Date.now());
   } catch (err) {
     log("info", "threads", `step failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
@@ -3248,9 +3265,13 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
       const system = lifeSystem(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), byId, gifs);
       const prompt = owed ? replyPrompt(post, trigger, agent.id) : reviewPrompt(post, trigger, agent.id, seen);
       const raw = await backgroundCall("threads", system, prompt, FORUM_TOKENS, 0.95);
+      lifeGate.note(Date.now());
       let said = reactionOf(raw, post, owed ? trigger : null);
       if (!said) noteUnreadable(agent.name, raw);
-      if (!said && owed) said = reactionOf(await backgroundCall("threads", system, `${prompt}\n\nReply with the one JSON comment object and nothing else.`, FORUM_TOKENS, 0.95), post, trigger);
+      if (!said && owed) {
+        said = reactionOf(await backgroundCall("threads", system, `${prompt}\n\nReply with the one JSON comment object and nothing else.`, FORUM_TOKENS, 0.95), post, trigger);
+        lifeGate.note(Date.now());
+      }
       reactSeen.set(key, post.comments.length);
       lifeLook.set(agent.id, Date.now());
       lifeNudge.delete(agent.id);
@@ -3269,7 +3290,6 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
       addComment(postRef, { text: vetLinks(clean.text, knownText(agent)), parent: said.reply_to, by: me, gif });
       const to = said.reply_to ? post.comments.find((c) => c.id === said!.reply_to)?.by : post.by;
       if (to?.kind === "agent") recordCollab(me.id, to.id, true, 2);
-      lifeGate.note(Date.now());
       reactSeen.set(key, (getPost(postRef)?.comments.length ?? 0));
       return true;
     };
@@ -3291,7 +3311,10 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
     const reviewCap = toRoom ? reviewers.length : PACE[state.threadsMood].reviewers;
     let asked = 0;
     for (const agent of reviewers) {
-      if (asked >= reviewCap || !room()) break;
+      /* Named in the person's own comment, an agent answers whatever the ceiling and the mood's cap say: being asked
+         is not chipping in. Everyone else is held to both. */
+      const askedByName = byPerson && isNamed(trigger.text, agent.name);
+      if (!askedByName && (asked >= reviewCap || !room())) continue;
       // Most of the time a colleague has nothing to add; the person's words get more attention than another agent's.
       if (!toRoom && !isNamed(trigger.text, agent.name) && Math.random() > (byPerson ? 0.7 : replyChance(run, state.threadsMood) * 0.5) && replyChance(0) < 1) continue;
       const now = getPost(postRef);
@@ -3307,72 +3330,79 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
 /* A task handed to an agent is not announced in Threads. It is started in the chat
    that called it and reports back there (agent.chime / agent.back): the person asked
    for the work in the chat, not a post per call. The forum is for what an agent wants
-   to say of its own accord (threadlife.ts) and for the news (threadnews.ts). */
+   to say of its own accord (threadlife.ts) and to pass on what a colleague should know (threadshare.ts). */
 
-/* The organization looking outward. About once an hour, one agent (not the one who
-   went last) is asked what to search for in its own field, the web is searched, and
-   it posts the one result worth the others' time, with its source. Two colleagues are
-   then nudged to answer, which is how news turns into a conversation. Off with the
-   forum, or on its own switch; at most NEWS_PER_DAY a day, and the forum's own
-   hourly ceiling counts it too. Search results are untrusted text and are only
-   ever read for a post that must cite a link they returned. */
-const newsGate = new NewsGate();
-const newsLast = new Map<string, number>();
-let newsDue = Date.now() + 10 * 60_000 + Math.random() * 10 * 60_000;
-let newsAgent: string | null = null;
-let newsBusy = false;
+/* Telling a colleague (server/threadshare.ts). Threads no longer polls the agents for something to say. When real work
+   ends -- a to-do list is finished, or the chat has been idle for a while after it -- the agent that did it is asked once
+   whether a particular colleague would act differently for something it found. If so it posts, naming them, and the note
+   is put in their own mind, recalled when it is relevant. Nothing is posted otherwise, and nobody is woken. */
+const shareGate = new ShareGate();
+/** Chats with work not yet looked at: when it last ended, and where it began. */
+const shareIdle = new Map<string, { at: number; startSeq: number }>();
+/** The finished to-do list already looked at in each chat, so it is looked at once. */
+const shareDone = new Map<string, string>();
 
-async function threadNewsStep(): Promise<void> {
-  if (!state.threadsAlive || !state.threadsUnprompted || !state.threadsNews || newsBusy || lifeBusy) return;
+function noteWork(session: Session, startSeq: number, result: TurnResult, opts: TurnOptions): void {
+  if (opts.automated || session.incognito || !state.threadsAlive || !state.threadsUnprompted) return;
+  if (!result.ranSomething || result.stopped) return;
+  // Work handed to an agent reports back to the chat that called it, not to the forum.
+  if (agentRuns.has(session.id) || automationSessions.has(session.id)) return;
+  shareIdle.set(session.id, { at: Date.now(), startSeq: shareIdle.get(session.id)?.startSeq ?? startSeq });
+  const list = latestTodos(session.events);
+  if (!listFinished(list)) return;
+  const signature = JSON.stringify(list!.items.map((i) => i.title));
+  if (shareDone.get(session.id) === signature) return;
+  shareDone.set(session.id, signature);
+  void shareCheck(session);
+}
+
+/** Once a minute: a chat that has been quiet long enough after its work gets its look. */
+function shareSweep(): void {
   const now = Date.now();
-  if (now < newsDue || !newsGate.room(now) || !lifeGate.room(now)) return;
-  const roster = listAgents().filter((a) => a.enabled);
-  if (roster.length < 2) return;
-  newsBusy = true;
-  newsDue = now + nextLookoutMs();
+  for (const [id, work] of shareIdle) {
+    const session = sessions.get(id);
+    if (!session) { shareIdle.delete(id); continue; }
+    if (session.busy || now - work.at < SHARE_IDLE_MS) continue;
+    void shareCheck(session);
+  }
+}
+
+async function shareCheck(session: Session): Promise<void> {
+  const work = shareIdle.get(session.id);
+  shareIdle.delete(session.id);
   try {
-    const specialists = roster.filter((a) => !a.builtin);
-    const agent = pickAgent(specialists.length ? specialists : roster, newsLast, newsAgent);
-    if (!agent) return;
-    newsLast.set(agent.id, now);
-    newsAgent = agent.id;
-    /* Now and then, when it has something it has been curious about, the lookout is
-       private study instead: it searches that, keeps what it learned in its own mind
-       and posts nothing. Counted against the same ceilings. */
-    const wonder = wondersOf(agent.id)[0];
-    if (wonder && Math.random() < 0.4) {
-      newsGate.note(Date.now());
-      const results = await searchWeb(wonderText(wonder));
-      const study = studyPrompt(agent, wonderText(wonder), results);
-      const learned = parseStudy(await backgroundCall("threads", study.system, study.prompt, 300));
-      if (learned) remember(agent.id, (redactDeep({ learned }) as { learned: string }).learned, "fact");
-      forgetNote(agent.id, wonder.id);
-      lifeGate.note(Date.now());
-      return;
+    if (!work || !state.threadsAlive || !state.threadsUnprompted || session.incognito) return;
+    const steps = pastToolCalls(session.id, work.startSeq);
+    if (steps.length < SHARE_MIN_CALLS) return;
+    if (!shareGate.room(Date.now())) return;
+    const roster = listAgents().filter((a) => a.enabled);
+    const author = roster.find((a) => a.id === LEAD_ID);
+    // The lead keeps no mind of its own to receive a note, so only the others are told.
+    const colleagues = roster.filter((a) => a.id !== LEAD_ID).map((a) => ({ id: a.id, name: a.name, role: a.role, when: a.when }));
+    if (!author || colleagues.length === 0) return;
+    const said: string[] = [];
+    let reply = "";
+    for (const e of session.events) {
+      if (e.seq <= work.startSeq) continue;
+      if (e.kind === "turn.user") said.push(String(e.payload?.shown ?? e.payload?.text ?? ""));
+      else if (e.kind === "turn.agent.text" && !e.payload?.local) reply = String(e.payload?.text ?? "");
     }
-    const asked = queryPrompt(agent);
-    const query = parseQuery(await backgroundCall("threads", asked.system, asked.prompt, 120));
-    if (!query) return;
-    newsGate.note(Date.now());
-    const results = await searchWeb(query);
-    const colleagues = roster.filter((a) => a.id !== agent.id);
-    const read = newsPrompt(agent, colleagues.map((a) => a.name), query, results);
-    const raw = await backgroundCall("threads", read.system, read.prompt, 600);
-    const news = readNews(raw, results);
-    if ("skip" in news) { log("info", "threads", `${agent.name}: no news post, ${news.skip}`); return; }
-    const me = { kind: "agent" as const, id: agent.id, name: agent.name };
-    const why = lifeAllowed(news.post, me);
-    if (why) { log("info", "threads", `${agent.name}: no news post, ${why}`); return; }
-    const said = redactDeep(news.post) as typeof news.post;
-    if (said.note) remember(agent.id, said.note, "lesson");
-    createPost({ title: said.title, body: said.text, tags: said.tags, by: me });
-    lifeGate.note(Date.now());
-    // Three others are drawn to it: the news is only the start of the conversation.
-    stirColleagues(colleagues, 0.5);
+    shareGate.note(Date.now());
+    const raw = await backgroundCall(session.id, SHARE_SYSTEM, sharePrompt({
+      agent: author, request: said.join("\n"), steps, reply, colleagues,
+    }), 400);
+    const share = parseShare(raw, colleagues);
+    if (!share) { log("info", "threads", `${author.name}: nothing to pass on after ${steps.length} steps`); return; }
+    const clean = redactDeep({ title: share.title, text: share.text }) as { title: string; text: string };
+    const me = { kind: "agent" as const, id: author.id, name: author.name };
+    const body = shareBody({ ...share, ...clean });
+    const why = lifeAllowed({ action: "post", title: clean.title, text: body, tags: [] }, me);
+    if (why) { log("info", "threads", `${author.name}: not passed on, ${why}`); return; }
+    createPost({ title: clean.title, body: vetLinks(body, knownText(author)), tags: ["handoff"], by: me });
+    for (const c of share.to) remember(c.id, shareNote(author.name, { ...share, ...clean }), "tip");
+    log("info", "threads", `${author.name} passed something on to ${share.to.map((c) => c.name).join(", ")}`);
   } catch (err) {
-    log("info", "threads", `news lookout failed: ${err instanceof Error ? err.message : String(err)}`);
-  } finally {
-    newsBusy = false;
+    log("info", "threads", `pass-on failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -3496,14 +3526,14 @@ const BACKGROUND_CALL_MS = 90_000;
  * AUTORA_COMPACTION_MODEL names a cheaper model of that provider to use for
  * these instead. Its cost goes in the ledger like any call.
  */
-async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number, temperature = 0.2): Promise<string> {
+async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number, temperature = 0.2, retryEmpty = false): Promise<string> {
   const active = resolveProvider();
   if (!active.provider || active.problem) throw new Error(active.problem ?? "No model is connected.");
   /* Unwatched work -- folding old turns, learning, remarks -- runs on the provider's
      fast model when Settings names one, and on the chosen model otherwise;
      AUTORA_COMPACTION_MODEL overrides both. */
   const model = (process.env.AUTORA_COMPACTION_MODEL || "").trim() || active.fastModel || active.model;
-  const turn = await streamChat({
+  const ask = (tokens: number) => streamChat({
     provider: active.provider,
     model,
     key: active.key,
@@ -3512,12 +3542,23 @@ async function backgroundCall(sessionId: string, system: string, prompt: string,
     system,
     messages: [{ role: "user", text: prompt }],
     temperature,
-    maxTokens,
+    maxTokens: tokens,
     thinkingBudget: 0,
+    thinking: "off",
     /* Unwatched work must not wait for ever: Threads holds `lifeBusy` across this call, so one
        hung request would silence the whole forum until a restart. */
     signal: AbortSignal.timeout(BACKGROUND_CALL_MS),
   }, () => undefined);
+  let turn = await ask(maxTokens);
+  /* A model that thinks whatever it is told (GLM through some gateways) spends a small budget
+     on thinking and answers with nothing. Once more with room for both -- only for work that
+     must have an answer (the compaction summary): Threads and reflection may answer with
+     nothing, and a retry at four times the budget would multiply what they cost. */
+  if (retryEmpty && !turn.text.trim()) {
+    const first = turn.usage;
+    turn = await ask(maxTokens * 4);
+    turn.usage = { ...turn.usage, input: turn.usage.input + first.input, output: turn.usage.output + first.output };
+  }
   recordUsage({
     ts: Math.floor(Date.now() / 1000),
     session: sessionId,
@@ -3776,13 +3817,17 @@ const manualGiven = (events: readonly { kind: string; payload?: Record<string, a
 /* Every tool is a default tool: all of them are in the list on every call, and the handbook (server/handbook.ts) says how
    each one works. AUTORA_LAZY_TOOLS=1 goes back to a short list that grows as it is wanted (the token-saving mode). */
 const allToolsOn = () => process.env.AUTORA_LAZY_TOOLS !== "1";
+/* Connected servers' tools are separate from that: they are loaded as the job calls for them whatever the switch
+   above says (one box had 192 of them, and sending every schema on every step cost more than all the built-in tools).
+   AUTORA_ALL_MCP=1 puts them all back in the list. */
+const allMcpOn = () => process.env.AUTORA_ALL_MCP === "1";
 /* The log only grows, so the families loaded from it are a function of its
    length: remember the last answer and walk only the events added since. The
    turn loop asks every round, and each round used to re-scan the whole
    conversation to return the same set. */
 const loadedCache = new WeakMap<Session, { upTo: number; set: Set<string> }>();
-function loadedTools(session: Session): Set<string> {
-  if (allToolsOn()) return new Set(familyIds());
+/** What the log says is loaded, without the switches. */
+function loggedTools(session: Session): Set<string> {
   const events = session.events;
   const cached = loadedCache.get(session);
   if (cached && cached.upTo === events.length) return cached.set;
@@ -3793,14 +3838,26 @@ function loadedTools(session: Session): Set<string> {
   const from = base ? cached!.upTo : 0;
   for (let i = from; i < events.length; i++) {
     const e = events[i];
-    if (e.kind === "tools.enable" && typeof e.payload?.family === "string") set.add(e.payload.family);
-    else if (e.kind === "tool.call") {
+    if (e.kind === "tools.enable") {
+      if (typeof e.payload?.family === "string") set.add(e.payload.family);
+      if (Array.isArray(e.payload?.tools)) for (const t of e.payload.tools) set.add(`mcpt:${t}`);
+    } else if (e.kind === "tool.call") {
       const name = String(e.payload?.name ?? "");
       for (const f of FAMILIES) if (f.match(name)) set.add(f.id);
+      if (mcpServerOf(name)) set.add(`mcpt:${name}`);
     }
   }
   loadedCache.set(session, { upTo: events.length, set });
   return set;
+}
+
+function loadedTools(session: Session): Set<string> {
+  const logged = loggedTools(session);
+  if (!allToolsOn() && !allMcpOn()) return logged;
+  const out = new Set(logged);
+  if (allToolsOn()) for (const id of familyIds()) out.add(id);
+  if (allMcpOn()) out.add("mcp:*");
+  return out;
 }
 
 /** Whether a PDF is in this chat: the window is open, or one came with a message. */
@@ -3816,11 +3873,17 @@ function pdfInChat(session: Session): boolean {
  * the log so the next turn has them without asking again.
  */
 function autoLoadTools(session: Session, text: string) {
-  if (allToolsOn()) return;
-  const have = loadedFromLog(session.events);
-  for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session), lazy: true })) {
-    if (!have.has(id)) emitEvent(session, "tools.enable", "system", { family: id, why: "wanted" });
+  if (!allToolsOn()) {
+    const have = loadedFromLog(session.events);
+    for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session), lazy: true })) {
+      if (!have.has(id)) emitEvent(session, "tools.enable", "system", { family: id, why: "wanted" });
+    }
   }
+  /* Connected servers' tools are loaded one by one, the ones the message is about: a server can carry a hundred
+     and ten, and a chat about one file needs none of them. The agent can still ask for more (tools_enable query). */
+  if (allMcpOn()) return;
+  const hits = preloadMcp(mcpTools(), text, loadedTools(session));
+  if (hits.length > 0) emitEvent(session, "tools.enable", "system", { tools: hits, why: "wanted" });
 }
 
 function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = [], opts: TurnOptions = {}): Promise<TurnResult> {
@@ -3873,7 +3936,10 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
          once, and again with the look back's own ideas when it has them. */
       const first = offerNextSteps(session, text, startSeq, result, opts, []);
       doneWhileAway(session, result, began, opts);
-      const ideas = await reflect(session, text, startSeq, previousReply, result);
+      /* A job or watcher runs the same prompt again and again; looking back at each run is one more model
+         call per firing that teaches the same thing. The person's own turns are the ones worth learning from. */
+      const ideas = opts.automated ? [] : await reflect(session, text, startSeq, previousReply, result);
+      noteWork(session, startSeq, result, opts);
       if (ideas.length > 0) {
         const steps = offerNextSteps(session, text, startSeq, result, opts, ideas, first);
         if (steps.length > 0) log("info", "learning", `${session.id}: ${steps.length} next steps offered`);
@@ -4392,6 +4458,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             "record of task state. Output only that record.",
           prompt,
           2048,
+          0.2,
+          true,
         );
 
       const compacted = (report: CompactionReport) => {
@@ -4571,11 +4639,46 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           }
           return result;
         },
-        enableTools: (family) => {
-          if (!FAMILIES.some((f) => f.id === family)) return { ok: false, summary: `There is no set called "${family}". The sets are: ${familyIds().join(", ")}.` };
-          if (loadedTools(session).has(family)) return { ok: true, summary: `${family} is already in your list.` };
-          emitEvent(session, "tools.enable", "agent", { family, why: "asked" }, span);
-          return { ok: true, summary: `${family} tools are in your list from your next step.` };
+        enableTools: ({ family, query, tools: named }) => {
+          const have = loadedTools(session);
+          const all = mcpTools();
+          const load: string[] = [];
+          const notes: string[] = [];
+          /* Exact tool names, with or without the mcp__server__ prefix. */
+          for (const want of named) {
+            const hit = all.find((t) => t.name === want || shortName(t.name) === want);
+            if (hit) load.push(hit.name);
+            else notes.push(`No tool called "${want}".`);
+          }
+          /* A free-text search over every connected tool: the way to find the one for a job. */
+          if (query) {
+            const found = searchMcp(all, query);
+            if (found.length === 0) notes.push(`No connected tool matches "${query}".`);
+            load.push(...found.map((t) => t.name));
+          }
+          if (family) {
+            const bare = family.replace(/^mcp:/, "");
+            if (FAMILIES.some((f) => f.id === family)) {
+              if (!have.has(family)) emitEvent(session, "tools.enable", "agent", { family, why: "asked" }, span);
+              notes.push(have.has(family) ? `${family} is already in your list.` : `${family} tools are in your list from your next step.`);
+            } else {
+              const ofServer = all.filter((t) => mcpServerOf(t.name) === bare);
+              if (ofServer.length === 0) {
+                const servers = [...new Set(all.map((t) => mcpServerOf(t.name)).filter(Boolean))].map((x) => `mcp:${x}`);
+                notes.push(`There is no set called "${family}". The sets are: ${[...familyIds(), ...servers].join(", ")}.`);
+              } else if (ofServer.length <= 25) load.push(...ofServer.map((t) => t.name));
+              else notes.push(`${bare} has ${ofServer.length} tools, too many to load at once: give query (what you want to do) or tools (names).`);
+            }
+          }
+          const fresh = [...new Set(load)].filter((n) => !have.has(`mcpt:${n}`) && !have.has("mcp:*"));
+          if (fresh.length > 0) emitEvent(session, "tools.enable", "agent", { tools: fresh, why: "asked" }, span);
+          const lines = [...new Set(load)].map((n) => signatureOf(all.find((t) => t.name === n)!));
+          if (lines.length === 0 && notes.length === 0) notes.push("Say what to load: family, query or tools.");
+          const ok = lines.length > 0 || notes.some((n) => /tools are in your list|already in your list/.test(n));
+          return {
+            ok,
+            summary: [...notes, ...(lines.length ? [`In your list from your next step (* = required):`, ...lines] : [])].join("\n"),
+          };
         },
         requirements: (action) => {
           const result = applyRequirements(latestRequirements(session.events), action);
@@ -5242,9 +5345,10 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           if (use.incomplete) {
             emitEvent(session, "tool.call", "agent", { name: use.name, args: {} }, span);
             const said =
-              `Not run: this ${use.name} call was cut off at the output limit before ` +
-              "its arguments were complete. Make it again with less in it -- " +
-              "for a long file, write it in several smaller parts.";
+              `Not run: the arguments of this ${use.name} call were not valid JSON ` +
+              "(cut off at the output limit, or garbled on the way). Make the call again, " +
+              "with the arguments as one plain JSON object; if it was long, " +
+              "split it into several smaller parts.";
             emitEvent(session, "tool.error", "agent", { error: said }, span);
             reply(false, said);
             continue;
@@ -5279,6 +5383,21 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
              model knew it was there (the console note says so, and earlier
              turns used it). Bring the set in and run the call, rather than
              make it ask first. */
+          /* A connected server's tool that is not loaded yet, called by the name in the console note. If its
+             arguments already fit the real schema the call runs (the model knew them); otherwise it is told how
+             the tool is called and the tool is loaded, which is cheaper than guessing at arguments blind. */
+          if (spec && spec.group === "mcp" && !tools.some((t) => t.name === use.name)) {
+            emitEvent(session, "tools.enable", "system", { tools: [use.name], why: "called" }, span);
+            tools = await offered();
+            const bad = checkArgs(spec.name, spec.parameters, use.args ?? {});
+            if (bad) {
+              emitEvent(session, "tool.call", "agent", { name: use.name, args: use.args }, span);
+              const said = `Not run: ${use.name} was not loaded; it is now. How it is called (* = required):\n${signatureOf(spec)}\n${bad}`;
+              emitEvent(session, "tool.error", "agent", { error: said }, span);
+              reply(false, watched(use.name, use.args, false, said, said));
+              continue;
+            }
+          }
           if (spec && !tools.some((t) => t.name === use.name)) {
             const family = FAMILIES.find((f) => f.match(use.name));
             if (family && !loadedTools(session).has(family.id)) {
@@ -5620,6 +5739,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           }
         }
         const checkpoint = watch.endRound();
+        if (!loopStop) loopStop = watch.stallStop();
         const last = replies[replies.length - 1];
         if (checkpoint && last) last.result += `\n\n${checkpoint}`;
         /* An item was finished this round and code changed since the check last
@@ -6927,7 +7047,7 @@ async function startServer() {
   }, 30_000);
   proactiveTimer.unref?.();
   /* Threads' own life: a minute's glance at whether anyone feels like speaking. Local arithmetic; the model is asked only when someone does. */
-  const lifeTimer = setInterval(() => { void threadLifeStep(); void threadNewsStep(); }, 60_000);
+  const lifeTimer = setInterval(() => { void threadLifeStep(); shareSweep(); }, 60_000);
   lifeTimer.unref?.();
   /* Memory housekeeping, daily and once shortly after a start: near-copies
      merged, month-old unconfirmed guesses nobody used dropped. */

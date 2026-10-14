@@ -395,6 +395,7 @@ export function agentBrief(agent: Agent, task: string, chain: string[]): string 
     chain.length ? `This was handed to you by ${chain.join(" -> ")}.` : "",
     `Your task:\n${task}`,
     "Finish the task and end with a short report: what you did, what you found, what is left. Your reply is passed on as it is.",
+    "Anything that changes over time (versions, prices, rules, laws, standards) is checked against the official source before you rely on it, and your report says which source.",
     next.length
       ? `After you, ${next.map((a) => a.name).join(", then ")} will take your report forward; write it so they can start from it.`
       : "",
@@ -447,3 +448,19 @@ export function bondOf(id: string, other: string): number {
   return getAgent(id)?.bonds?.[other] ?? BOND_START;
 }
 
+
+/**
+ * The enabled agents a message addresses with an @ ("@Sabrina, can you look at this lease?"). The name must stand alone
+ * (not inside an address or a longer word), case does not matter, and the lead is not one to address: it is already
+ * who is being talked to. At most three, in the order they were named.
+ */
+export function mentionedAgents<T extends { id: string; name: string; enabled: boolean }>(text: string, agents: readonly T[]): T[] {
+  const found: { at: number; agent: T }[] = [];
+  for (const agent of agents) {
+    if (!agent.enabled || agent.id === LEAD_ID || !agent.name.trim()) continue;
+    const escaped = agent.name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = new RegExp(`(^|[^\\w@.])@${escaped}(?![\\w])`, "i").exec(text);
+    if (m) found.push({ at: m.index, agent });
+  }
+  return found.sort((a, b) => a.at - b.at).slice(0, 3).map((f) => f.agent);
+}

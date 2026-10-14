@@ -100,4 +100,23 @@ test("the history survives in the state directory", () => {
   assert.ok(written["browser_open (shop.example.com)"], "stored under tool and target");
 });
 
+
+test("a call refused for its own arguments is not the tool failing", () => {
+  const refusals = [
+    "Not run: agents was called without its required argument -- missing required \"action\".",
+    "Not run: agent_run was called wrongly -- \"task\" must be string.",
+    "Say which agent and what its task is (agent, task).",
+    "agents run needs two more fields besides action: agent and task. This call sent only: action.",
+    "Not run: the arguments of this agents call were not valid JSON (cut off at the output limit, or garbled on the way).",
+    "Not run: this agents call was cut off at the output limit before its arguments were complete.",
+  ];
+  for (const text of refusals) assert.ok(health.isInputMistake(text), text);
+  assert.ok(!health.isInputMistake("exit 1"));
+  assert.ok(!health.isInputMistake("There is no agent \"Nobody\". Use agents list to see who there is."));
+  for (let i = 0; i < 10; i += 1) health.recordOutcome("agent_run", false, refusals[i % refusals.length]);
+  assert.doesNotMatch(health.healthBriefing(), /agent_run/, "ten refused calls are not a broken tool");
+  for (let i = 0; i < 6; i += 1) health.recordOutcome("agent_run", false, "Sabrina did not finish: the model returned an error");
+  assert.match(health.healthBriefing(), /agent_run: 6 of the last 6 calls failed/, "a real failure still shows");
+});
+
 console.log(`\ntool health: ${passed} passed`);

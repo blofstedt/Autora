@@ -141,6 +141,7 @@ const LOOP_LIMITS: Record<keyof LoopWatchConfig, [number, number]> = {
   staleAfter: [2, 200],
   checkEvery: [1, 500],
   stallAfter: [3, 200],
+  stallStops: [2, 50],
 };
 
 /** The knobs were fixed in code and invisible, so a turn could be stopped by
@@ -330,8 +331,6 @@ interface PersistedState {
   threadsUnprompted: boolean;
   /** How readily agents speak up in Threads unprompted (server/threadlife.ts). */
   threadsMood: ThreadMood;
-  /** Once in a while an agent searches the web for its own subject and posts what matters to Threads (server/threadnews.ts). */
-  threadsNews: boolean;
   /** Whether the agent reads a site's official documentation before acting on a site it has nothing current on. */
   groundFirst: boolean;
   /** The person's time zone (an IANA name such as Europe/Stockholm), or empty
@@ -585,9 +584,8 @@ function blank(): PersistedState {
     agentCursor: true,
     collabRemarks: true,
     threadsAlive: true,
-    threadsMood: "normal",
+    threadsMood: "quiet",
     threadsUnprompted: true,
-    threadsNews: true,
     groundFirst: true,
     timezone: "",
     loop: { ...LOOP_DEFAULTS },
@@ -680,7 +678,6 @@ function read(): PersistedState {
     if (typeof raw.threadsAlive === "boolean") state.threadsAlive = raw.threadsAlive;
     if (typeof raw.threadsUnprompted === "boolean") state.threadsUnprompted = raw.threadsUnprompted;
     if (MOODS.includes(raw.threadsMood)) state.threadsMood = raw.threadsMood;
-    if (typeof raw.threadsNews === "boolean") state.threadsNews = raw.threadsNews;
     if (typeof raw.groundFirst === "boolean") state.groundFirst = raw.groundFirst;
     if (typeof raw.timezone === "string" && validTimezone(raw.timezone)) {
       state.timezone = raw.timezone.trim();

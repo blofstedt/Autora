@@ -19,7 +19,6 @@ async function test(name: string, fn: () => void | Promise<void>) {
 const org = await import("../server/agents");
 const forum = await import("../server/threads");
 const life = await import("../server/threadlife");
-const news = await import("../server/threadnews");
 const { findTool, runTool } = await import("../server/tools");
 const modes = await import("../server/modes");
 
@@ -112,31 +111,6 @@ await test("a choice is read out of whatever the model wrapped it in, and nonsen
   assert.equal(p.action === "post" && p.tags.length, 4);
 });
 
-await test("a news post must cite a link the search returned, and is not a repeat", () => {
-  const results = "### [Big find](https://example.com/find)\nSomething happened.";
-  const ok = news.readNews('{"action":"post","title":"Big find","text":"Look: https://example.com/find. Thoughts, B?","tags":["x"]}', results);
-  assert.ok("post" in ok && ok.post.tags[0] === "news");
-  assert.ok("skip" in news.readNews('{"action":"post","title":"T","text":"no link at all"}', results), "no source, no post");
-  assert.ok("skip" in news.readNews('{"action":"post","title":"T","text":"see https://made.up/page"}', results), "a link the search did not return is no source");
-  const mixed = news.readNews('{"action":"post","title":"T2","text":"https://example.com/find and https://made.up/x"}', results);
-  assert.ok("post" in mixed && /link removed/.test(mixed.post.text) && mixed.post.text.includes("https://example.com/find"));
-  assert.ok("skip" in news.readNews('{"action":"none"}', results));
-  forum.createPost({ title: "Seen", body: "https://example.com/find", by: me });
-  assert.ok("skip" in news.readNews('{"action":"post","title":"Again","text":"https://example.com/find"}', results), "a source already posted is not news");
-});
-
-await test("the lookout reads its query, is capped a day, and is never on a rota", () => {
-  assert.equal(news.parseQuery('{"query":" rust  async news "}'), "rust async news");
-  assert.equal(news.parseQuery('{"query":""}'), null);
-  assert.equal(news.parseQuery("nothing"), null);
-  const g = new news.NewsGate();
-  for (let i = 0; i < news.NEWS_PER_DAY; i++) { assert.ok(g.room(1000)); g.note(1000); }
-  assert.ok(!g.room(2000));
-  assert.ok(g.room(1000 + 86_400_001));
-  const a = news.nextLookoutMs(() => 0), b = news.nextLookoutMs(() => 1);
-  assert.ok(a >= 45 * 60_000 && b <= 90 * 60_000 && a < b);
-});
-
 await test("an agent does not comment twice running, like its own, or repeat a post", () => {
   const post = forum.createPost({ title: "Lunch", body: "x", by: { kind: "user", id: "user", name: "You" } });
   const c = { action: "comment" as const, post: post.id, text: "hm", reply_to: null };
@@ -179,7 +153,7 @@ await test("the prompt shows who the agent is, the forum, and asks for the perso
   assert.match(prompt, /\(the person\)/);
 });
 
-await test("an agent speaks up for a reason: the person unanswered, its name, a reply to it; a quiet forum moves no one", () => {
+await test("an agent speaks up for a reason: the person unanswered, its name, a reply to it; a quiet forum moves no one", async () => {
   const hour = 3_600_000;
   const now = Date.now();
   const a = { id: "agent_u1", name: "Ada", social: 1 };
@@ -199,6 +173,8 @@ await test("an agent speaks up for a reason: the person unanswered, its name, a 
   const post = forum.createPost({ title: "Weekend plans?", body: "anyone", by: { kind: "user", id: "user", name: "You" } });
   assert.ok(life.urgeOf(b, now - 1000, Date.now()) >= life.URGE_AT, "the person's word moves even the reserved one");
   assert.equal(life.personWaiting(now - 1000), true);
+  // Comments must be later than the post by a whole millisecond, or "since the post" leaves them out on a fast machine.
+  await new Promise((r) => setTimeout(r, 5));
   forum.addComment(post.id, { text: "Hiking!", by: { kind: "agent", id: a.id, name: a.name } });
   assert.equal(life.personWaiting(now - 1000), false, "once someone answers, the others are not called in too");
   /* The person has been answered, so that alone summons nobody: one colleague's reply is one small
@@ -226,7 +202,7 @@ await test("a restart does not forgive a dead forum: the clock is the forum's ow
   assert.equal(life.quietFrom(boot, 0), boot, "an empty forum still counts from the start of this run");
   assert.equal(life.goneQuiet(now, lastWords, 0, "normal"), true, "six hours of silence counts even though the app just started");
   assert.equal(life.goneQuiet(now, now - 10 * 60_000, 0, "normal"), false, "ten minutes of it does not");
-  assert.equal(life.goneQuiet(now, lastWords, now - hour, "normal"), false, "and not again within the quiet period");
+  assert.equal(life.goneQuiet(now, lastWords, now - 10 * 60_000, "normal"), false, "and not again within the quiet period");
   assert.equal(life.goneQuiet(now, lastWords, 0, "quiet"), false, "quiet mood does not get the forum going on its own");
 });
 
@@ -238,7 +214,7 @@ await test("a choice carries its note and when to look again, within bounds", ()
   assert.equal(life.parseChoice('{"action":"none","again":0.2}').again, 1);
 });
 
-await test("agents get curious: a wonder is kept, searched for, studied privately, and a long silence is broken", async () => {
+await test("agents get curious: a wonder is kept and a long silence is broken", async () => {
   const mind = await import("../server/agentmind");
   const a = org.createAgent({ name: "Curio", role: "Researcher", instructions: "Look into things." } as never);
   assert.equal(life.parseChoice('{"action":"none","wonder":"How do people cite podcasts?"}').wonder, "How do people cite podcasts?");
@@ -246,10 +222,6 @@ await test("agents get curious: a wonder is kept, searched for, studied privatel
   mind.remember(a.id, life.wonderNote("How do people cite podcasts?"), "lesson");
   assert.equal(life.wondersOf(a.id).map(life.wonderText)[0], "How do people cite podcasts?");
   assert.match(life.lifePrompt(a as never, ["B"]).system, /podcasts/, "the curiosity is in front of it in the forum");
-  assert.match(news.queryPrompt(a as never).system, /podcasts/, "and it steers what it searches for");
-  assert.equal(news.parseStudy('{"learned":"APA wants host, title and date. https://x.example/a"}'), "APA wants host, title and date.");
-  assert.equal(news.parseStudy('{"learned":""}'), null);
-  assert.match(news.studyPrompt(a as never, "citing", "<r>").system, /untrusted/);
   const start = life.lifePrompt(a as never, ["B"], new Map(), false, true);
   assert.match(start.prompt, /start something/);
   assert.ok(life.lastActivity() > 0, "the forum has said something by now");

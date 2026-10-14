@@ -109,6 +109,29 @@ async function main() {
       await page.fill('textarea[aria-label="Task"]', "");
     });
 
+    console.log("the @ menu");
+    await test("typing @ offers the agents, Enter picks one into the text, and Escape closes it without sending", async () => {
+      const made = await app.api("POST", "/api/agents", { name: "Bookkeeper", role: "Accountant", when: "tax and ledgers" });
+      assert.equal(made.status, 200, JSON.stringify(made.body));
+      const box = 'textarea[aria-label="Task"]';
+      await page.fill(box, "please ask @Boo");
+      await page.waitForSelector('.slash-menu[aria-label="Agents"]', { timeout: 5000 });
+      assert.match(await page.innerText('.slash-menu[aria-label="Agents"]'), /@Bookkeeper\s+Accountant/);
+      await page.press(box, "Escape");
+      await page.waitForFunction(() => !document.querySelector(".slash-menu"), null, { timeout: 5000 });
+      assert.equal(await page.inputValue(box), "please ask @Boo");
+      await page.fill(box, "please ask @Bo");
+      await page.waitForSelector('.slash-menu[aria-label="Agents"]', { timeout: 5000 });
+      await page.press(box, "Enter");
+      assert.equal(await page.inputValue(box), "please ask @Bookkeeper ");
+      await page.waitForFunction(() => !document.querySelector(".slash-menu"), null, { timeout: 5000 });
+      // an address is not a mention
+      await page.fill(box, "mail me at bob@Boo");
+      await sleep(400);
+      assert.equal(await page.locator(".slash-menu").count(), 0);
+      await page.fill(box, "");
+    });
+
     console.log("the connection");
     await test("a server that restarts under an open page comes back without the thread doubling", async () => {
       app.decide = () => ({ text: "Before the restart." });

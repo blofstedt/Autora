@@ -26,6 +26,8 @@ export interface LoopWatchConfig {
   checkEvery: number;
   /** This many rounds in a row that changed nothing earns a note. */
   stallAfter: number;
+  /** ...and this many stall notes in a row, each ignored, stop the turn. */
+  stallStops: number;
 }
 
 export const LOOP_DEFAULTS: LoopWatchConfig = {
@@ -34,6 +36,7 @@ export const LOOP_DEFAULTS: LoopWatchConfig = {
   staleAfter: 10,
   checkEvery: 20,
   stallAfter: 8,
+  stallStops: 4,
 };
 
 interface LoopVerdict {
@@ -218,6 +221,22 @@ export class LoopWatch {
     }
 
     return { note: null, log: null, stop: null };
+  }
+
+  /**
+   * Whether the rounds so far are a stall that notes did not break. A model
+   * that varies its arguments every round (a new query, the next offset) is
+   * never an exact repeat, and the stall note alone is only a note: without
+   * this a turn that ignores it runs, and is billed, until the person
+   * notices. Rounds that changed nothing, `stallAfter` times `stallStops`.
+   */
+  stallStop(): string | null {
+    const { stallAfter, stallStops } = this.config;
+    if (this.idleRounds < stallAfter * stallStops) return null;
+    return (
+      `Stopped: ${this.idleRounds} rounds in a row changed nothing, after being told so ${stallStops - 1} times. ` +
+      "Tell the agent what to look for, or what to do instead."
+    );
   }
 
   /** One round of calls is done. Every so often, a checkpoint. */

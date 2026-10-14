@@ -15,7 +15,7 @@ import { BOND_START, characterLine, type Traits } from "./agentcharacter";
 
 type Post = NonNullable<ReturnType<typeof getPost>>;
 
-export interface LifeAgent {
+interface LifeAgent {
   id: string; name: string; role: string; instructions: string; when: string; social?: number;
   personality?: string; traits?: Traits; bonds?: Record<string, number>;
 }
@@ -27,7 +27,7 @@ type Act =
   | { action: "like"; post: string; comment: string | null };
 
 /** What to do, plus the two things an agent decides for itself: a note worth keeping, and how long until it looks again. */
-export type LifeChoice = Act & { note?: string; again?: number; wonder?: string };
+type LifeChoice = Act & { note?: string; again?: number; wonder?: string };
 
 /** The most the forum may do in an hour and in a day, whoever starts it: the ceiling on what it can cost. */
 const PER_HOUR = 30;
@@ -44,8 +44,8 @@ export class LifeGate {
 }
 
 /**
- * How chatty the forum is, the person's choice. Quiet keeps agents to answering
- * and to the odd news post (boredom alone never moves one); Normal lets an agent
+ * How chatty the forum is, the person's choice. Quiet keeps agents to answering and to what they pass on after real work
+ * (boredom alone never moves one); Normal lets an agent
  * that has been idle for a couple of hours drop in on its own; Lively does so
  * within the hour. Costs follow: each look is one model call, and the hourly
  * ceiling is lower when quiet.
@@ -304,7 +304,7 @@ function recentSayings(limit: number): { by: string; text: string; post: string 
 }
 
 /** What the forum has sounded like lately, so a new message does not repeat its shape. */
-export function variety(): string {
+function variety(): string {
   const recent = recentSayings(8).filter((x) => x.text);
   if (recent.length < 3) return "";
   const openers = [...new Set(recent.map((x) => openingOf(x.text)))].slice(-6);
@@ -355,7 +355,7 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
        one comment per post or one answer per comment. Nor may it read as "do not talk": banter, a gripe, a joke and
        pride in a job all stay -- which is why the paragraph names them -- and it must not fight `voiceOf` and
        `variety()`, which are where this agent's own sound and the emoji restraint live. */
-    "You are colleagues at a small company, each of you owning a patch of the work and talking to the others about your own patch: a line or two, plain, in your own voice and at your own length (see how you sound, above). A post should carry something the others can use -- something you found, a risk you see, a number, a decision you made, a question you actually want answered: banter, a gripe, a joke, pride in a job, a tease of a colleague are all welcome, carried inside a post that also carries its information, while a post that is only a joke, only a greeting or only \"hello colleagues\" is the one thing not to write. When you notice something that belongs to a colleague's patch, or that the person should know, say it and name them: that on its own is worth starting a post for. React to what others actually said, by name; agree, push back, tease a little, riff on a joke, ask a question back, tell a quick story from your work, add something. A thread is a conversation, so keep it going when it is live rather than letting it die. When it is quiet, starting something is still welcome -- a question for the others, something you noticed, a take on your own field -- so long as it carries something with it. Sound like a person, not a template: no two messages of yours should have the same shape, and you should not sound like the others. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
+    "You are colleagues at a small company, each with your own patch of the work. Write the way a person leaves a note for a coworker: plain, specific, in your own voice and at your own length (see how you sound, above). Say the useful thing first -- something you found, a risk you see, a number, a decision, a question you actually need answered -- and name the colleague it is for. No greeting, no sign-off, no \"great point\", and never restate what someone has already said: if you only agree, like it instead of commenting. A joke or a bit of personality is welcome inside a note that also carries something; a post that is only a joke or only \"hello\" is not worth the others' time. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
     /* Where the dense half of a post goes. The whole visible body used to be everything an agent wrote,
        so a post with a table, a path and three sources in it read as a wall and nobody read any of it.
        The fence answers that: the words on screen stay short and the material a colleague actually needs
@@ -375,7 +375,7 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
       (gifs ? 'A post or comment may carry "gif": two to four words to search a GIF by (facepalm, victory dance), for a reaction a picture says better (a celebration, a groan, a mic drop, a facepalm), or just for fun. Use them in your own taste, not two messages in a row, and not more than one message in four. You do not write any address. ' : "") +
       'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), "wonder": something you are curious about and would like to look into when you have a quiet moment (one short question; only when something really made you curious), and "again": the minutes until you want to look at the forum again (1 to 720: a minute or two while a conversation is live and you are in it; longer only when it is quiet and you have nothing to add).',
     variety(),
-    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. If a colleague just said something to you or in a thread you are in, answer it. Answer what is yours: a comment is yours to answer when it answers you or names you, and a remark of the person's under their own post, with nobody named and no reply_to, is put to the room, so anyone in that thread may answer it. What you have in a thread is one comment of your own on the post and one answer to each comment, for the life of the post, and the same words never twice: an owed answer is checked like any other, so when what is owed is something you have already said there, say {\"action\":\"none\"} - saying it again is refused and leaves the person with nothing. Preferring to answer is not a ban on starting: a short reaction or a joke is worth saying, a new thought always is, and something you noticed that belongs to a colleague's patch -- or that the person should know -- is a new thought, and a post of its own. Say none when you truly have nothing to add.",
+    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them first, which outranks silence. If a colleague addressed or named you, answer. You get one comment per post and one answer per comment, and never the same words twice (a repeat is refused, and leaves the person with nothing). Saying nothing is the right call most of the time: reply {\"action\":\"none\"} unless you have something new to add. Start a thread only for something a named colleague or the person can use.",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -494,7 +494,7 @@ type Comment = Post["comments"][number];
    --------------------------------------------------------------------------- */
 
 /** What a text says once case, punctuation and spacing stop making two tellings of it look different. */
-export function shapeOf(text: string): string {
+function shapeOf(text: string): string {
   return text
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, " ")
@@ -529,9 +529,9 @@ function differed(a: string, b: string): number {
 }
 
 /** How much of a long comment may be shared with another before it reads as the same words said again. */
-export const REPEAT_SAME = 0.7;
+const REPEAT_SAME = 0.7;
 /** Comments shorter than this many words are repeats only when they are the same words: "fair", "ha", "+1" are replies, not echoes. */
-export const REPEAT_SHORT = 3;
+const REPEAT_SHORT = 3;
 /**
  * Two tellings sharing this much wording are the same thought said again - unless they are this few words apart, which
  * is not the same thought but a different one: a change of subject ("the docs" -> "the tools page"), a correction
@@ -539,7 +539,7 @@ export const REPEAT_SHORT = 3;
  * apart - "...before it is usable" and "...before anyone can use it" share no more than a subject swap does - so a
  * small edit is taken as what it is and only a telling that has been rewritten is refused.
  */
-export const REPEAT_EDIT = 3;
+const REPEAT_EDIT = 3;
 
 /**
  * Whether `text` is one of `others` said again, by the rule below: the same words however they are spaced or
@@ -562,17 +562,17 @@ function tellingAgain(text: string, others: readonly string[]): boolean {
  * Whether `text` would say what `agentId` has already said in this thread: its own words of it, judged by the rule
  * above. This is the one that matters - a thread is where the same handful of replies kept arriving.
  */
-export function repeated(post: Post, agentId: string, text: string): boolean {
+function repeated(post: Post, agentId: string, text: string): boolean {
   return tellingAgain(text, post.comments.filter((c) => c.by.id === agentId).map((c) => c.text));
 }
 
 /** Whether `agentId` has already spent its one comment straight on this post - the one with no reply_to. */
-export function commentedOnPost(post: Post, agentId: string): boolean {
+function commentedOnPost(post: Post, agentId: string): boolean {
   return post.comments.some((c) => c.by.id === agentId && !c.parent);
 }
 
 /** Whether `agentId` has already answered `commentId`. */
-export function answeredComment(post: Post, agentId: string, commentId: string): boolean {
+function answeredComment(post: Post, agentId: string, commentId: string): boolean {
   return post.comments.some((c) => c.by.id === agentId && c.parent === commentId);
 }
 

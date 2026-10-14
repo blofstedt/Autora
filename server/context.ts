@@ -131,6 +131,9 @@ const CHARS_PER_TOKEN = 4;
 /** A worker that failed is not retried until this has passed, so a vendor
     that is down does not get a compaction request before every step. */
 const RETRY_AFTER_MS = 60_000;
+/* A fold that keeps failing sends the whole slice to the model each time it is tried, so the wait doubles
+   with every failure in a row (1, 2, 4 ... up to 32 minutes) and starts over when one lands. */
+const RETRY_MAX_DOUBLINGS = 5;
 /** How long a finished summary waits for a message in flight before folding
     anyway. A model call that hangs must not hold a fold for ever, and the swap
     itself is one synchronous block, so going ahead without it is safe. */
@@ -338,6 +341,7 @@ export class ContextEngine {
   private folded = 0;
   private compacting = false;
   private retryAt = 0;
+  private failedFolds = 0;
   /** Model calls that are mid-sentence right now. Above zero the agent is
       writing to the person, and a fold waits: the swap replaces the history
       the reply is being written against, and landing it there is how a
@@ -829,6 +833,7 @@ export class ContextEngine {
       const promptBefore = estimateTokens(this.systemFor(pinned), this.active);
       const before = this.active.length;
       this.anchored = written;
+      this.failedFolds = 0;
       this.folded = Math.max(this.folded, job.watermark);
       /* The newest K messages are held whatever their seq says: the message
          the agent has just written is the newest of all, and a fold must
@@ -851,7 +856,8 @@ export class ContextEngine {
     } catch (err: any) {
       // Nothing is dropped on failure: the turns stay raw until a later
       // worker succeeds, and the agent never knew one was running.
-      this.retryAt = Date.now() + RETRY_AFTER_MS;
+      this.failedFolds += 1;
+      this.retryAt = Date.now() + RETRY_AFTER_MS * 2 ** Math.min(this.failedFolds - 1, RETRY_MAX_DOUBLINGS);
       report = {
         ok: false,
         folded: 0,

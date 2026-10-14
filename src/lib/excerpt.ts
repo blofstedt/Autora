@@ -13,10 +13,10 @@
  */
 
 /** The fence a detail block opens with, anywhere in the text. */
-export const DETAIL_FENCE = /^[ \t]*(?:```|~~~)[ \t]*detail[ \t]*$/m;
+const DETAIL_FENCE = /^[ \t]*(?:```|~~~)[ \t]*detail[ \t]*$/m;
 
 /** The words, with the marks a reader does not need. */
-export const marksOff = (text: string) => text.replace(/[*_`#>~]+/g, "").replace(/\s+/g, " ").trim();
+const marksOff = (text: string) => text.replace(/[*_`#>~]+/g, "").replace(/\s+/g, " ").trim();
 
 export function plain(text: string): string {
   const [visible, folded] = text.split(DETAIL_FENCE);
