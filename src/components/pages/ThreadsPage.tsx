@@ -40,8 +40,16 @@ const byComment: Record<CommentSort, (a: ThreadComment, b: ThreadComment) => num
 
 const when = (ms: number) => ago(Math.floor(ms / 1000));
 
-/** When the newest comment on a post was made: the post's own time if nobody has replied. */
-const lastPostAt = (p: ThreadPost) => p.comments.reduce((t, c) => Math.max(t, c.created), p.created);
+/** When the newest comment on a post was made, or null if nobody has replied. */
+const lastReplyAt = (p: ThreadPost): number | null => (p.comments.length ? p.comments.reduce((t, c) => Math.max(t, c.created), 0) : null);
+
+/** "last reply 5 min ago", with the exact time on hover; "no replies yet" when there are none. */
+function LastReply({ post }: { post: ThreadPost }) {
+  const at = lastReplyAt(post);
+  return at === null
+    ? <span className="th-lastreply is-none">no replies yet</span>
+    : <span className="th-lastreply" title={`Last reply ${new Date(at).toLocaleString()}`}>last reply {when(at)}</span>;
+}
 
 function Byline({ by, at, edited }: { by: Who; at: number; edited?: number }) {
   return (
@@ -232,7 +240,7 @@ export function ThreadsPage({ topSlot }: { topSlot?: HTMLElement | null }) {
                 <span className="th-meta">
                   <Byline by={p.by} at={p.created} edited={p.edited} />
                   <span className="th-count"><IconMessage size={12} /> {p.comments.length}</span>
-                  {p.comments.length > 0 && <span title="When the last comment was posted">last post {when(lastPostAt(p))}</span>}
+                  {p.comments.length > 0 && <LastReply post={p} />}
                   {p.saved && <span className="th-count"><IconStar size={12} /> saved</span>}
                   {p.tags.map((t) => <span key={t} className="org-chip">#{t}</span>)}
                 </span>
@@ -330,7 +338,6 @@ function PostView({
   onChanged: (p: ThreadPost) => void;
   onDeleted: () => void;
 }) {
-  const [text, setText] = useState("");
   /** The comment being answered, or null for one on the post. */
   const [replyTo, setReplyTo] = useState<ThreadComment | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -345,13 +352,6 @@ function PostView({
     if (!next.delete(id)) next.add(id);
     return next;
   });
-
-  const send = () => {
-    if (!text.trim()) return;
-    makeComment(post.id, text.trim(), replyTo?.id ?? null)
-      .then((p) => { typing.current = false; setText(""); setReplyTo(null); onChanged(p); })
-      .catch((err) => setError(err.message));
-  };
 
   const mark = (marks: { pinned?: boolean; locked?: boolean; saved?: boolean }) => {
     markPost(post.id, marks).then(onChanged).catch((err) => setError(err?.message ?? "Could not change the post."));
@@ -410,7 +410,9 @@ function PostView({
               {c.gif && <ThreadGif gif={c.gif} />}
               <div className="th-acts">
                 <Vote target={c} label="this comment" onVote={(dir) => { void likeIn(post.id, c.id, dir).then(onChanged).catch(() => undefined); }} />
-                {!post.locked && <button className="btn tiny ghost" onClick={() => setReplyTo(c)}>Reply</button>}
+                {!post.locked && (
+                  <button className="btn tiny ghost" aria-expanded={replyTo?.id === c.id} onClick={() => setReplyTo(replyTo?.id === c.id ? null : c)}>Reply</button>
+                )}
                 {c.by.id === ME && (
                   <button className="btn tiny ghost" onClick={() => setEditing(c.id)} aria-label="Edit this comment"><IconEdit size={12} /></button>
                 )}
@@ -422,6 +424,12 @@ function PostView({
                   <IconTrash size={12} />
                 </button>
               </div>
+              {replyTo?.id === c.id && !post.locked && (
+                <CommentBox
+                  post={post} replyTo={c} typing={typing}
+                  onSent={(p) => { setReplyTo(null); onChanged(p); }} onCancel={() => setReplyTo(null)}
+                />
+              )}
               <ul className="th-replies">{tree(c.id, depth + 1)}</ul>
             </>
           )}
@@ -461,7 +469,10 @@ function PostView({
           ) : (
             <>
               <h2>{post.title}</h2>
-              <Byline by={post.by} at={post.created} edited={post.edited} />
+              <div className="th-bylines">
+                <Byline by={post.by} at={post.created} edited={post.edited} />
+                <LastReply post={post} />
+              </div>
               {post.body && <div className="th-body"><Markdown text={post.body} /></div>}
             </>
           )}
@@ -478,25 +489,15 @@ function PostView({
         {post.locked ? (
           <p className="jf-hint"><IconLock size={12} /> This post is locked. It takes no new comments.</p>
         ) : (
-          <form className="nb-new" onSubmit={(e) => { e.preventDefault(); send(); }}>
-            {replyTo && (
-              <p className="jf-hint">
-                Replying to {replyTo.by.name}: “{replyTo.text.slice(0, 80)}”{" "}
-                <button type="button" className="btn tiny ghost" onClick={() => setReplyTo(null)}>Cancel</button>
-              </p>
-            )}
-            <textarea
-              rows={3} value={text} maxLength={4000} placeholder="Add a comment" aria-label="Comment"
-              onChange={(e) => { typing.current = true; setText(e.target.value); }}
-            />
-            {error && <p className="set-warn">{error}</p>}
-            <div className="nb-new-acts"><button type="submit" className="btn primary" disabled={!text.trim()}>Comment</button></div>
-          </form>
+          <CommentBox post={post} replyTo={null} typing={typing} onSent={onChanged} />
         )}
         {post.locked && error && <p className="set-warn">{error}</p>}
 
         <div className="th-comments-bar">
-          <h3 className="th-comments-head">{post.comments.length} comment{post.comments.length === 1 ? "" : "s"}</h3>
+          <h3 className="th-comments-head">
+            {post.comments.length} comment{post.comments.length === 1 ? "" : "s"}
+            {post.comments.length > 0 && <small> · <LastReply post={post} /></small>}
+          </h3>
           {post.comments.length > 1 && (
             <div className="th-sorts" role="tablist" aria-label="Order of comments">
               {COMMENT_SORTS.map((s) => (
@@ -510,6 +511,48 @@ function PostView({
         <ul className="th-replies">{tree(null, 0)}</ul>
       </div>
     </div>
+  );
+}
+
+/**
+ * Where a comment is written: on the post (at the top), or under the comment it answers, where the person is looking.
+ * Its words are its own, so a reply being written is not lost when the thread refreshes.
+ */
+function CommentBox({
+  post, replyTo, typing, onSent, onCancel,
+}: {
+  post: ThreadPost; replyTo: ThreadComment | null; typing: React.MutableRefObject<boolean>;
+  onSent: (p: ThreadPost) => void; onCancel?: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const box = useRef<HTMLFormElement>(null);
+  // A reply opens under its comment: bring it into view, and put the cursor in it.
+  useEffect(() => {
+    if (!replyTo) return;
+    box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    box.current?.querySelector("textarea")?.focus({ preventScroll: true });
+  }, [replyTo]);
+  const send = () => {
+    if (!text.trim()) return;
+    makeComment(post.id, text.trim(), replyTo?.id ?? null)
+      .then((p) => { typing.current = false; setText(""); setError(null); onSent(p); })
+      .catch((err) => setError(err.message));
+  };
+  return (
+    <form ref={box} className={`nb-new ${replyTo ? "th-replybox" : ""}`} onSubmit={(e) => { e.preventDefault(); send(); }}>
+      {replyTo && <p className="jf-hint">Replying to {replyTo.by.name}</p>}
+      <textarea
+        rows={replyTo ? 2 : 3} value={text} maxLength={4000} placeholder={replyTo ? `Reply to ${replyTo.by.name}` : "Add a comment"}
+        aria-label={replyTo ? `Reply to ${replyTo.by.name}` : "Comment"}
+        onChange={(e) => { typing.current = true; setText(e.target.value); }}
+      />
+      {error && <p className="set-warn">{error}</p>}
+      <div className="nb-new-acts">
+        {onCancel && <button type="button" className="btn ghost" onClick={() => { typing.current = false; onCancel(); }}>Cancel</button>}
+        <button type="submit" className="btn primary" disabled={!text.trim()}>{replyTo ? "Reply" : "Comment"}</button>
+      </div>
+    </form>
   );
 }
 
