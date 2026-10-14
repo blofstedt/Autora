@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { AutoraMark } from "../AutoraMark";
 import { IconArrowDown, IconArrowUp, IconBot, IconChevron, IconOrg, IconPlus, IconTrash, IconX } from "../Icons";
 import {
-  createAgent, deleteAgent, fetchAgents, hueOf, underneath, updateAgent, useLook,
-  type Agent, type AgentPatch,
+  createAgent, deleteAgent, fetchAgentModels, fetchAgents, hueOf, underneath, updateAgent, useLook,
+  type Agent, type AgentModel, type AgentModels, type AgentPatch,
 } from "../../lib/organization";
+import { ModelPicker } from "../ModelPicker";
 import { every } from "../../lib/poll";
 import { sure } from "../../lib/sure";
 
@@ -256,6 +257,17 @@ function AgentEditor({
     ? { name: agent.name, role: agent.role, instructions: agent.instructions, when: agent.when, reportsTo: agent.reportsTo ?? "", next: agent.next }
     : { ...BLANK, reportsTo: agents.find((a) => a.builtin)?.id ?? "" });
   const [enabled, setEnabled] = useState(agent?.enabled ?? true);
+  /* Its own model: undefined while untouched (nothing is sent), null for the main model. */
+  const [model, setModel] = useState<AgentModel | null | undefined>(undefined);
+  const [catalog, setCatalog] = useState<AgentModels | null>(null);
+  const [picking, setPicking] = useState(false);
+  useEffect(() => {
+    if (agent?.builtin) return;
+    let alive = true;
+    void fetchAgentModels().then((c) => { if (alive) setCatalog(c); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [agent?.builtin]);
+  const own = model === undefined ? agent?.model ?? null : model;
   const [adding, setAdding] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -284,6 +296,7 @@ function AgentEditor({
     const body: AgentPatch = {
       name: form.name, role: form.role, instructions: form.instructions, when: form.when, next: form.next,
       ...(agent?.builtin ? {} : { reportsTo: form.reportsTo || null, enabled }),
+      ...(model !== undefined && !agent?.builtin ? { model } : {}),
     };
     try {
       onSaved(agent ? await updateAgent(agent.id, body) : await createAgent(body));
@@ -368,6 +381,53 @@ function AgentEditor({
           </select>
         )}
       </div>
+
+      {!agent?.builtin && catalog?.provider && (
+        <div className="org-field">
+          Model
+          <button
+            type="button"
+            className="set-select mp-open"
+            onClick={() => setPicking(true)}
+            aria-haspopup="dialog"
+            aria-label="The model it builds with"
+          >
+            <span>
+              {own
+                ? catalog.models.find((m) => m.id === own.model)?.label ?? own.model
+                : `Same as the main model (${catalog.main ?? "none chosen"})`}
+            </span>
+            <IconChevron size={13} />
+          </button>
+          <span className="jf-hint">
+            {own && own.provider !== catalog.provider
+              ? `Chosen for another provider, so it runs on the main model while ${catalog.label} is in use. Choose again.`
+              : own
+                ? "It builds with this model. Planning still uses the Planner from Settings, when one is set."
+                : "Give it a cheaper model for routine work, or a stronger one for hard work."}
+            {own && (
+              <>
+                {" "}
+                <button type="button" className="btn ghost" onClick={() => { dirty.current = true; setModel(null); }}>
+                  Use the main model
+                </button>
+              </>
+            )}
+          </span>
+          {picking && (
+            <ModelPicker
+              vendor={`${catalog.label} · ${form.name || "new agent"}`}
+              models={catalog.models}
+              model={own?.provider === catalog.provider ? own.model : ""}
+              busy={false}
+              listable={false}
+              onPick={(id) => { dirty.current = true; setModel({ provider: catalog.provider!, model: id }); setPicking(false); }}
+              onRefresh={() => undefined}
+              onClose={() => setPicking(false)}
+            />
+          )}
+        </div>
+      )}
 
       {!agent?.builtin && (
         <label className="org-check">

@@ -193,5 +193,6 @@ releaseNotes: >-
   for several rounds, or your project check fails twice in a row) the work goes back to the planner
   automatically, up to twice a task, before anything is stopped. The chat's Planning and Building chips name
   the model, and Cost per good result shows planner and builder as a pair so you can see whether the split
-  pays. Background work (condensing, learning, remarks) can have its own cheap model. Leave them empty and
-  nothing changes. Also: plainer, shorter wording across Settings, Usage and the other left-hand menus.
+  pays. Background work (condensing, learning, remarks) can have its own cheap model. Each agent on the
+  Organization page can also have a model of its own: a cheap one for routine work, a strong one for hard
+  work. Autora is told which, so it sends each job to the right agent. Leave them all empty and nothing changes. Also: plainer, shorter wording across Settings, Usage and the other left-hand menus.

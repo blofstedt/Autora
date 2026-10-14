@@ -104,7 +104,7 @@ import {
   looksOnly, permissionBriefing, permissionsOf, phaseFor, planRefusal, readOnlyCommand, PERMISSION_INFO, WORK_MODES, workMode,
   type Permissions, type WorkMode,
 } from "./server/modes";
-import { Escalation, MAX_ESCALATIONS, backgroundModelOf, conversationModels, escalationNote, hasPlanner, workModel } from "./server/roles";
+import { Escalation, MAX_ESCALATIONS, agentModelFor, backgroundModelOf, conversationModels, escalationNote, hasPlanner, workModel } from "./server/roles";
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
 import { forgetPresence, presenceFor, type Surface } from "./server/presence";
@@ -3542,6 +3542,21 @@ const BACKGROUND_CALL_MS = 90_000;
  * AUTORA_COMPACTION_MODEL names a cheaper model of that provider to use for
  * these instead. Its cost goes in the ledger like any call.
  */
+/**
+ * What a session's turns call: Settings' provider and roles, with an
+ * Organization agent's own model in place of the main one when that agent is
+ * the one running (server/roles.ts). `note` says why an agent's model was not
+ * used, when it was not.
+ */
+function providerFor(session: Session): { active: Resolved; note: string | null } {
+  const run = agentRuns.get(session.id);
+  return agentModelFor(
+    resolveProvider(),
+    run ? getAgent(run.agent) : null,
+    (id) => PROVIDERS.find((p) => p.id === id)?.label ?? id,
+  );
+}
+
 async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number, temperature = 0.2, retryEmpty = false): Promise<string> {
   const active = resolveProvider();
   if (!active.provider || active.problem) throw new Error(active.problem ?? "No model is connected.");
@@ -3956,7 +3971,7 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   const began = Date.now();
   /* The task this turn is on the books as (server/taskledger.ts): every model call it makes, the look back
      below included, is billed to it. Not opened when there is no model to call. */
-  const chosen = resolveProvider();
+  const chosen = providerFor(session).active;
   const taskId = chosen.provider && !chosen.problem
     ? openTask({ session: session.id, provider: chosen.provider, model: chosen.model, version: VERSION, automated: Boolean(opts.automated) })
     : null;
@@ -4109,7 +4124,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
     // ------------------------------------------------------ the turn --
 
-    const active = resolveProvider();
+    /* Settings' choice, or an Organization agent's own model when one is running (server/roles.ts). */
+    const { active, note: ownModelNote } = providerFor(session);
+    if (ownModelNote) emitEvent(session, "system.log", "system", { message: ownModelNote });
     const connected = Boolean(active.provider) && !active.problem;
 
     /* Which model answers, this turn and this step.

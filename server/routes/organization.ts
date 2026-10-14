@@ -12,6 +12,8 @@ import {
   AgentError, createAgent, deleteAgent, freshName, getAgent, listAgents, orgTree, updateAgent,
 } from "../agents";
 import { agentMind, forgetNote, notesOf } from "../agentmind";
+import { modelsFor, providerSpec } from "../providers";
+import { resolveProvider } from "../state";
 import {
   SORTS, ThreadError, addComment, createPost, deleteComment, deletePost, editWords, getPost, listPosts, setMarks, tagCounts, toggleLike,
   type ThreadSort, type Who,
@@ -29,6 +31,19 @@ function failed(res: Response, err: unknown) {
 export function organizationRoutes(app: Express, onPerson: () => void = () => undefined) {
   app.get("/api/agents", (_req: Request, res: Response) => {
     res.json({ agents: listAgents(), tree: orgTree() });
+  });
+
+  /* What an agent's model can be chosen from: the provider in use and its models,
+     priced (an agent's model is held to the provider it was chosen for, server/roles.ts). */
+  app.get("/api/agents-models", (_req: Request, res: Response) => {
+    const active = resolveProvider();
+    res.json({
+      provider: active.provider || null,
+      label: active.provider ? providerSpec(active.provider)?.label ?? active.provider : null,
+      main: active.model || null,
+      listable: active.provider ? Boolean(providerSpec(active.provider)?.listable) : false,
+      models: active.provider ? modelsFor(active.provider) : [],
+    });
   });
 
   app.post("/api/agents", (req: Request, res: Response) => {

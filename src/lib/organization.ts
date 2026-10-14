@@ -13,6 +13,8 @@ export type Agent = {
   next: string[];
   enabled: boolean;
   builtin?: boolean;
+  /** The model it builds with and the provider it was chosen for; absent for the main model. */
+  model?: AgentModel;
   /** Its own shape and colour (see server/agents.ts); the lead has none and keeps Autora's mark. */
   look?: AgentLook;
   /** The shape of its personality, 0..100 on five points: genial when it is made, then grown by how it talks in Threads.
@@ -25,6 +27,8 @@ export type Agent = {
   updated: number;
 };
 
+export type AgentModel = { provider: string; model: string };
+
 export type TraitName = "warmth" | "humor" | "curiosity" | "candor" | "initiative";
 
 /** The five points of the shape, in the order they are drawn round it, starting at the top. */
@@ -36,7 +40,10 @@ export const TRAITS: { key: TraitName; label: string }[] = [
   { key: "initiative", label: "Boldness" },
 ];
 
-export type AgentPatch = Partial<Pick<Agent, "name" | "role" | "instructions" | "when" | "reportsTo" | "next" | "enabled">>;
+export type AgentPatch = Partial<Pick<Agent, "name" | "role" | "instructions" | "when" | "reportsTo" | "next" | "enabled">> & {
+  /** null for the main model. */
+  model?: AgentModel | null;
+};
 
 export type Who = { kind: "agent" | "user"; id: string; name: string };
 
@@ -127,6 +134,16 @@ export const createAgent = (input: AgentPatch) =>
   call<{ agent: Agent }>("/api/agents", json("POST", input)).then((d) => d.agent);
 export const updateAgent = (id: string, patch: AgentPatch) =>
   call<{ agent: Agent }>(`/api/agents/${id}`, json("PATCH", patch)).then((d) => d.agent);
+/** What an agent's model can be chosen from: the provider in use, its main model and its models. */
+export type AgentModels = {
+  provider: string | null;
+  label: string | null;
+  main: string | null;
+  listable: boolean;
+  models: { id: string; label: string; input: number; output: number; note?: string; priced?: boolean }[];
+};
+export const fetchAgentModels = () => call<AgentModels>("/api/agents-models");
+
 export type AgentMemory = { id: string; text: string; kind: string; from: string; at: number; used: number };
 export const fetchMind = (id: string) =>
   call<{ main: boolean; memories: AgentMemory[] }>(`/api/agents/${id}/mind`);

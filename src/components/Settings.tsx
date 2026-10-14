@@ -1522,7 +1522,6 @@ function RoleRow({
           busy={busy}
           listable={card.listable}
           onPick={(id) => { onPick(id); setPicking(false); }}
-          onCustom={() => { setPicking(false); onPick(""); }}
           onRefresh={onRefresh}
           onClose={() => setPicking(false)}
         />

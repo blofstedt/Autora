@@ -11,7 +11,9 @@
  * planner that is a different model, never in a spoken turn, and at most
  * MAX_ESCALATIONS times a turn; a project check has to fail twice in a row to
  * count; the settings round-trip and the task ledger records the pair only when
- * the planner actually ran.
+ * the planner actually ran. An Organization agent's own model replaces the main
+ * model for its chat only while the provider it was chosen for is in use, says
+ * why when it is not, and is never set on the lead.
  *
  *   npx tsx tests/roles.test.ts
  */
@@ -28,6 +30,8 @@ const {
 } = await import("../server/roles");
 const { state, resolveProvider } = await import("../server/state");
 const { openTask, withTask, noteRound, closeTask, taskSummary } = await import("../server/taskledger");
+const { agentModelFor } = await import("../server/roles");
+const { createAgent, updateAgent, getAgent, agentLine, LEAD_ID } = await import("../server/agents");
 
 let passed = 0;
 async function test(name: string, fn: () => void | Promise<void>) {
@@ -171,6 +175,38 @@ await test("the task ledger keeps the pair only when both models worked", () => 
   /* Three cells: the builder alone, the pair, and the planner alone. */
   const cells = summary.cells.map((c) => `${c.planner ?? "-"}>${c.model}`).sort();
   assert.deepEqual(cells, ["->cheap", "->smart", "smart>cheap"]);
+});
+
+await test("an agent's own model builds its chat, only on the provider it was chosen for", () => {
+  const active = { provider: "deepseek", model: "deepseek-flash", plannerModel: "deepseek-v4-pro" };
+  const none = agentModelFor(active, { name: "Ada" });
+  assert.equal(none.active, active, "no model of its own: Settings' choice, untouched");
+  assert.equal(none.note, null);
+  const own = agentModelFor(active, { name: "Ada", model: { provider: "deepseek", model: "deepseek-v4-pro" } });
+  assert.equal(own.active.model, "deepseek-v4-pro");
+  assert.equal(own.active.plannerModel, "deepseek-v4-pro", "the planner stays Settings' own");
+  assert.equal(own.note, null);
+  const elsewhere = agentModelFor(active, { name: "Ada", model: { provider: "openrouter", model: "z-ai/glm" } }, (id) => id.toUpperCase());
+  assert.equal(elsewhere.active.model, "deepseek-flash", "another vendor's id is never sent here");
+  assert.match(elsewhere.note ?? "", /Ada's model \(z-ai\/glm\) is for OPENROUTER.*DEEPSEEK.*deepseek-flash/);
+  assert.equal(agentModelFor({ provider: "", model: "" }, { name: "Ada", model: { provider: "x", model: "y" } }).note, null);
+});
+
+await test("an agent's model is saved, cleared, checked, and never the lead's", () => {
+  const ada = createAgent({ name: "Ada", role: "Coder", model: { provider: "deepseek", model: "deepseek-v4-pro" } });
+  assert.deepEqual(getAgent(ada.id)?.model, { provider: "deepseek", model: "deepseek-v4-pro" });
+  assert.match(agentLine(getAgent(ada.id)!), /Builds on deepseek-v4-pro\./, "the lead is told, to route work");
+  updateAgent(ada.id, { role: "Senior coder" });
+  assert.equal(getAgent(ada.id)?.model?.model, "deepseek-v4-pro", "an edit that does not mention it keeps it");
+  updateAgent(ada.id, { model: null });
+  assert.equal(getAgent(ada.id)?.model, undefined);
+  assert.doesNotMatch(agentLine(getAgent(ada.id)!), /Builds on/);
+  updateAgent(ada.id, { model: { provider: "deepseek", model: "  " } });
+  assert.equal(getAgent(ada.id)?.model, undefined, "a blank model is the main model");
+  assert.throws(() => updateAgent(ada.id, { model: "deepseek-v4-pro" }), /provider, model/);
+  assert.throws(() => updateAgent(ada.id, { model: { provider: "", model: "m" } }), /which provider/);
+  updateAgent(LEAD_ID, { model: { provider: "deepseek", model: "deepseek-v4-pro" } });
+  assert.equal(getAgent(LEAD_ID)?.model, undefined, "the lead's model is Settings'");
 });
 
 console.log(`\n${passed} passed`);

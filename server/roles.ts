@@ -134,3 +134,31 @@ export function escalationNote(reason: string, planner: string, left: number): s
     (left > 0 ? "" : " This is the last time this turn the work is handed back.")
   );
 }
+
+/**
+ * An Organization agent's own model (step 2 of roles): it replaces the main
+ * model for that agent's chat, so the agent builds on it, while the planner and
+ * the background model stay Settings' own. An agent runs in a chat of its own,
+ * so its model never shares a conversation (or a prompt cache) with the lead's.
+ *
+ * Models are named per vendor, so the choice carries the provider it was made
+ * for and applies only while that provider is in use. Otherwise the agent runs
+ * on the main model and `note` says why, rather than sending one vendor a
+ * model id only another one knows.
+ */
+export function agentModelFor<R extends { provider: string; model: string }>(
+  active: R,
+  agent: { name: string; model?: { provider: string; model: string } } | null | undefined,
+  providerLabel: (id: string) => string = (id) => id,
+): { active: R; note: string | null } {
+  const own = agent?.model;
+  if (!own?.model || !active.provider) return { active, note: null };
+  if (own.provider !== active.provider) {
+    return {
+      active,
+      note: `${agent!.name}'s model (${own.model}) is for ${providerLabel(own.provider)}, and ${providerLabel(active.provider)} ` +
+        `is in use now, so it runs on ${active.model}. Choose it a model again on the Organization page.`,
+    };
+  }
+  return { active: { ...active, model: own.model }, note: null };
+}

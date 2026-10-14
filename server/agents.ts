@@ -47,6 +47,10 @@ interface Agent {
   bonds?: Record<string, number>;
   /** Tasks it has been started on, and how many of them it finished. */
   tasks?: { done: number; failed: number };
+  /** The model it builds with, chosen by the person on the Organization page; absent for the main model.
+      Held with the provider it was chosen for: models are named per vendor, so it only applies while that
+      provider is the one in use (see agentModelFor in server/roles.ts). The lead has none: its model is Settings'. */
+  model?: AgentModel;
   /** The lead cannot be deleted or detached from the top. */
   builtin?: boolean;
   created: number;
@@ -54,6 +58,8 @@ interface Agent {
 }
 
 export const LEAD_ID = "agent_autora";
+
+export interface AgentModel { provider: string; model: string }
 
 /** A temper between reserved and chatty. */
 const temper = (random: () => number = Math.random) => Math.round((0.6 + random() * 0.8) * 100) / 100;
@@ -177,6 +183,17 @@ function below(id: string): Set<string> {
   return out;
 }
 
+/** An agent's own model: { provider, model }, or undefined for the main model (null, "" or a blank model). */
+function saneModel(raw: unknown): AgentModel | undefined {
+  if (raw === null || raw === undefined || raw === "") return undefined;
+  if (typeof raw !== "object") throw new AgentError("model is { provider, model }, or null for the main model.");
+  const provider = clip((raw as AgentModel).provider, 40);
+  const model = clip((raw as AgentModel).model, 200);
+  if (!model) return undefined;
+  if (!/^[a-z0-9_-]+$/.test(provider)) throw new AgentError("Say which provider the model is for.");
+  return { provider, model };
+}
+
 function sanePlace(id: string, reportsTo: unknown): string {
   const ref = clip(reportsTo, 80) || LEAD_ID;
   const boss = findAgent(ref);
@@ -199,7 +216,7 @@ function saneNext(id: string, raw: unknown): string[] {
 
 export function createAgent(input: {
   name: unknown; role?: unknown; instructions?: unknown; when?: unknown;
-  reportsTo?: unknown; next?: unknown; enabled?: unknown;
+  reportsTo?: unknown; next?: unknown; enabled?: unknown; model?: unknown;
 }): Agent {
   const name = clip(input.name, MAX_NAME);
   if (!name) throw new AgentError("An agent needs a name.");
@@ -214,6 +231,8 @@ export function createAgent(input: {
     look: pickLook(load().flatMap((o) => (o.look ? [o.look] : []))), social: temper(),
     bonds: {}, tasks: { done: 0, failed: 0 },
   };
+  const model = saneModel(input.model);
+  if (model) agent.model = model;
   /* Born genial, whoever hires it: a personality is not something to ask for. */
   agent.traits = bornTraits();
   agent.character = 2;
@@ -225,7 +244,7 @@ export function createAgent(input: {
 
 export function updateAgent(id: string, patch: {
   name?: unknown; role?: unknown; instructions?: unknown; when?: unknown;
-  reportsTo?: unknown; next?: unknown; enabled?: unknown;
+  reportsTo?: unknown; next?: unknown; enabled?: unknown; model?: unknown;
 }): Agent {
   const agent = getAgent(id);
   if (!agent) throw new AgentError(`There is no agent "${id}".`);
@@ -242,6 +261,11 @@ export function updateAgent(id: string, patch: {
   if (patch.reportsTo !== undefined && !agent.builtin) agent.reportsTo = sanePlace(id, patch.reportsTo);
   if (patch.next !== undefined) agent.next = saneNext(id, patch.next);
   if (patch.enabled !== undefined && !agent.builtin) agent.enabled = Boolean(patch.enabled);
+  /* The lead's model is Settings' own; a second place to set it would be a second truth. */
+  if (patch.model !== undefined && !agent.builtin) {
+    const model = saneModel(patch.model);
+    if (model) agent.model = model; else delete agent.model;
+  }
   persist(agent);
   return agent;
 }
@@ -346,7 +370,9 @@ export function agentLine(a: Agent): string {
   const next = a.next.length ? ` Then hands to: ${a.next.map(nameOf).join(", ")}.` : "";
   const boss = a.reportsTo ? ` Reports to ${nameOf(a.reportsTo)}.` : "";
   const knows = knowsAbout(a.id);
-  return `- ${a.name} (${a.id})${a.role ? `, ${a.role}` : ""}${a.enabled ? "" : " [switched off]"}.${boss}` +
+  /* The model it builds with, so the lead can send work where it is cheapest or strongest. */
+  const runs = a.model ? ` Builds on ${a.model.model}.` : "";
+  return `- ${a.name} (${a.id})${a.role ? `, ${a.role}` : ""}${a.enabled ? "" : " [switched off]"}.${boss}${runs}` +
     `${a.when ? ` Call it when: ${a.when}` : ""}${knows ? ` Its own mind holds ${knows}.` : ""}${next}`;
 }
 

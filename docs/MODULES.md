@@ -638,6 +638,13 @@ Spectra's fetched renderer is most of what is on disk.
   escalation. A task the planner worked on records `planner` in `tasks.json`, and Cost per good result keeps the pair as its own
   cell. Traps: `pinned` names both models and must not change between rounds (cache); roles are per provider, so a planner from
   another vendor is not possible yet (`active.key`, `baseUrl`, `charge`, `applyWindow` all assume one provider per turn).
+- **An agent's own model** (`model` on an agent in `agents.ts`, `{ provider, model }`; chosen on the Organization page's editor
+  from `GET /api/agents-models`; `agentModelFor` in `roles.ts`; `providerFor(session)` in `server.ts`, used by `beginTurn` for the
+  task ledger and by `runTurn`). It replaces the main model for that agent's chat only: an agent runs in a chat of its own, so its
+  model never shares the lead's conversation or prompt cache. The planner and the background model stay Settings' own. It holds
+  the provider it was chosen for and applies only while that provider is in use; otherwise the agent runs on the main model and a
+  log line in its chat says why. Only the person sets it (the `agents` tool cannot), never on the lead, and `agentLine` tells the
+  lead "Builds on X" so it can send work where it is cheapest or strongest.
 
 ## Cost per task, the improvements log, hand-offs and personality
 
