@@ -27,6 +27,8 @@ export interface Scripted {
 }
 
 export interface Seen {
+  /** The model the request named. */
+  model: string;
   system: string;
   messages: { role: string; content: any; tool_call_id?: string; tool_calls?: any[] }[];
   tools: string[];
@@ -106,6 +108,7 @@ export async function startApp(opts: { env?: Record<string, string> } = {}): Pro
       const lastUser = [...messages].reverse().find((m) => m.role === "user" || m.role === "tool");
       const asText = (c: any) => typeof c === "string" ? c : Array.isArray(c) ? c.map((p: any) => p?.text ?? "").join("") : "";
       const view: Seen = {
+        model: String(body.model ?? ""),
         system: asText(sys?.content), messages, tools: (body.tools ?? []).map((t: any) => t.function?.name),
         last: asText(lastUser?.content),
       };

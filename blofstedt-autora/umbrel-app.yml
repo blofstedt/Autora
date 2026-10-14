@@ -186,11 +186,16 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Quick replies are quick again. A hello, a thank-you or "this is just a test" is now answered at once:
-  no plan first, no thinking before the answer, and no switch to build. When you write @Name to one of your
-  agents, that agent's report is the answer: the lead no longer takes one more turn afterwards to retell
-  it, which was the thinking that kept going after the reply had already appeared. A greeting sent to an
-  agent is also passed on to it as small talk, so the agent does not think it over either. A real task is
-  unchanged: Agent mode still plans first, and if the agent you asked fails, the lead carries on and says so.
-  A model that insists on thinking (some OpenRouter ones, such as GLM flash) used to fail the quick reply with
-  "Reasoning is mandatory"; it is now asked again without the switch and answers, at its own pace.
+  Roles: a smarter model can plan while a cheaper one builds. Under Settings, each provider now has a Planner and
+  a Background model beside Talk mode. With a planner named, the planning rounds of Agent mode (and Plan mode)
+  run on it and the building rounds on your main model, so the expensive model only does the thinking. When
+  the cheaper model gets stuck (it keeps repeating a call, the same error keeps coming back, nothing changes
+  for several rounds, or your project check fails twice in a row) the work goes back to the planner
+  automatically, up to twice a task, before anything is stopped. The chat's Planning and Building chips name
+  the model, and Cost per good result shows planner and builder as a pair so you can see whether the split
+  pays. Background work (condensing, learning, remarks) can have its own cheap model. Each agent on the
+  Organization page can also have a model of its own: a cheap one for routine work, a strong one for hard
+  work. Autora is told which, so it sends each job to the right agent. The planner, the background model and
+  an agent's model can each be on a different provider from your main one (a Claude planner over a DeepSeek
+  builder, say), each using its own key and priced on its own account; if that provider stops answering, the
+  turn carries on with your main model and says so. Leave them all empty and nothing changes. Also: plainer, shorter wording across Settings, Usage and the other left-hand menus.

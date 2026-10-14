@@ -72,7 +72,7 @@ export function Credentials() {
       const res = await fetch("/api/credentials");
       if (res.ok) setData(await res.json());
     } catch {
-      setError("Could not load credentials from the server.");
+      setError("Couldn't load credentials.");
     }
   }, []);
 
@@ -167,12 +167,11 @@ export function Credentials() {
     <section className="set-card" id="credentials-panel">
       <h3>Credentials</h3>
       <p className="jf-hint">
-        Your details and sign-ins, for Autora to type into forms and sign-in pages. It is told
-        which ones exist, never what they are: it asks for {"{{cred:first_name}}"} and the server
-        types the real value into the page. A sign-in is only ever typed into pages on its own
-        site, or on the other sites of the same account: one saved for google.ca also signs in
-        on accounts.google.com, gmail.com and youtube.com. Nothing saved here can be read back
-        out, including from this screen.
+        Details and sign-ins Autora types into forms and login pages. It knows which exist, never
+        their values: it asks for {"{{cred:first_name}}"} and the server types the real one. A
+        sign-in is only typed on its own site or the same account's other sites (one saved for
+        google.ca also works on accounts.google.com, gmail.com and youtube.com). Nothing saved
+        here can be read back, even from this screen.
       </p>
 
       {error && <p className="set-warn">{error}</p>}
@@ -216,10 +215,9 @@ export function Credentials() {
           <em className={`set-badge ${data?.logins.length ? "" : "is-unset"}`}>{data?.logins.length ?? 0} saved</em>
         </div>
         <p className="set-note">
-          A username and password per site, and optionally its authenticator key so Autora can
-          fill the 2FA code itself, the way an authenticator app would. Keeping that key here means
-          this server alone can pass both steps of the sign-in, so add it only for sites where that
-          is worth it.
+          A username and password per site, plus an optional authenticator key so Autora can fill
+          the 2FA code. With the key saved, this server alone can pass both steps, so add it only
+          where that is worth it.
         </p>
 
         {(data?.logins ?? []).map((l) => (
@@ -268,8 +266,8 @@ export function Credentials() {
               </label>
             </div>
             <p className="set-note">
-              When a site offers an authenticator app, it shows a QR code and usually a text key under
-              "Can't scan it?". Paste that key, or upload a screenshot of the QR code.
+              Sites show a QR code, and usually a text key under "Can't scan it?". Paste the key or
+              upload a screenshot of the QR code.
             </p>
             <div className="cred-actions">
               <button className="btn" onClick={saveLogin} disabled={busy || !draft.site.trim()}>Save sign-in</button>
@@ -294,8 +292,8 @@ export function Credentials() {
 
       {data && (
         <p className="set-note set-where">
-          Saved encrypted in <code>{data.file}</code>, with its key beside it, both readable only by
-          the account Autora runs as.
+          Encrypted in <code>{data.file}</code>, key beside it, both readable only by the account
+          Autora runs as.
         </p>
       )}
     </section>

@@ -87,10 +87,8 @@ export function QuietCard() {
     <section className="set-card">
       <h3>Proactivity</h3>
       <p className="jf-hint">
-        When the agent leaves its own initiative alone. Anything it started on its own account — a
-        note about a job that has finished, work it decided to begin — is held until the window is
-        over, then carried by the next thing you say. Questions you ask inside the window are still
-        answered, and schedules you set still run at the time you set them.
+        When the agent holds back. Anything it starts on its own, like a note about a finished job, waits until the
+        window ends and goes out with your next message. Your questions are still answered and your schedules still run.
       </p>
 
       <label className="opt-check">
@@ -127,7 +125,7 @@ export function QuietCard() {
           </label>
           <p className="jf-hint">
             {same
-              ? "These are the same time, so there is no window: the agent can speak up at any hour."
+              ? "Same start and end, so there is no quiet window."
               : `Your local clock: ${clock(state.from)} to ${clock(state.to)}${state.from > state.to ? ", over midnight" : ""}.`}
           </p>
         </>

@@ -13,6 +13,8 @@ export interface TaskCell {
   provider: string;
   label: string;
   model: string;
+  /** The planner that worked with `model` (Settings, Roles); absent from an older server. */
+  planner?: string | null;
   kind: string;
   kindLabel: string;
   tasks: number;
@@ -35,6 +37,7 @@ export interface TaskRow {
   kindLabel: string;
   provider: string;
   model: string;
+  planner?: string | null;
   version: string;
   cost: number;
   priced: boolean;
@@ -96,4 +99,9 @@ export function verdictText(row: Pick<TaskRow, "verdict" | "source" | "outcome">
   if (row.source === "rated") return `${word}, by you`;
   if (row.source === "check") return `${word}, by your check`;
   return "failed";
+}
+
+/** The model a task ran on, as printed: "planner → builder" when a planner took part. */
+export function modelLabel(t: { model: string; planner?: string | null }): string {
+  return t.planner ? `${t.planner} → ${t.model}` : t.model;
 }

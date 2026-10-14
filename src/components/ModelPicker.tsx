@@ -40,7 +40,8 @@ export function ModelPicker({
   /** Whether this vendor can be asked for a fresh list. */
   listable: boolean;
   onPick: (id: string) => void;
-  onCustom: () => void;
+  /** Typing an id instead; absent where the list is the only way to choose. */
+  onCustom?: () => void;
   onRefresh: () => void;
   onClose: () => void;
 }) {
@@ -131,11 +132,13 @@ export function ModelPicker({
           ))}
         </div>
 
-        <div className="modal-foot">
-          <button className="setup-more" onClick={onCustom}>
-            Type a model id…
-          </button>
-        </div>
+        {onCustom && (
+          <div className="modal-foot">
+            <button className="setup-more" onClick={onCustom}>
+              Type a model id…
+            </button>
+          </div>
+        )}
       </div>
     </div>,
     document.body,

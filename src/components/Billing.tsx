@@ -207,7 +207,7 @@ export function Billing({
     })
       .then((r) => r.json())
       .then(setUsage)
-      .catch(() => setError("Could not take that payment back."));
+      .catch(() => setError("Couldn't undo that payment."));
   }, []);
 
   const reset = useCallback(() => {
@@ -284,37 +284,36 @@ export function Billing({
         <p className="jf-hint bill-real" key={vendor.provider}>
           {vendor.spent_known
             ? vendor.headline
-              ? `All time comes from ${vendor.label}: `
-              : `${vendor.label}'s own account says: `
-            : `${vendor.label}'s own account has `}
+              ? `All time is ${vendor.label}'s own figure: `
+              : `${vendor.label} reports: `
+            : `${vendor.label} has `}
           {vendor.spent_known ? (
             <>
-              {money(vendor.topped_up_usd ?? 0)} paid in
-              less {money(vendor.balance_usd)} left is {money(vendor.lifetime_usd ?? 0)} spent.
+              {money(vendor.topped_up_usd ?? 0)} paid in, {money(vendor.balance_usd)} left,
+              so {money(vendor.lifetime_usd ?? 0)} spent.
               {" "}
               {vendor.unaccounted_usd > 0
-                ? `This ledger's rows for ${vendor.label} come to ${money(vendor.counted_usd)} of it; the other ${money(vendor.unaccounted_usd)} is money spent before those rows, or calls charged without reporting what they used.`
+                ? `Counted here: ${money(vendor.counted_usd)}. The other ${money(vendor.unaccounted_usd)} was spent before this ledger, or on calls that never reported their tokens.`
                 : vendor.counted_usd > (vendor.lifetime_usd ?? 0) + 0.01
-                  ? `The tokens counted here against that account come to ${money(vendor.counted_usd)}, which is more than its balance says has gone -- so more was paid into it than the ${money(vendor.topped_up_usd ?? 0)} recorded.`
-                  : `Counting tokens here accounts for ${money(vendor.counted_usd)} of that.`}
+                  ? `Counted here: ${money(vendor.counted_usd)}, more than the balance shows. You have probably paid in more than the ${money(vendor.topped_up_usd ?? 0)} recorded.`
+                  : `Counted here: ${money(vendor.counted_usd)}.`}
             </>
           ) : (
             <>
-              {money(vendor.balance_usd)} left in it. Nothing is recorded as paid
-              in, so there is no spend to take that away from -- set it under
-              Settings and this line becomes one.
+              {money(vendor.balance_usd)} left. Enter what you have paid in
+              under Settings to see the spend.
             </>
           )}
           {vendor.spent_known && typeof vendor.month_real_usd === "number" && (
             <>
-              {" "}This month it says {money(vendor.month_real_usd)}
-              {vendor.month_since ? `, counting from ${when(vendor.month_since)}` : ""}.
+              {" "}This month: {money(vendor.month_real_usd)}
+              {vendor.month_since ? `, since ${when(vendor.month_since)}` : ""}.
             </>
           )}
-          {" "}Last balance read {when(vendor.at)}.
+          {" "}Balance read {when(vendor.at)}.
           {vendor.auto_top_ups?.slice(-3).map((payment) => (
             <span key={payment.at}>
-              {" "}Added {money(payment.usd)} paid in on {when(payment.at)}, because the balance rose.{" "}
+              {" "}Counted {money(payment.usd)} as paid in on {when(payment.at)}, because the balance rose.{" "}
               <button
                 className="btn ghost"
                 onClick={() => undoTopUp(vendor.provider, payment.at)}
@@ -332,9 +331,9 @@ export function Billing({
           recognises is billed at a small fraction of the price. */}
       {usage.month.cached > 0 && (
         <p className="jf-hint">
-          This month {Math.round((usage.month.cached / Math.max(1, usage.month.input)) * 100)}% of
-          input tokens ({tokens(usage.month.cached)} of {tokens(usage.month.input)}) were served
-          from the provider's cache, at its lower cached price.
+          {Math.round((usage.month.cached / Math.max(1, usage.month.input)) * 100)}% of this
+          month's input ({tokens(usage.month.cached)} of {tokens(usage.month.input)}) came from the
+          provider's cache, at a lower price.
         </p>
       )}
 
@@ -345,11 +344,11 @@ export function Billing({
           <h4>Where it went this month</h4>
           <div className="bill-submodel"><span>New input</span><em>{money(usage.split.fresh)}</em></div>
           <div className="bill-submodel"><span>Cached input</span><em>{money(usage.split.cached)}</em></div>
-          <div className="bill-submodel"><span>Output (what the model wrote)</span><em>{money(usage.split.output)}</em></div>
+          <div className="bill-submodel"><span>Output</span><em>{money(usage.split.output)}</em></div>
           {usage.split.covered < usage.month.cost - 0.005 && (
             <p className="jf-hint">
-              Covers {money(usage.split.covered)} of {money(usage.month.cost)}; earlier turns were
-              recorded before this split was kept.
+              Covers {money(usage.split.covered)} of {money(usage.month.cost)}. Earlier turns
+              predate the split.
             </p>
           )}
         </div>
@@ -357,7 +356,7 @@ export function Billing({
 
       {usage.tool_feed && usage.tool_feed.length > 0 && (
         <details className="bill-recent">
-          <summary>Tool output sent to the model this month</summary>
+          <summary>Tool output sent to the model</summary>
           {usage.tool_feed.map((row) => (
             <div key={row.tool} className="bill-turn">
               <code>{row.tool}</code>
@@ -383,7 +382,7 @@ export function Billing({
               money. */}
         {topUpLabel && (
           <label className="jf-row">
-            <span>Paid in to {topUpLabel} (optional)</span>
+            <span>Paid in to {topUpLabel}</span>
             <input
               value={topUp}
               onChange={(e) => onTopUp(e.target.value)}
@@ -395,7 +394,7 @@ export function Billing({
           </label>
         )}
         <label className="jf-row">
-          <span>Monthly budget (optional)</span>
+          <span>Monthly budget</span>
           <input
             value={budget}
             onChange={(e) => onBudget(e.target.value)}
@@ -416,7 +415,7 @@ export function Billing({
             </div>
             <p className={usage.budget.over || usage.budget.near ? "set-warn" : "jf-hint"}>
               {usage.budget.over
-                ? `Over budget: ${money(usage.month.cost)} spent against a ${money(cap)} cap. Nothing has been blocked.`
+                ? `Over budget: ${money(usage.month.cost)} of ${money(cap)}. Nothing is blocked.`
                 : `${money(usage.budget.remaining ?? 0)} left of ${money(cap)} this month.`}
             </p>
           </>
@@ -455,7 +454,7 @@ export function Billing({
 
       {usage.providers.length === 0 ? (
         <p className="jf-hint bill-empty">
-          Nothing spent yet. Turns are priced and recorded here as they finish.
+          Nothing spent yet.
         </p>
       ) : (
         <div className="bill-rows">
@@ -508,31 +507,29 @@ export function Billing({
       )}
 
       <p className="bill-caveat">
-        Counted here from the tokens each vendor reports, priced from the list
-        prices shown when you pick a model
+        An estimate, not an invoice: tokens as each vendor reports them, at the
+        list prices shown when you pick a model
         {usage.vendors?.some((vendor) => vendor.headline)
-          ? ` -- except the all-time total, which is ${usage.vendors.find((vendor) => vendor.headline)!.label}'s own money: paid in, less the balance left with it, so not an estimate at all`
+          ? `. The exception is the all-time total, which is ${usage.vendors.find((vendor) => vendor.headline)!.label}'s own balance (paid in, less what is left)`
           : usage.vendors && usage.vendors.length > 0
-            ? `, including the all-time total. Each vendor's own balance is reported above, but every one of them is a single account's money and this ledger holds turns from more than one, so no one balance can be the total and it stays counted`
-            : " -- including the all-time total"}
-        . What counting cannot see is a call that ended before it reported its
-        tokens -- an answer you stopped, or an attempt retried after a dropped
-        connection -- and usage from outside this app. Both are still charged,
-        and both show up in the balance. The month and today are counted, and
-        can come out under the vendor's own for exactly that reason.
+            ? `, the all-time total included. A vendor's balance covers only its own account, and this ledger spans several`
+            : ""}
+        . Calls that ended before reporting tokens (a stopped answer, a retry
+        after a dropped connection) and usage outside this app are charged but
+        not counted, so today and this month can run under the vendor's figure.
         {usage.lifetime.estimated > 0 &&
-          ` ${turns(usage.lifetime.estimated)} had no reported token count and ${
+          ` ${turns(usage.lifetime.estimated)} had no token count and ${
             usage.lifetime.estimated === 1 ? "was" : "were"
           } estimated.`}
         {usage.lifetime.unpriced > 0 &&
           ` ${turns(usage.lifetime.unpriced)} used a model with no published price and ${
             usage.lifetime.unpriced === 1 ? "is" : "are"
-          } counted but not billed.`}
+          } counted but not priced.`}
       </p>
 
       {confirming ? (
         <div className="bill-confirm">
-          <span>Clear the whole spend history? It cannot be undone.</span>
+          <span>Clear all spend history? This can't be undone.</span>
           <button className="btn danger" onClick={reset}>Clear</button>
           <button className="btn ghost" onClick={() => setConfirming(false)}>Cancel</button>
         </div>

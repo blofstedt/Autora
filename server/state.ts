@@ -21,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { isEphemeral } from "./ephemeral";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
+import type { Target } from "./roles";
 import { LOOP_DEFAULTS, type LoopWatchConfig } from "./loopwatch";
 import { mergeVerify, VERIFY_DEFAULTS, type VerifyConfig } from "./verify";
 import type { McpServerConfig } from "./mcp";
@@ -246,6 +247,20 @@ interface PersistedState {
       over when the question turns out to need the work. Empty means talk mode
       uses the main model, exactly as it did before this existed. */
   fastModels: Record<string, string>;
+  /** Roles (see ./roles): the model that plans, per provider. In Agent and Plan
+      mode the planning rounds run on it, and the building rounds on the main
+      model above, so a smart model thinks the task through and a cheaper one
+      does the many rounds of work. Empty means the main model plans too. */
+  plannerModels: Record<string, string>;
+  /** Roles: the model for unwatched work (condensing old turns, learning,
+      remarks), per provider. Empty means talk mode's model when one is named,
+      else the main model -- what background work used before roles existed. */
+  backgroundModels: Record<string, string>;
+  /** Which provider each of those two roles is on, keyed by the main provider.
+      Empty (or absent) means the main provider itself; another one is reached
+      with that provider's own key and address (see roleTarget). */
+  plannerProviders: Record<string, string>;
+  backgroundProviders: Record<string, string>;
   /** Per-provider API root override. Mostly for local servers and proxies. */
   baseUrls: Record<string, string>;
   /** Per-provider endpoint pin: the ONE model and the ONE endpoint of it that
@@ -556,6 +571,10 @@ function blank(): PersistedState {
     provider: "auto",
     models: {},
     fastModels: {},
+    plannerModels: {},
+    backgroundModels: {},
+    plannerProviders: {},
+    backgroundProviders: {},
     baseUrls: {},
     endpointPins: {},
     systemPrompt: DEFAULT_PROMPT,
@@ -653,6 +672,10 @@ function read(): PersistedState {
     if (typeof raw.provider === "string") state.provider = raw.provider;
     if (raw.models && typeof raw.models === "object") state.models = { ...raw.models };
     if (raw.fastModels && typeof raw.fastModels === "object") state.fastModels = { ...raw.fastModels };
+    if (raw.plannerModels && typeof raw.plannerModels === "object") state.plannerModels = { ...raw.plannerModels };
+    if (raw.backgroundModels && typeof raw.backgroundModels === "object") state.backgroundModels = { ...raw.backgroundModels };
+    if (raw.plannerProviders && typeof raw.plannerProviders === "object") state.plannerProviders = { ...raw.plannerProviders };
+    if (raw.backgroundProviders && typeof raw.backgroundProviders === "object") state.backgroundProviders = { ...raw.backgroundProviders };
     if (raw.baseUrls && typeof raw.baseUrls === "object") state.baseUrls = { ...raw.baseUrls };
     if (raw.endpointPins && typeof raw.endpointPins === "object") state.endpointPins = { ...raw.endpointPins };
     if (typeof raw.systemPrompt === "string") state.systemPrompt = raw.systemPrompt;
@@ -1132,6 +1155,54 @@ export function fastModelFor(providerId: string): string {
   return (state.fastModels[providerId] || "").trim();
 }
 
+/** The model that plans, when one is named for the provider. Empty means the
+    main model plans as well. See ./roles. */
+export function plannerModelFor(providerId: string): string {
+  return (state.plannerModels[providerId] || "").trim();
+}
+
+/** The model for background work, when one is named. Empty means the old rule
+    (talk mode's model, else the main one). See ./roles. */
+export function backgroundModelFor(providerId: string): string {
+  return (state.backgroundModels[providerId] || "").trim();
+}
+
+/** The provider a role is on, for a main provider: its own id when none is named. */
+export function roleProviderFor(role: "planner" | "background", providerId: string): string {
+  const named = ((role === "planner" ? state.plannerProviders : state.backgroundProviders)[providerId] || "").trim();
+  return named || providerId;
+}
+
+/** A provider's key and address, or null when it cannot be reached (no key; a
+    local server needs none). */
+export function reachFor(providerId: string): { key: string; baseUrl: string } | null {
+  if (!providerSpec(providerId)) return null;
+  const key = keyFor(providerId);
+  if (!key && providerId !== "local") return null;
+  return { key, baseUrl: baseUrlFor(providerId) };
+}
+
+/**
+ * A role's model as a whole target, for a main provider: null when no model is
+ * named, and null with a reason when it is on a provider that cannot be reached
+ * (its key was removed), so the role falls back to the main model and Settings
+ * can say why rather than every turn failing.
+ */
+export function roleTarget(role: "planner" | "background", providerId: string): { target: Target | null; problem: string | null } {
+  const model = role === "planner" ? plannerModelFor(providerId) : backgroundModelFor(providerId);
+  if (!model) return { target: null, problem: null };
+  const provider = roleProviderFor(role, providerId);
+  const reach = reachFor(provider);
+  if (!reach) {
+    const label = providerSpec(provider)?.label ?? provider;
+    return {
+      target: null,
+      problem: `The ${role} (${model}) is on ${label}, which has no key, so the main model does that work.`,
+    };
+  }
+  return { target: { provider, model, ...reach }, problem: null };
+}
+
 /** One model, and one endpoint of it, a routing vendor is held to. */
 interface EndpointPin {
   /** The model this pin was made for; the pin applies to it and no other. */
@@ -1190,6 +1261,12 @@ export interface Resolved {
   /** Talk mode's own model: the fast one, when the vendor has one named.
       Empty when live voice should answer with `model` like everything else. */
   fastModel: string;
+  /** The planner when one is named and reachable; null means `model` plans too. See ./roles. */
+  planner: Target | null;
+  /** The background model when one is named and reachable; null means the old rule. */
+  background: Target | null;
+  /** A role that is named and cannot be used, said in a sentence. */
+  roleProblems: string[];
   key: string;
   baseUrl: string;
   /** Why nothing is usable, when nothing is. */
@@ -1221,6 +1298,9 @@ export function resolveProvider(): Resolved {
         provider: "",
         model: "",
         fastModel: "",
+        planner: null,
+        background: null,
+        roleProblems: [],
         key: "",
         baseUrl: "",
         problem: "No provider is connected yet. Add an API key for one.",
@@ -1234,6 +1314,9 @@ export function resolveProvider(): Resolved {
       provider: chosen,
       model: "",
       fastModel: "",
+      planner: null,
+      background: null,
+      roleProblems: [],
       key: "",
       baseUrl: "",
       problem: `Unknown provider "${chosen}".`,
@@ -1245,11 +1328,16 @@ export function resolveProvider(): Resolved {
   let problem: string | null = null;
   if (!key && chosen !== "local") problem = `${spec.label} has no API key set.`;
   else if (!model) problem = `No model chosen for ${spec.label}.`;
+  const planner = roleTarget("planner", chosen);
+  const background = roleTarget("background", chosen);
 
   return {
     provider: chosen,
     model,
     fastModel: fastModelFor(chosen),
+    planner: planner.target,
+    background: background.target,
+    roleProblems: [planner.problem, background.problem].filter((p): p is string => Boolean(p)),
     key,
     baseUrl: baseUrlFor(chosen),
     problem,

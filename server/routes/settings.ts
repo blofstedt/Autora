@@ -13,10 +13,11 @@ import { AUTO_ORDER, PRICES_CHECKED, PROVIDERS, modelsFor, providerSpec } from "
 import { mergePush, readyChannels } from "../push";
 import { mergeProactivity } from "../quiet";
 import { forgetSpeech, speakStream, speechStatus, speak as synthesise } from "../speech";
-import { FONTS, THEMES, applyTimezone, baseUrlFor, endpointPinSaved, fastModelFor, keyFor, keySource, machineTimezone, maskKey, mergeAppearance, mergeLoop, mergeRetention, mergeSpeech, modelFor, resolveProvider, save, setEndpointPin, setKey, state, stateFilePath, validTimezone } from "../state";
+import { FONTS, THEMES, applyTimezone, baseUrlFor, endpointPinSaved, fastModelFor, backgroundModelFor, plannerModelFor, roleProviderFor, keyFor, keySource, machineTimezone, maskKey, mergeAppearance, mergeLoop, mergeRetention, mergeSpeech, modelFor, resolveProvider, save, setEndpointPin, setKey, state, stateFilePath, validTimezone } from "../state";
 import { groupStates, toolSettings, updateToolSettings } from "../tools";
 import { forgetVendorMoney, setTopUp } from "../vendor-money";
 import { mergeVerify } from "../verify";
+import { hasPlanner } from "../roles";
 import type { WebPush } from "../webpush";
 
 export function settingsRoutes(app: Express, deps: {
@@ -86,6 +87,13 @@ export function settingsRoutes(app: Express, deps: {
         },
         model: modelFor(spec.id),
         fast_model: fastModelFor(spec.id),
+        /* Roles: the model that plans and the one for background work. Empty
+           means the main model plans, and background work keeps its old rule. */
+        planner_model: plannerModelFor(spec.id),
+        background_model: backgroundModelFor(spec.id),
+        /* Which provider each of those is on: this one unless another is named. */
+        planner_provider: roleProviderFor("planner", spec.id),
+        background_provider: roleProviderFor("background", spec.id),
         endpoint_pin: endpointPinSaved(spec.id)?.endpoint ?? "",
         /* Which model that pin is holding. The row says so when it is not the
            model chosen now: the pin applies to the model it was made for. */
@@ -138,6 +146,14 @@ export function settingsRoutes(app: Express, deps: {
         // What the next turn will actually call, rather than a name written
         // down once and left behind by every model change since.
         model: active.model || null,
+        /* The model that plans, when Roles names a different one. */
+        planner: hasPlanner(active)
+          ? (active.planner!.provider === active.provider
+            ? active.planner!.model
+            : `${active.planner!.model} (${PROVIDERS.find((p) => p.id === active.planner!.provider)?.label ?? active.planner!.provider})`)
+          : null,
+        /* A role named on a provider that has no key now: said, since its work quietly moved to the main model. */
+        role_problems: active.roleProblems,
         endpoint: active.provider ? baseUrlFor(active.provider) : null,
         provider: activeSpec?.label ?? null,
         // Not the name again -- that is already on the line above. What is
@@ -224,6 +240,36 @@ export function settingsRoutes(app: Express, deps: {
       for (const [id, model] of Object.entries(body.fast_models)) {
         if (!known.has(id) || typeof model !== "string") continue;
         state.fastModels[id] = model.trim();
+      }
+    }
+
+    /* Roles: the planner and the background model, per provider. Empty is a
+       real choice (the main model plans; background work keeps its old rule). */
+    for (const [field, into] of [
+      ["planner_models", state.plannerModels],
+      ["background_models", state.backgroundModels],
+    ] as const) {
+      const given = body[field];
+      if (!given || typeof given !== "object") continue;
+      for (const [id, model] of Object.entries(given)) {
+        if (!known.has(id) || typeof model !== "string") continue;
+        into[id] = model.trim();
+      }
+    }
+    /* And which provider each role is on, keyed by the main provider: "" or the
+       main provider's own id means itself. A provider Autora does not know is
+       skipped, not a 400: the fields above may already be applied. */
+    for (const [field, into] of [
+      ["planner_providers", state.plannerProviders],
+      ["background_providers", state.backgroundProviders],
+    ] as const) {
+      const given = body[field];
+      if (!given || typeof given !== "object") continue;
+      for (const [id, other] of Object.entries(given)) {
+        if (!known.has(id) || typeof other !== "string") continue;
+        const to = other.trim();
+        if (to && (to === "auto" || !known.has(to))) continue;
+        into[id] = to === id ? "" : to;
       }
     }
 

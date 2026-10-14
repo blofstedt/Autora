@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconCheck, IconCoin, IconRepeat, IconX } from "./Icons";
 import { money } from "./Billing";
-import { groupByKind, perGoodText, verdictText, type Mark, type TaskRow, type TaskSummary } from "../lib/taskcost";
+import { groupByKind, modelLabel, perGoodText, verdictText, type Mark, type TaskRow, type TaskSummary } from "../lib/taskcost";
 
 const when = (ts: number) =>
   new Date(ts * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -81,9 +81,8 @@ export function TaskCosts() {
       </div>
 
       <p className="jf-hint">
-        What a good result costs, for each kind of work and each model. A task is good or poor only when you
-        mark it, when the check you set for your project says so, or when it ends in an error. A task nothing
-        speaks for is left out of the price, not counted as good.
+        What a good result costs, by kind of work and model. A task counts as good or poor only when you
+        mark it, your project check says so, or it ends in an error. Unjudged tasks are left out.
       </p>
 
       <div className="seg task-scope" role="group" aria-label="Which builds">
@@ -97,7 +96,7 @@ export function TaskCosts() {
 
       {groups.length === 0 ? (
         <p className="jf-hint bill-empty">
-          No tasks yet{thisBuild ? " on this build" : ""}. Each request you make is recorded here as it finishes.
+          No tasks yet{thisBuild ? " on this build" : ""}.
         </p>
       ) : (
         groups.map((group) => (
@@ -107,8 +106,8 @@ export function TaskCosts() {
               const figure = perGoodText(cell, summary.minJudged);
               const mixed = cell.versions.length > 1;
               return (
-                <div key={`${cell.provider}/${cell.model}`} className="task-cell" title={figure.why}>
-                  <code className="task-model">{cell.model}</code>
+                <div key={`${cell.provider}/${cell.planner ?? ""}/${cell.model}`} className="task-cell" title={figure.why}>
+                  <code className="task-model">{modelLabel(cell)}</code>
                   <span className="task-meta">
                     {count(cell.tasks, "task")}
                     {cell.judged > 0 ? ` · ${cell.good} good, ${cell.poor} poor` : ""}
@@ -128,12 +127,12 @@ export function TaskCosts() {
 
       {summary.recent.length > 0 && (
         <details className="bill-recent">
-          <summary>Recent tasks — mark how they went</summary>
+          <summary>Recent tasks: mark how they went</summary>
           {summary.recent.map((row) => (
             <div key={row.id} className="task-row">
               <span className="bill-turn-when">{when(row.ts)}</span>
               <span className="task-row-kind">{row.kindLabel}{row.automated ? " (scheduled)" : ""}</span>
-              <code>{row.model}</code>
+              <code>{modelLabel(row)}</code>
               <span className={`task-verdict ${row.verdict ? `is-${row.verdict}` : ""}`}>{verdictText(row)}</span>
               <em>{row.priced ? money(row.cost) : "—"}</em>
               <button
@@ -160,12 +159,10 @@ export function TaskCosts() {
       )}
 
       <p className="bill-caveat">
-        The cost is every model call the task made, counted from the tokens the vendor reported and priced at the
-        time, so it can fall short of an invoice for the reasons the Billing card gives. Which kind of work a task
-        was comes from the tools it used. {count(summary.tasks, "task")} counted
-        {summary.tasks > 0 && ` -- the price of a good result needs ${summary.minJudged} judged ones for a model and a kind of work.`}
-        {summary.tasks === 0 && "."} Tasks on a model with no published price are counted, never priced. Marks come from
-        the tasks you choose to mark, which tend to be the ones that went especially well or badly.
+        Cost is every model call in the task, so it can fall short of an invoice (see Billing). The kind of work comes
+        from the tools used. {count(summary.tasks, "task")} counted
+        {summary.tasks > 0 && `; a price needs ${summary.minJudged} judged tasks per model and kind of work`}.
+        {" "}Models with no published price are counted, not priced. Marks skew toward tasks that went very well or very badly.
       </p>
     </section>
   );

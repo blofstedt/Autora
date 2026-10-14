@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { AutoraMark } from "../AutoraMark";
 import { IconArrowDown, IconArrowUp, IconBot, IconChevron, IconOrg, IconPlus, IconTrash, IconX } from "../Icons";
 import {
-  createAgent, deleteAgent, fetchAgents, hueOf, underneath, updateAgent, useLook,
-  type Agent, type AgentPatch,
+  createAgent, deleteAgent, fetchAgentModels, fetchAgents, hueOf, underneath, updateAgent, useLook,
+  type Agent, type AgentModel, type AgentModels, type AgentPatch,
 } from "../../lib/organization";
+import { ModelPicker } from "../ModelPicker";
 import { every } from "../../lib/poll";
 import { sure } from "../../lib/sure";
 
@@ -256,6 +257,19 @@ function AgentEditor({
     ? { name: agent.name, role: agent.role, instructions: agent.instructions, when: agent.when, reportsTo: agent.reportsTo ?? "", next: agent.next }
     : { ...BLANK, reportsTo: agents.find((a) => a.builtin)?.id ?? "" });
   const [enabled, setEnabled] = useState(agent?.enabled ?? true);
+  /* Its own model: undefined while untouched (nothing is sent), null for the main model. */
+  const [model, setModel] = useState<AgentModel | null | undefined>(undefined);
+  const [catalog, setCatalog] = useState<AgentModels | null>(null);
+  const [picking, setPicking] = useState(false);
+  /* Which provider's models the picker shows: the agent's own, or the main one. */
+  const [vendor, setVendor] = useState(agent?.model?.provider ?? "");
+  useEffect(() => {
+    if (agent?.builtin) return;
+    let alive = true;
+    void fetchAgentModels().then((c) => { if (alive) setCatalog(c); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [agent?.builtin]);
+  const own = model === undefined ? agent?.model ?? null : model;
   const [adding, setAdding] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -284,6 +298,7 @@ function AgentEditor({
     const body: AgentPatch = {
       name: form.name, role: form.role, instructions: form.instructions, when: form.when, next: form.next,
       ...(agent?.builtin ? {} : { reportsTo: form.reportsTo || null, enabled }),
+      ...(model !== undefined && !agent?.builtin ? { model } : {}),
     };
     try {
       onSaved(agent ? await updateAgent(agent.id, body) : await createAgent(body));
@@ -368,6 +383,66 @@ function AgentEditor({
           </select>
         )}
       </div>
+
+      {!agent?.builtin && catalog?.provider && (() => {
+        const offered = catalog.providers;
+        const reachable = own ? offered.find((p) => p.id === own.provider) : undefined;
+        const from = offered.find((p) => p.id === vendor) ?? offered.find((p) => p.id === catalog.provider) ?? offered[0];
+        const named = (o: AgentModel) => {
+          const there = offered.find((p) => p.id === o.provider);
+          const label = there?.models.find((m) => m.id === o.model)?.label ?? o.model;
+          return o.provider === catalog.provider ? label : `${label} (${there?.label ?? o.provider})`;
+        };
+        return (
+          <div className="org-field">
+            Model
+            <div className="org-model-row">
+              {offered.length > 1 && (
+                <select value={from?.id ?? ""} onChange={(e) => setVendor(e.target.value)} aria-label="Provider to choose its model from">
+                  {offered.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+              )}
+              <button
+                type="button"
+                className="set-select mp-open"
+                onClick={() => setPicking(true)}
+                aria-haspopup="dialog"
+                aria-label="The model it builds with"
+              >
+                <span>{own ? named(own) : `Same as the main model (${catalog.main ?? "none chosen"})`}</span>
+                <IconChevron size={13} />
+              </button>
+            </div>
+            <span className="jf-hint">
+              {own && !reachable
+                ? "Its provider has no key now, so it runs on the main model. Add the key in Settings, or choose again."
+                : own
+                  ? "It builds with this model. Planning still uses the Planner from Settings, when one is set."
+                  : "Give it a cheaper model for routine work, or a stronger one for hard work."}
+              {own && (
+                <>
+                  {" "}
+                  <button type="button" className="btn ghost" onClick={() => { dirty.current = true; setModel(null); }}>
+                    Use the main model
+                  </button>
+                </>
+              )}
+            </span>
+            {picking && from && (
+              <ModelPicker
+                vendor={`${from.label} · ${form.name || "new agent"}`}
+                models={from.models}
+                model={own?.provider === from.id ? own.model : ""}
+                busy={false}
+                listable={false}
+                onPick={(id) => { dirty.current = true; setModel({ provider: from.id, model: id }); setPicking(false); }}
+                onRefresh={() => undefined}
+                onClose={() => setPicking(false)}
+              />
+            )}
+          </div>
+        );
+      })()}
 
       {!agent?.builtin && (
         <label className="org-check">

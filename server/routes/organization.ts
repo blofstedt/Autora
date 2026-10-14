@@ -12,6 +12,8 @@ import {
   AgentError, createAgent, deleteAgent, freshName, getAgent, listAgents, orgTree, updateAgent,
 } from "../agents";
 import { agentMind, forgetNote, notesOf } from "../agentmind";
+import { PROVIDERS, modelsFor, providerSpec } from "../providers";
+import { modelFor, reachFor, resolveProvider } from "../state";
 import {
   SORTS, ThreadError, addComment, createPost, deleteComment, deletePost, editWords, getPost, listPosts, setMarks, tagCounts, toggleLike,
   type ThreadSort, type Who,
@@ -29,6 +31,22 @@ function failed(res: Response, err: unknown) {
 export function organizationRoutes(app: Express, onPerson: () => void = () => undefined) {
   app.get("/api/agents", (_req: Request, res: Response) => {
     res.json({ agents: listAgents(), tree: orgTree() });
+  });
+
+  /* What an agent's model can be chosen from: every provider that can be reached
+     now (a key, or a local server), each with its models, priced, and which is
+     the main one. An agent's model holds its provider (server/roles.ts). */
+  app.get("/api/agents-models", (_req: Request, res: Response) => {
+    const active = resolveProvider();
+    res.json({
+      provider: active.provider || null,
+      label: active.provider ? providerSpec(active.provider)?.label ?? active.provider : null,
+      main: active.model || null,
+      providers: PROVIDERS
+        /* A local server needs no key, so it counts once a model is named for it. */
+        .filter((p) => p.id === active.provider || (p.id === "local" ? Boolean(modelFor("local")) : reachFor(p.id)))
+        .map((p) => ({ id: p.id, label: p.label, models: modelsFor(p.id) })),
+    });
   });
 
   app.post("/api/agents", (req: Request, res: Response) => {

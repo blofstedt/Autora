@@ -67,9 +67,8 @@ export function CollabSettings() {
     <section className="set-card">
       <h3>Working together</h3>
       <p className="jf-hint">
-        You and the agent can work in the same PDF, app window, browser and code at the same time.
-        What you touch is yours: the agent leaves it alone and works on something else, and "Take control"
-        in a window holds it until you hand it back.
+        You and the agent can work in the same PDF, app, browser and code at once. What you touch is yours: the agent
+        works elsewhere, and "Take control" holds a window until you hand it back.
       </p>
       <label className="set-switch">
         <input type="checkbox" checked={cursor} onChange={(e) => setCursor(e.target.checked)} />

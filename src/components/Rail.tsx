@@ -115,7 +115,7 @@ export function Rail({
       {p.id === "chat" && alert && <em className="rail-tag is-alert">waiting on you</em>}
       {p.id === "mind" && learned > 0 && page !== "mind" && <em className="rail-tag is-grew">+{learned}</em>}
       {p.id === "threads" && threadsUnread > 0 && page !== "threads" && (
-        <em className="rail-tag is-grew" title="Posts and comments from the agents since you last looked">{threadsUnread > 99 ? "99+" : threadsUnread} new</em>
+        <em className="rail-tag is-grew" title="New posts and comments from the agents">{threadsUnread > 99 ? "99+" : threadsUnread} new</em>
       )}
       {p.id === "system" && relayOn && (
         <em className="rail-tag" title="A desktop relay is connected">
@@ -136,7 +136,7 @@ export function Rail({
         <button
           className="rail-icon-btn"
           onClick={onIncognito}
-          title="Incognito chat — nothing is saved"
+          title="Incognito chat: nothing is saved"
           aria-label="New incognito chat"
         >
           <IconMask size={15} />
@@ -224,7 +224,7 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
         ? "the window this vendor serves"
         : gauge?.windowFrom === "setting"
           ? "set by AUTORA_CONTEXT_TOKENS"
-          : "no window published for this model, so an assumed one is in use";
+          : "no published window for this model, so one is assumed";
   const pct = Math.round(share * 100);
   /* The condensing mark, as a short lighter stretch of the ring itself. It
      was a radial dash, and at 75% that is a horizontal line at nine o'clock,
@@ -236,8 +236,8 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
       className={`rail-ctx ${over ? "is-over" : ""}`}
       aria-label={gauge ? `Context ${pct}% full` : "Context empty"}
       title={gauge
-        ? `Context ${pct}% full — ${short(gauge.used)} of ${short(gauge.limit)} tokens${assumed ? " (assumed)" : ""}; ${gauge.condensed > 0 ? `condensed ${gauge.condensed}×, keeps going` : `condenses at ${Math.round(mark * 100)}%`}`
-        : "Context empty — fills as this session talks"}
+        ? `Context ${pct}% full: ${short(gauge.used)} of ${short(gauge.limit)} tokens${assumed ? " (assumed)" : ""}. ${gauge.condensed > 0 ? `Condensed ${gauge.condensed}×` : `Condenses at ${Math.round(mark * 100)}%`}`
+        : "Context empty"}
     >
       <svg className="rail-ctx-ring" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
         <circle className="rail-ctx-track" cx="24" cy="24" r={R} />
@@ -275,7 +275,7 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
         ) : (
           <>
             <span className="rail-ctx-line">Empty</span>
-            <span className="rail-ctx-sub">fills as this session talks</span>
+            <span className="rail-ctx-sub">fills as you chat</span>
           </>
         )}
       </div>
@@ -292,8 +292,8 @@ function ContextBar({ gauge }: { gauge: ContextGauge | null }) {
   const mark = gauge?.compactAt ?? 0.75;
   const pct = Math.round(share * 100);
   const title = gauge
-    ? `Context ${pct}% full — ${short(gauge.used)} of ${short(gauge.limit)} tokens${gauge.windowFrom === "default" ? " (assumed)" : ""}; condenses at ${Math.round(mark * 100)}%`
-    : "Context empty — fills as this session talks";
+    ? `Context ${pct}% full: ${short(gauge.used)} of ${short(gauge.limit)} tokens${gauge.windowFrom === "default" ? " (assumed)" : ""}. Condenses at ${Math.round(mark * 100)}%`
+    : "Context empty";
   return (
     <div className={`rail-ctxbar ${share >= mark ? "is-over" : ""}`} role="img" aria-label={title} title={title}>
       <span className="rail-ctxbar-pct">{pct}%</span>
@@ -588,7 +588,7 @@ export function ThemePicker({
           </button>
         ))}
       </div>
-      <p className="jf-hint">Saved to the server, so every device you open Autora on matches.</p>
+      <p className="jf-hint">Saved to the server, so every device matches.</p>
 
       <h3 className="sm-font-head">Text size</h3>
       <div className="sm-fonts">
@@ -604,9 +604,8 @@ export function ThemePicker({
         ))}
       </div>
       <p className="jf-hint">
-        Every word in the app, on this device and the others. The four steps are
-        close together on purpose: past the largest, rows that have a fixed
-        height start to clip rather than grow.
+        Applies to every word in the app, on all devices. The steps are close
+        together because rows with a fixed height clip past the largest.
       </p>
 
       <h3 className="sm-font-head">Icon size</h3>
@@ -623,8 +622,8 @@ export function ThemePicker({
         ))}
       </div>
       <p className="jf-hint">
-        Separate from the text, so a phone can have bigger words with the icons
-        left alone — the reverse on a desktop, if that reads better.
+        Separate from text size, so a phone can have bigger words and normal
+        icons, or the reverse.
       </p>
 
       <h3 className="sm-font-head">Text column</h3>
@@ -645,10 +644,8 @@ export function ThemePicker({
 
       <h3 className="sm-font-head">Corner widgets</h3>
       <p className="jf-hint">
-        Desktop only, and only where the window is wide enough to hold them
-        beside the words rather than over them. Each one is a small version of
-        a page in the sidebar and a way through to it; the text column makes
-        room for whatever is pinned.
+        Desktop only, when the window is wide enough to fit them beside the
+        text. Each is a small version of a sidebar page and links to it.
       </p>
       <DockPicker
         dock={appearance.dock}

@@ -67,6 +67,13 @@ type ProviderCard = {
   model: string;
   /** Talk mode's own model for this provider; empty means the one above. */
   fast_model: string;
+  /** Roles: the planner and the background model; empty means the defaults.
+      Absent on an older server. */
+  planner_model?: string;
+  background_model?: string;
+  /** Which provider each of those is on (this one unless another is named). */
+  planner_provider?: string;
+  background_provider?: string;
   models: ModelOption[];
   /** True where this vendor serves one model from several endpoints, so the
       row offers a field to pin one (OpenRouter). Absent on an older server. */
@@ -151,6 +158,10 @@ type SettingsState = {
   tools: { config: ToolConfig; groups: ToolGroupState[] };
   active: {
     model: string | null;
+    /** The planner, when Roles names one. Absent on an older server. */
+    planner?: string | null;
+    /** A role named on a provider with no key now: its work went to the main model. */
+    role_problems?: string[];
     endpoint: string | null;
     provider: string | null;
     hint: string | null;
@@ -228,6 +239,11 @@ export function Settings({
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const [modelDrafts, setModelDrafts] = useState<Record<string, string>>({});
   const [fastDrafts, setFastDrafts] = useState<Record<string, string>>({});
+  const [plannerDrafts, setPlannerDrafts] = useState<Record<string, string>>({});
+  const [backgroundDrafts, setBackgroundDrafts] = useState<Record<string, string>>({});
+  /* Which provider a role is on, per main provider; drafts like the rest. */
+  const [plannerVendorDrafts, setPlannerVendorDrafts] = useState<Record<string, string>>({});
+  const [backgroundVendorDrafts, setBackgroundVendorDrafts] = useState<Record<string, string>>({});
   const [urlDrafts, setUrlDrafts] = useState<Record<string, string>>({});
   const [endpointDrafts, setEndpointDrafts] = useState<Record<string, string>>({});
   const [provider, setProvider] = useState("auto");
@@ -258,6 +274,10 @@ export function Settings({
     setKeyDrafts({});
     setModelDrafts({});
     setFastDrafts({});
+    setPlannerDrafts({});
+    setBackgroundDrafts({});
+    setPlannerVendorDrafts({});
+    setBackgroundVendorDrafts({});
     setUrlDrafts({});
   }, []);
 
@@ -288,7 +308,7 @@ export function Settings({
       .catch((cause: unknown) =>
         setError(
           cause instanceof TypeError
-            ? "Could not reach the server. It may still be starting up after an update."
+            ? "Can't reach the server. It may be restarting after an update."
             : `Could not read settings: ${
                 cause instanceof Error ? cause.message : String(cause)
               }.`,
@@ -312,6 +332,10 @@ export function Settings({
     provider,
     models: modelDrafts,
     fast_models: fastDrafts,
+    planner_models: plannerDrafts,
+    background_models: backgroundDrafts,
+    planner_providers: plannerVendorDrafts,
+    background_providers: backgroundVendorDrafts,
     base_urls: urlDrafts,
     endpoint_pins: endpointDrafts,
     system_prompt: prompt,
@@ -321,7 +345,7 @@ export function Settings({
     ...(loop ? { loop } : {}),
     ...(verify ? { verify } : {}),
     ...(keep ? { retention: keep } : {}),
-  }), [provider, modelDrafts, fastDrafts, urlDrafts, endpointDrafts, prompt, budget, topUp, topUpProvider, loop, verify, keep]);
+  }), [provider, modelDrafts, fastDrafts, plannerDrafts, backgroundDrafts, plannerVendorDrafts, backgroundVendorDrafts, urlDrafts, endpointDrafts, prompt, budget, topUp, topUpProvider, loop, verify, keep]);
 
   const save = useCallback(async (sent: typeof body) => {
     setSaving(true);
@@ -345,6 +369,10 @@ export function Settings({
         Object.fromEntries(Object.entries(drafts).filter(([k, v]) => was[k] !== v));
       setModelDrafts((d) => settle(d, sent.models));
       setFastDrafts((d) => settle(d, sent.fast_models));
+      setPlannerDrafts((d) => settle(d, sent.planner_models));
+      setBackgroundDrafts((d) => settle(d, sent.background_models));
+      setPlannerVendorDrafts((d) => settle(d, sent.planner_providers));
+      setBackgroundVendorDrafts((d) => settle(d, sent.background_providers));
       setUrlDrafts((d) => settle(d, sent.base_urls));
       setEndpointDrafts((d) => settle(d, sent.endpoint_pins));
       /* The server may tidy what it was sent (a limit clamped into range, a
@@ -419,6 +447,11 @@ export function Settings({
 
   const dirty = !!state && (
     Object.keys(modelDrafts).length > 0 ||
+    Object.keys(fastDrafts).length > 0 ||
+    Object.keys(plannerDrafts).length > 0 ||
+    Object.keys(backgroundDrafts).length > 0 ||
+    Object.keys(plannerVendorDrafts).length > 0 ||
+    Object.keys(backgroundVendorDrafts).length > 0 ||
     Object.keys(urlDrafts).length > 0 ||
     Object.keys(endpointDrafts).length > 0 ||
     provider !== state.provider ||
@@ -514,6 +547,11 @@ export function Settings({
       keyDraft={keyDrafts[card.id]}
       modelDraft={modelDrafts[card.id]}
       fastDraft={fastDrafts[card.id]}
+      plannerDraft={plannerDrafts[card.id]}
+      backgroundDraft={backgroundDrafts[card.id]}
+      plannerVendorDraft={plannerVendorDrafts[card.id]}
+      backgroundVendorDraft={backgroundVendorDrafts[card.id]}
+      connected={connectedCards}
       urlDraft={urlDrafts[card.id]}
       endpointDraft={endpointDrafts[card.id]}
       onKey={(v) => setKeyDrafts((d) => ({ ...d, [card.id]: v }))}
@@ -521,6 +559,17 @@ export function Settings({
       onKeySave={(v) => void saveKey(card.id, v)}
       onModel={(v) => setModelDrafts((d) => ({ ...d, [card.id]: v }))}
       onFast={(v) => setFastDrafts((d) => ({ ...d, [card.id]: v }))}
+      onPlanner={(v) => setPlannerDrafts((d) => ({ ...d, [card.id]: v }))}
+      onBackground={(v) => setBackgroundDrafts((d) => ({ ...d, [card.id]: v }))}
+      /* A model id is a vendor's own, so a new provider starts with no model chosen. */
+      onPlannerVendor={(v) => {
+        setPlannerVendorDrafts((d) => ({ ...d, [card.id]: v }));
+        setPlannerDrafts((d) => ({ ...d, [card.id]: "" }));
+      }}
+      onBackgroundVendor={(v) => {
+        setBackgroundVendorDrafts((d) => ({ ...d, [card.id]: v }));
+        setBackgroundDrafts((d) => ({ ...d, [card.id]: "" }));
+      }}
       onUrl={(v) => setUrlDrafts((d) => ({ ...d, [card.id]: v }))}
       onEndpoint={(v) => setEndpointDrafts((d) => ({ ...d, [card.id]: v }))}
       onModels={(models) => replaceModels(card.id, models)}
@@ -585,6 +634,10 @@ export function Settings({
             <code>{state.active.model ?? "—"}</code>
             <span>{state.active.provider ?? "nothing connected"}</span>
           </div>
+          {state.active.planner && (
+            <p className="jf-hint">Plans with <code>{state.active.planner}</code>, builds with the model above.</p>
+          )}
+          {state.active.role_problems?.map((p) => <p key={p} className="set-warn">{p}</p>)}
           {state.active.hint && (
             <p className={state.active.model ? "jf-hint" : "set-warn"}>{state.active.hint}</p>
           )}
@@ -600,7 +653,7 @@ export function Settings({
             >
               <b>Automatic</b>
               <span>
-                Use the first connected provider, in this order:{" "}
+                The first connected one, in this order:{" "}
                 {state.auto_order
                   .map((id) => state.catalog.find((p) => p.id === id)?.label ?? id)
                   .join(", ")}
@@ -629,7 +682,7 @@ export function Settings({
           {choiceCards.length < state.catalog.length && (
             <button className="setup-more set-show-all" onClick={() => setAllProviders(true)}>
               {connectedCards.length === 0
-                ? "No provider is connected yet — add a key below, or show every provider"
+                ? "Nothing connected yet. Add a key below, or show every provider"
                 : `Show all ${state.catalog.length} providers`}
             </button>
           )}
@@ -638,10 +691,9 @@ export function Settings({
         <section className="set-card">
           <h3>Providers and models</h3>
           <p className="jf-hint set-providers-hint">
-            Add a key for any vendor and pick its model. Each provider keeps its
-            own choice, so switching back and forth costs nothing. Prices are the
-            vendors' published rates as of {state.prices_checked} and are what the
-            billing card counts with.
+            Add a key and pick a model. Each provider remembers its own choice.
+            Prices are published rates as of {state.prices_checked}, and are
+            what Usage counts with.
           </p>
           {connectedCards.map(providerRow)}
           {otherCards.length > 0 && (
@@ -655,9 +707,9 @@ export function Settings({
             </details>
           )}
           <p className="set-note set-where">
-            Keys saved here are written to <code>{state.state_file}</code> on the
-            server, readable only by the account Autora runs as. Keys set in the
-            environment stay there and are used when the app has none of its own.
+            Keys are saved to <code>{state.state_file}</code>, readable only by
+            the account Autora runs as. A key from the environment is used when
+            none is saved here.
           </p>
         </section>
 
@@ -669,8 +721,8 @@ export function Settings({
           <section className="set-card">
             <h3>Model providers</h3>
             <p className="jf-hint">
-              One key per vendor. Typing replaces the saved key; clearing it
-              removes it. Which provider and model answer is chosen under Model &amp; tools.
+              One key per vendor. Typing replaces it; clearing removes it. Pick
+              the provider and model under Model &amp; tools.
             </p>
             {state.credentials.filter((c) => c.role === "model").map((c) => (
               <KeyField
@@ -686,8 +738,8 @@ export function Settings({
               />
             ))}
             <p className="set-note set-where">
-              Keys saved here are written to <code>{state.state_file}</code> on the
-              server, readable only by the account Autora runs as.
+              Keys are saved to <code>{state.state_file}</code>, readable only by
+              the account Autora runs as.
             </p>
           </section>
         )}
@@ -716,15 +768,15 @@ export function Settings({
         <section className="set-card">
           <h3>Limits</h3>
           <p className="jf-hint">
-            When a turn counts as stuck in a loop, and how long old work is kept.
-            0 days means never delete on age alone.
+            When a turn counts as looping, and how long old work is kept.
+            0 days means never delete by age.
           </p>
           <div className="limit-grid">
             {loop && ([
-              ["warnAt", "Note a repeat after", "repeats of the same call"],
-              ["stopAt", "Stop the turn after", "repeats"],
-              ["staleAfter", "Note no progress after", "calls in a row"],
-              ["checkEvery", "Ask it to check itself every", "rounds"],
+              ["warnAt", "Warn after", "repeats of one call"],
+              ["stopAt", "Stop after", "repeats"],
+              ["staleAfter", "Flag no progress after", "calls in a row"],
+              ["checkEvery", "Self-check every", "rounds"],
             ] as [keyof LoopConfig, string, string][]).map(([key, label, unit]) => (
               <label className="tool-opt" key={key}>
                 <span className="tool-label">{label}</span>
@@ -739,9 +791,9 @@ export function Settings({
               </label>
             ))}
             {keep && ([
-              ["sessionDays", "Delete sessions older than", "days (0 = never)"],
+              ["sessionDays", "Delete sessions after", "days (0 = never)"],
               ["keepSessions", "Always keep the newest", "sessions"],
-              ["artifactDays", "Delete artifacts older than", "days (0 = never)"],
+              ["artifactDays", "Delete artifacts after", "days (0 = never)"],
               ["keepArtifacts", "Always keep the newest", "artifacts"],
             ] as [keyof RetentionPolicy, string, string][]).map(([key, label, unit]) => (
               <label className="tool-opt" key={key}>
@@ -766,9 +818,9 @@ export function Settings({
         <section className="set-card">
           <h3>Project check</h3>
           <p className="jf-hint">
-            A command Autora runs itself when the agent says it is finished and has changed
-            something — your linter, tests or build, in the terminal's directory. A failure sends
-            the agent back with the real output; a pass ends the turn. Leave it empty for none.
+            Runs when the agent says it is done and has changed something: your
+            linter, tests or build, in the terminal's directory. A failure sends
+            the agent back with the output. Leave empty for none.
           </p>
           <input
             className="set-prompt"
@@ -782,7 +834,7 @@ export function Settings({
           />
           <div className="limit-grid">
             <label className="tool-opt">
-              <span className="tool-label">Run it at most</span>
+              <span className="tool-label">Run at most</span>
               <input
                 type="number"
                 min={1}
@@ -800,9 +852,8 @@ export function Settings({
         <section className="set-card">
           <h3>Standing instructions</h3>
           <p className="jf-hint">
-            Added to Autora's own instructions on every turn — house rules like
-            "be concise" or "never guess; say you do not know". Applies to open
-            sessions from their next turn.
+            House rules added to every turn, like "be concise" or "say when you
+            don't know". Open sessions pick them up on their next turn.
           </p>
           <textarea
             className="set-prompt"
@@ -830,8 +881,7 @@ export function Settings({
           <section className="set-card">
             <h3>Voice keys</h3>
             <p className="jf-hint">
-              Speech in and out. These are read when Autora starts, so a change
-              here takes effect after a restart.
+              Speech in and out. Read at startup, so changes need a restart.
             </p>
             {voiceKeys.map((c) => (
               <KeyField
@@ -866,8 +916,10 @@ export function Settings({
  * chosen.
  */
 function ProviderRow({
-  card, selected, inUse, keyDraft, modelDraft, fastDraft, urlDraft, endpointDraft,
-  onKey, onKeyCancel, onKeySave, onModel, onFast, onUrl, onEndpoint, onModels, onUse,
+  card, selected, inUse, keyDraft, modelDraft, fastDraft, plannerDraft, backgroundDraft, plannerVendorDraft, backgroundVendorDraft,
+  connected, urlDraft, endpointDraft,
+  onKey, onKeyCancel, onKeySave, onModel, onFast, onPlanner, onBackground, onPlannerVendor, onBackgroundVendor,
+  onUrl, onEndpoint, onModels, onUse,
 }: {
   card: ProviderCard;
   selected: boolean;
@@ -875,6 +927,12 @@ function ProviderRow({
   keyDraft: string | undefined;
   modelDraft: string | undefined;
   fastDraft: string | undefined;
+  plannerDraft: string | undefined;
+  backgroundDraft: string | undefined;
+  plannerVendorDraft: string | undefined;
+  backgroundVendorDraft: string | undefined;
+  /** Every provider with a key: a role may be on any of them. */
+  connected: ProviderCard[];
   urlDraft: string | undefined;
   /** The endpoint pin as typed, or undefined while it is whatever is saved. */
   endpointDraft: string | undefined;
@@ -883,6 +941,10 @@ function ProviderRow({
   onKeySave: (v: string) => void;
   onModel: (v: string) => void;
   onFast: (v: string) => void;
+  onPlanner: (v: string) => void;
+  onBackground: (v: string) => void;
+  onPlannerVendor: (v: string) => void;
+  onBackgroundVendor: (v: string) => void;
   onUrl: (v: string) => void;
   onEndpoint: (v: string) => void;
   onModels: (models: ModelOption[]) => void;
@@ -904,10 +966,15 @@ function ProviderRow({
   // text field rather than a picker with one item in it saying "Custom".
   const [custom, setCustom] = useState(card.open_ended);
   const [picking, setPicking] = useState(false);
-  const [pickingFast, setPickingFast] = useState(false);
   const chosen = card.models.find((m) => m.id === model);
   const fast = fastDraft ?? card.fast_model;
-  const fastChosen = card.models.find((m) => m.id === fast);
+  const planner = plannerDraft ?? card.planner_model ?? "";
+  const background = backgroundDraft ?? card.background_model ?? "";
+  /* The card whose models a role picks from: this one, or the provider it is on. */
+  const plannerOn = connected.find((c) => c.id === (plannerVendorDraft || card.planner_provider || card.id)) ?? card;
+  const backgroundOn = connected.find((c) => c.id === (backgroundVendorDraft || card.background_provider || card.id)) ?? card;
+  /* Other providers a role can be on: connected ones, this one listed first. */
+  const vendors = [card, ...connected.filter((c) => c.id !== card.id)];
 
   /** Ask the vendor whether this key works -- and, since the answer arrives as
       its model list, fill the picker from the same call. */
@@ -925,7 +992,7 @@ function ProviderRow({
         setChecked({ ok: false, text: body.detail ?? "The key was refused." });
         return;
       }
-      setChecked({ ok: true, text: `Key works — ${body.models} models available.${keyDraft ? " Saved." : ""}` });
+      setChecked({ ok: true, text: `Key works. ${body.models} models available.${keyDraft ? " Saved." : ""}` });
       // A key that just passed is the one they meant: keep it.
       if (keyDraft) onKeySave(keyDraft);
       const fresh = await fetch(`/api/providers/${card.id}/models`).then((r) => r.json());
@@ -1031,38 +1098,53 @@ function ProviderRow({
             )}
           </label>
 
+          {/* Roles (server/roles.ts): which of this vendor's models does which
+              part of the work. Each left empty keeps the rule from before:
+              the model above plans, speaks and does the background work. */}
+          <RoleRow
+            card={plannerOn}
+            home={card}
+            vendors={vendors}
+            onVendor={onPlannerVendor}
+            role="Planner"
+            value={planner}
+            busy={busy}
+            onPick={onPlanner}
+            onRefresh={() => void refresh()}
+            hint={planner
+              ? "Plans with this one and builds with the model above. When the work gets stuck, it comes back here."
+              : "The model above plans too. Name a smarter one to plan, and let the one above do the building."}
+          />
           {/* Talk mode's other model. A spoken question is answered by this
               one without thinking, so the first word arrives now, and it
               hands the turn to the model above the moment the question turns
-              out to need more than a sentence -- checked facts, a file, a
-              command, several steps. Left empty, talk mode answers with the
-              model above, exactly as it always did. */}
-          <label className="jf-row">
-            <span>Talk mode</span>
-            <button
-              type="button"
-              className="set-select mp-open"
-              onClick={() => setPickingFast(true)}
-              aria-haspopup="dialog"
-              aria-label={`${card.label} model for talk mode`}
-            >
-              <span>{fast ? fastChosen?.label ?? fast : "Same model as above"}</span>
-              <IconChevron size={13} />
-            </button>
-          </label>
-          <p className="jf-hint">
-            {fast
-              ? "Live voice answers with this one instantly, then hands over to the model above when the task needs thinking or tools."
-              : "Live voice answers with the model above. Name a faster model here to have it answer aloud at once and hand the harder questions over."}
-            {fast ? (
-              <>
-                {" "}
-                <button type="button" className="btn ghost" onClick={() => onFast("")}>
-                  Use the model above
-                </button>
-              </>
-            ) : null}
-          </p>
+              out to need more than a sentence. */}
+          <RoleRow
+            card={card}
+            role="Talk mode"
+            value={fast}
+            busy={busy}
+            onPick={onFast}
+            onRefresh={() => void refresh()}
+            hint={fast
+              ? "Voice answers with this one at once, then hands over to the model above for anything needing thought or tools."
+              : "Voice uses the model above. Name a faster one to answer aloud at once and hand harder questions over."}
+          />
+          <RoleRow
+            card={backgroundOn}
+            home={card}
+            vendors={vendors}
+            onVendor={onBackgroundVendor}
+            role="Background"
+            value={background}
+            busy={busy}
+            onPick={onBackground}
+            onRefresh={() => void refresh()}
+            same={fast ? "Same as talk mode" : undefined}
+            hint={background
+              ? "Condenses old turns, learns and makes remarks. A cheap model is fine here."
+              : "Condensing old turns, learning and remarks use talk mode's model, or the model above. A cheap one is fine here."}
+          />
 
           <div className="prov-actions">
             {card.needs_key && (
@@ -1095,20 +1177,6 @@ function ProviderRow({
             <p className={checked.ok ? "prov-ok" : "set-warn"}>{checked.text}</p>
           )}
 
-          {pickingFast && (
-            <ModelPicker
-              vendor={`${card.label} · talk mode`}
-              models={card.models}
-              model={fast}
-              busy={busy}
-              listable={card.listable}
-              onPick={(id) => { onFast(id); setPickingFast(false); }}
-              onCustom={() => { setPickingFast(false); onFast(""); }}
-              onRefresh={() => void refresh()}
-              onClose={() => setPickingFast(false)}
-            />
-          )}
-
           {picking && (
             <ModelPicker
               vendor={card.label}
@@ -1128,7 +1196,7 @@ function ProviderRow({
           {chosen?.note && <p className="prov-price">{chosen.label} · {chosen.note}</p>}
           {typing && model && (
             <p className="prov-price">
-              {listed ? price(card.models.find((m) => m.id === model)!) : "Not in the price list — turns on this model are counted but not billed."}
+              {listed ? price(card.models.find((m) => m.id === model)!) : "Not in the price list. Turns are counted but not priced."}
             </p>
           )}
 
@@ -1144,8 +1212,7 @@ function ProviderRow({
             />
           </label>
           <p className="jf-hint">
-            Leave as it is unless you are going through a proxy or running the
-            model yourself.
+            Leave as is unless you use a proxy or run the model yourself.
           </p>
           {card.pinnable && (
             <label className="jf-row">
@@ -1162,11 +1229,10 @@ function ProviderRow({
           )}
           {card.pinnable && (
             <p className="jf-hint">
-              {card.label} serves one model from several providers, so a turn may
-              be answered by a different one each time. Name one here to pin
-              the model chosen above to it: the slug {card.label} lists for that
-              model (deepinfra, chutes). Empty leaves the choice to {card.label}.
-              {pinHeld && ` The endpoint saved is holding ${pinHeld}, and is not in force while another model is chosen.`}
+              {card.label} may answer from a different host each turn. Name one
+              (deepinfra, chutes) to pin the model above to it. Empty leaves it
+              to {card.label}.
+              {pinHeld && ` This pin is for ${pinHeld}, so it is off while another model is chosen.`}
             </p>
           )}
         </div>
@@ -1241,12 +1307,10 @@ function ToolsCard({
     <section className="set-card">
       <h3>Tools</h3>
       <p className="jf-hint">
-        What the agent can reach. Each of these is real: the terminal runs
-        commands on the machine Autora is installed on, the browser opens real
-        pages, computer control drives whichever machine is running the relay,
-        and memory outlives the session. Turning one off removes it from the
-        model's tools entirely — the agent is then told that group is switched
-        off, rather than left to work out why it cannot do something.
+        What the agent can reach. The terminal runs commands on this machine,
+        the browser opens real pages, computer control drives the machine
+        running the relay, and memory outlives the session. Turning one off
+        removes it from the agent's tools, and it is told so.
       </p>
 
       {error && <p className="set-warn">{error}</p>}
@@ -1283,11 +1347,11 @@ function ToolsCard({
 
               {config.enabled && (
                 <>
-                  <p className="jf-hint">Runs without asking (yolo mode).</p>
+                  <p className="jf-hint">Runs without asking.</p>
 
                   {group.group === "browser" && (
                     <div className="set-note is-boxed">
-                      <strong>Browser &amp; OAuth notice:</strong> Most identity providers (Google, GitHub, Cloudflare) block automated Chromium browsers from completing interactive OAuth / SSO logins. When encountering a login or CAPTCHA, click <em>&ldquo;take control&rdquo;</em> on the browser card to type directly, or provide an API token via the <strong>Workspace Secrets</strong> store below.
+                      <strong>Sign-ins:</strong> Google, GitHub and Cloudflare often block automated browsers at login. For a login or CAPTCHA, press <em>&ldquo;take control&rdquo;</em> on the browser card and type it yourself, or give the agent an API token in <strong>Workspace Secrets</strong>.
                     </div>
                   )}
 
@@ -1443,11 +1507,92 @@ function VersionCard({ server }: { server: string | null }) {
       </div>
       {stale && (
         <p className="set-warn">
-          Your browser is holding an older copy of the app. Reload the page —
-          the banner at the top does it properly, clearing the cache first.
+          Your browser has an old copy of the app. Reload with the banner at
+          the top, which clears the cache first.
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * One role's model for a vendor: a picker over the same list as the main
+ * model, and "Same as …" for none. Choosing nothing is a real choice -- it
+ * keeps that part of the work where it was before roles existed.
+ */
+function RoleRow({
+  card, home, vendors, onVendor, role, value, busy, hint, same, onPick, onRefresh,
+}: {
+  /** The provider whose models are offered: this row's own, or the one the role is on. */
+  card: ProviderCard;
+  /** The provider this row belongs to, when the role may be on another one. */
+  home?: ProviderCard;
+  /** Providers the role may be on; a choice of them is shown when there is more than one. */
+  vendors?: ProviderCard[];
+  onVendor?: (id: string) => void;
+  role: string;
+  value: string;
+  busy: boolean;
+  hint: string;
+  /** What the empty choice is called; "Same as the model above" by default. */
+  same?: string;
+  onPick: (id: string) => void;
+  onRefresh: () => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const chosen = card.models.find((m) => m.id === value);
+  const empty = same ?? "Same as the model above";
+  const elsewhere = home && card.id !== home.id;
+  return (
+    <>
+      <label className="jf-row">
+        <span>{role}</span>
+        {vendors && vendors.length > 1 && onVendor && (
+          <select
+            className="set-select"
+            value={card.id}
+            onChange={(e) => onVendor(e.target.value)}
+            aria-label={`Provider for ${role.toLowerCase()}`}
+          >
+            {vendors.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+          </select>
+        )}
+        <button
+          type="button"
+          className="set-select mp-open"
+          onClick={() => setPicking(true)}
+          aria-haspopup="dialog"
+          aria-label={`${card.label} model for ${role.toLowerCase()}`}
+        >
+          <span>{value ? chosen?.label ?? value : elsewhere ? "Choose a model…" : empty}</span>
+          <IconChevron size={13} />
+        </button>
+      </label>
+      <p className="jf-hint">
+        {elsewhere && `On ${card.label}, with its own key. `}
+        {hint}
+        {value || elsewhere ? (
+          <>
+            {" "}
+            <button type="button" className="btn ghost" onClick={() => { if (elsewhere && home && onVendor) onVendor(home.id); onPick(""); }}>
+              {empty}
+            </button>
+          </>
+        ) : null}
+      </p>
+      {picking && (
+        <ModelPicker
+          vendor={`${card.label} · ${role.toLowerCase()}`}
+          models={card.models}
+          model={value}
+          busy={busy}
+          listable={card.listable}
+          onPick={(id) => { onPick(id); setPicking(false); }}
+          onRefresh={onRefresh}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -1533,10 +1678,9 @@ function TrustThisServer() {
     <section className="set-card">
       <h3>Trust this server</h3>
       <p className="jf-hint">
-        Your devices do not know this server, so they warn about it, refuse it a
-        microphone, and will not install it to a home screen. Install the
-        certificate below on a device and all three stop: it becomes an ordinary
-        trusted site there.
+        Devices don't know this server, so they warn about it, block the
+        microphone and won't install it to a home screen. Install the
+        certificate and all three stop.
       </p>
       <a className="btn primary set-ca" href="/autora-ca.crt" download>
         Download certificate
@@ -1549,9 +1693,8 @@ function TrustThisServer() {
         Trust Settings to switch it on.
       </p>
       <p className="set-warn">
-        Install it only on devices you own. A certificate you trust can vouch for
-        any site to that device, so this one is worth exactly as much as the
-        server holding its key.
+        Install it only on devices you own. A trusted certificate can vouch for
+        any site on that device, so it is only as safe as the server holding its key.
       </p>
     </section>
   );

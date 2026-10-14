@@ -98,10 +98,8 @@ export function VoiceCard() {
     <section className="set-card">
       <h3>Voice</h3>
       <p className="jf-hint">
-        Replies read aloud, and anything Autora is asked to say, play straight
-        from here in this voice on every device. Deepgram's hosted voices are
-        used when there is a key for them; without one the browser's own voice
-        is used.
+        The voice for replies read aloud, on every device. Deepgram voices are
+        used when a key is set; otherwise the browser's own.
       </p>
 
       {!loaded ? (
@@ -164,7 +162,7 @@ export function VoiceCard() {
         </>
       ) : (
         <p className="set-note">
-          {speech?.reason ?? "The console could not be asked about its voice."}
+          {speech?.reason ?? "Couldn't read the voice settings."}
         </p>
       )}
       {complaint && <p className="set-warn">{complaint}</p>}

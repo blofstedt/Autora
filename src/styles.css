@@ -7821,6 +7821,10 @@ body.is-resizing iframe { pointer-events: none; }
   color: var(--text); font: inherit; font-size: var(--fs-base);
 }
 .org-field textarea { resize: vertical; line-height: 1.55; }
+/* An agent's model: the provider, then the model, on one line; stacked on a phone. */
+.org-model-row { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
+.org-model-row select { width: auto; flex: 0 1 auto; }
+.org-model-row .mp-open { flex: 1 1 180px; min-width: 0; }
 .org-check { display: flex; align-items: center; gap: 8px; font-size: var(--fs-base); }
 .org-seq { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .org-seq li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: var(--r-sm); background: var(--s1); border: 1px solid var(--border); }

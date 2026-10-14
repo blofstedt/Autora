@@ -114,9 +114,8 @@ export function CaptchaCard() {
     <section className="set-card">
       <h3>CAPTCHA</h3>
       <p className="jf-hint">
-        What happens when a CAPTCHA checkbox escalates to a picture. The backends are tried in the
-        order they are switched on; one that cannot answer says why, and the next is asked. Nothing
-        here costs anything beyond the model call the turn is already making.
+        How to answer a CAPTCHA that escalates to a picture. Backends are tried in the order switched on; one that
+        can't answer says why, and the next is asked. No cost beyond the model call the turn already makes.
       </p>
 
       <label className="opt-check">
