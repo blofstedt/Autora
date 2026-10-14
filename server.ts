@@ -3297,7 +3297,10 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
     const reviewCap = toRoom ? reviewers.length : PACE[state.threadsMood].reviewers;
     let asked = 0;
     for (const agent of reviewers) {
-      if (asked >= reviewCap || !room()) break;
+      /* Named in the person's own comment, an agent answers whatever the ceiling and the mood's cap say: being asked
+         is not chipping in. Everyone else is held to both. */
+      const askedByName = byPerson && isNamed(trigger.text, agent.name);
+      if (!askedByName && (asked >= reviewCap || !room())) continue;
       // Most of the time a colleague has nothing to add; the person's words get more attention than another agent's.
       if (!toRoom && !isNamed(trigger.text, agent.name) && Math.random() > (byPerson ? 0.7 : replyChance(run, state.threadsMood) * 0.5) && replyChance(0) < 1) continue;
       const now = getPost(postRef);
