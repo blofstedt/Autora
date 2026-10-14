@@ -455,6 +455,10 @@ export function openAiMessages(call: ChatCall): any[] {
   return out;
 }
 
+/** Models (by vendor and name) that answered "reasoning is mandatory": asked to think off, they are sent no switch. */
+const thinkingForced = new Set<string>();
+const refusesThinkingOff = (message: string) => /reasoning is mandatory|cannot be disabled|can'?t be disabled|must be enabled/i.test(message);
+
 async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
   const deepseek = (call.provider ?? "") === "deepseek" || /api\.deepseek\.com/.test(call.baseUrl ?? "");
   /* OpenRouter is a router: one model is served from several endpoints, and
@@ -469,7 +473,8 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
      body it always did. */
   const pin = (call.endpoint ?? "").trim();
   const openrouter = Boolean(providerSpec(call.provider)?.pinnable) || /(^|\.)openrouter\.ai/.test(call.baseUrl ?? "");
-  const res = await request(`${trimSlash(call.baseUrl)}/chat/completions`, {
+  const forcedKey = `${call.provider ?? ""}|${call.baseUrl ?? ""}|${call.model}`;
+  const send = (off: boolean) => request(`${trimSlash(call.baseUrl)}/chat/completions`, {
     method: "POST",
     signal: call.signal,
     headers: openAiHeaders(call),
@@ -488,8 +493,8 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
          `reasoning` switch, honoured per model and ignored where a model cannot
          turn thinking off. Only when the caller said "off": a chat turn keeps
          whatever the model does by default. */
-      ...(!deepseek && call.thinking === "off" && /glm/i.test(call.model) ? { thinking: { type: "disabled" } } : {}),
-      ...(call.thinking === "off" && openrouter ? { reasoning: { enabled: false } } : {}),
+      ...(!deepseek && call.thinking === "off" && /glm/i.test(call.model) && off ? { thinking: { type: "disabled" } } : {}),
+      ...(call.thinking === "off" && openrouter && off ? { reasoning: { enabled: false } } : {}),
       messages: openAiMessages(call),
       ...(call.tools?.length
         ? {
@@ -507,7 +512,19 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
     }),
   });
 
-  if (!res.ok) throw await failure(res);
+  /* A model whose reasoning is mandatory refuses the off switch outright. Asked once, it is told so and the call is
+     made again without the switch; the next call to that model does not ask. Thinking off is a wish, not a need. */
+  let res = await send(!thinkingForced.has(forcedKey));
+  if (!res.ok) {
+    const refused = await failure(res);
+    if (call.thinking === "off" && !thinkingForced.has(forcedKey) && refusesThinkingOff(refused.message)) {
+      thinkingForced.add(forcedKey);
+      res = await send(false);
+      if (!res.ok) throw await failure(res);
+    } else {
+      throw refused;
+    }
+  }
 
   let reply = "";
   let reasoning = "";
