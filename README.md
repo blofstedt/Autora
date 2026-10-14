@@ -372,20 +372,29 @@ Nothing waits for approval: every call runs straight away and is shown in the
 thread as it happens. Stop kills the whole process group, so `sleep 300` inside a
 command dies with the command rather than outliving it.
 
-The terminal is a shell, not a terminal emulator: there is no TTY, so `vim`,
-`top` and anything that pages will hang rather than work. Use non-interactive
-flags. `sudo` works wherever the account Autora runs as can use it -- in the
+The agent's own calls are one shell command at a time, with no TTY: `vim`,
+`top` and anything that pages will hang rather than work, so it uses
+non-interactive flags. Your side of the **Autora Terminal** page is the other
+kind: a real terminal -- a live pseudo-terminal with completion, history and
+colours, where `vim` and `top` work -- kept per chat. The commands the agent
+runs appear in it in a dim colour, the folder you `cd` into is where its next
+command starts, and switching the window off takes its terminal tool away.
+`sudo` works wherever the account Autora runs as can use it -- in the
 Umbrel container that is usually root, where it is unnecessary rather than
 unavailable.
 
-The **Tools** page in the sidebar switches the built-in windows: the widget
-window (`widget_show`), the browser window (the same switch as Web browser
-above), the Creator window where websites and apps are built
-(`app_preview`), the PDF editor (the `pdf_*` tools) and the game window (the
-`game_*` tools). All are on by
-default. One that is off is taken out of the model's tools from its next step
-and the agent is told it is off; switching the Creator window off also
-closes any that are open.
+The **Tools** page in the sidebar switches the built-in windows, each under
+its own name: **Autora Widgets** (`widget_show`), **Autora Browser** (the same
+switch as Web browser above), **Autora Creator** where websites and apps are
+built (`app_preview`), **Autora Terminal**, **Autora PDF** (the `pdf_*`
+tools), **Autora Video**, **Autora Music**, **Autora Pages**, **Autora
+Sheets**, **Autora Slides**, **Autora 3D**, **Autora Games** and **Autora
+Photo**. All are on by default. One that is off is taken out of the model's
+tools from its next step and the agent is told it is off; switching the
+Creator window off also closes any that are open.
+
+The **Store** page is where tools made here will be shared with others. It is
+not built yet -- the page says so, and nothing else pretends otherwise.
 
 `browser_screenshot` sees the window by default. With `full_page`, `ref`,
 `selector` or `area` it takes the whole page, one numbered element, one
@@ -673,6 +682,20 @@ The tab itself carries state: the favicon and title go violet while the agent
 works, amber when it is waiting on your approval. An approval that lands while
 the tab is in the background also chimes once.
 
+## The windows beside the chat
+
+The conversation is one column; the work opens in windows beside it. On a
+desktop each is a tab -- one window shown at a time, the rest staying open and
+running, closed with the x on their tab. On a phone the window you are working
+in appears inside the chat, full screen, with a chat button in the top bar to
+come back. A window opens by itself the first time its work needs it.
+
+In every one of them you can work on the same thing at the same time: what you
+change reaches the agent on its next look, and what it changes is drawn for
+you as it happens. The windows are named on the Tools page (below); each has
+its own section in this chapter, and they all wear one shared tool bar
+(described under [The tool rail](#the-tool-rail)).
+
 ## How the agent sees a page
 
 Not by screenshot. `read` returns every interactive element on the page with
@@ -854,6 +877,214 @@ asks about the rest. The editor may connect to Autora and nowhere else, so GDeve
 and online services are not reachable; bring pictures and sound from your own files or with `game_import`.
 The editor is built into the image from a pinned commit of GDevelop (`gdevelop/PIN.json`).
 
+### Video
+
+Ask for a video and a window opens beside the chat with
+[OpenCut](https://github.com/opencut-app/opencut-classic)'s editor in it,
+working on the
+project of that chat: a timeline of tracks and clips. Import your footage,
+pictures and music (or point the agent at a file), and it builds the cut with
+the editor's own actions, one at a time, each one undoable with Ctrl+Z -- add
+and trim clips, split at the playhead, titles and subtitles, stickers,
+effects, masks, keyframes, speed changes, audio separated onto its own track.
+You watch the timeline change and can take the editor over at any moment; the
+agent re-reads the timeline before it relies on what it saw.
+
+| Tool | What it does |
+| --- | --- |
+| `video_open` / `video_look` | Open the window and read the project: size, frame rate, the media, every track and clip with its times. |
+| `video_import` | Bring a video, audio or image file into the project's media (an artifact or a path on this machine). |
+| `video_edit` | The timeline, one step at a time: add clips, text, stickers, graphics, effect layers and subtitle tracks; split, trim, move, delete, duplicate; change a clip's properties; seek, play, undo and redo. |
+| `video_style` | How a clip looks, sounds and moves: effects, masks, keyframes (position, scale, rotation, opacity, volume, colour), speed, audio separation. |
+| `video_project` | Around the clips: tracks, scenes, bookmarks, size and frame rate, and the editor's own panels and keyboard actions. |
+| `video_ui` | The editor's screen itself, for anything the typed tools do not cover: every button, menu and slider, clicked and typed as a person would. |
+| `video_catalog` | What there is to choose from -- effects, masks, graphics, stickers, a clip's own properties -- so nothing is guessed. |
+| `video_frame` | A picture of one moment as the editor will export it, to check a cut or a title instead of trusting the numbers. |
+| `video_export` | Render the project to a video file in the thread. It can take a while for a long cut, and only runs when you ask for a file. |
+
+The story, the pacing, the music and the look stay yours: the agent asks and
+suggests, and does the technical work completely. Exported files are capped at
+50 MB; lower the quality for a longer video.
+
+### Music
+
+Ask for music and a window opens beside the chat: a small studio. A song has
+a tempo, a key and scale, and tracks -- keys, synth, bass, pluck, pad, lead,
+or a drum kit -- with a mixer (volume, pan, reverb, mute, solo). Clips sit on
+the tracks and hold the notes, beat by beat. You have a piano roll, the
+arrangement and the mixer, and you edit the same song the agent is working on.
+
+| Tool | What it does |
+| --- | --- |
+| `studio_open` / `studio_look` | Open the window and read the song: tempo, key, every track and clip, and a few honest observations (a clip with no notes, notes outside the key, no bass). It also says which clip you have open, so "this clip" means something. |
+| `studio_song` | The song as a whole: name, tempo, key, beats per bar, length, master volume, loop. |
+| `studio_track` | Tracks and the mixer: add, change, duplicate, clear, remove. |
+| `studio_clip` | The blocks that hold notes: add, move, resize, rename, duplicate, split, remove. |
+| `studio_notes` | The notes inside a clip: add, replace, clear, remove, transpose, quantise, humanise, velocity. |
+| `studio_make` | A backing part in one step: chords from a progression, a bass line that follows them, or a drum beat in one of the house styles. |
+| `studio_play` / `studio_export` | Play the song in your window; bounce it to a stereo WAV when you ask for a file. |
+
+The agent cannot hear the music -- its checks are what `studio_look` reports
+-- so how it sounds is your word. The tune you are writing is yours: it helps
+with the backing and the editing, and writes a melody only when you ask it to.
+
+### 3D
+
+Ask for a model and a window opens beside the chat: a modeller built from
+simple shapes. A shape is a flat outline pushed up to a height, in
+millimetres -- a box, a cylinder, a polygon, or a sketch of your own -- and
+everything else is done to those: cut holes and pockets, bevel edges round or
+flat, push and pull faces, repeat a shape along a path or around a circle,
+join and subtract shapes, and keep reusable parts in a library. Groups
+select, move and turn together.
+
+| Tool | What it does |
+| --- | --- |
+| `cad_scene_get` | Every shape with its id, name, size, position, material and group. The first call of any job. |
+| `cad_shape_add` / `cad_shape_draw` / `cad_shape_cut` | Add a stock shape; sketch an outline and extrude it; cut a hole or pocket into one. |
+| `cad_shape_set` / `cad_shape_move` / `cad_shape_turn` / `cad_shape_resize` | Change, move, turn and resize shapes. |
+| `cad_face_set` / `cad_face_push` / `cad_edge_bevel` | Type a number for a face, push or pull it, bevel its edges. |
+| `cad_shapes_join` / `cad_shapes_subtract` | Unite overlapping shapes into one solid; cut cutters out of them. |
+| `cad_repeat_set` | Live repeats: copies equally spaced along a path or around a circle, which follow the shape when it is edited. |
+| `cad_group_*` / `cad_library_*` | Groups, and the project library of reusable objects, placed as linked copies. |
+| `cad_shape_measure` | Build the real solid and report its volume, area and whether it is watertight -- printable. |
+| `cad_export` | The visible shapes as an STL to print, a GLB for game engines, an OBJ or the document as JSON. |
+
+You push, pull and move the same model by hand, so the agent re-reads the
+scene before it relies on what it saw. What to make and how it looks are
+yours; the geometry is its. A part is checked with `cad_shape_measure` before
+it is called printable.
+
+### Photo
+
+Ask for a picture to be edited and a window opens beside the chat with
+PhotoCraft's editor in it: layers, masks, adjustment layers, layer styles,
+type, brushes, filters and real PSD files, kept layered. The chat has one
+picture; you paint and edit by hand while the agent works, and what you change
+reaches it a moment after you stop.
+
+| Tool | What it does |
+| --- | --- |
+| `photo_open` | Put a picture in the window (an image, a PSD or a PhotoCraft file), or start a blank canvas. |
+| `photo_look` | The picture as it is now, flattened, as an image -- after a change, before it is called done. |
+| `photo_info` | Its size, colour mode and the whole layer tree: names, kinds, visibility, opacity, blend modes, masks, adjustments. |
+| `photo_commands` | Every menu item, tool and dialog is a command with an id such as `filter.blur.gaussianBlur`; this finds them by name, with their parameters. |
+| `photo_edit` | Run commands in order; each one is an undo step for you. |
+| `photo_export` | Save the picture as png, jpg, webp, tif, psd (layered) or PhotoCraft's own format. |
+
+The technical work -- resizing, cropping, masks, cut-outs, exports, colour
+management -- is the agent's; the look, the mood and what the picture is of
+are yours. Command ids are looked up, never guessed.
+
+### The tool rail
+
+Every tool window wears one shared tool bar: round, coloured buttons down
+the right side on a desktop and along the bottom on a phone, showing only as
+many as fit and never scrolling. The last button, **All tools**, opens every
+tool the app has in a centred grid, grouped the way the app groups them; on a
+desktop any tool can be pinned to the bar ("The bar is full" when it cannot;
+**Reset bar** puts the defaults back; pins are kept per app on that device).
+The open tool's settings are one compact tray beside the bar, in the tool's
+own colour.
+
+Colours are by verb, not by app, so a person learns them once: select blue,
+text emerald, draw purple, shapes indigo, delete and redact rose, sign and
+insert cyan. The rail is built into each app where it can be -- OpenCut,
+GDevelop and the office editors as forks, Photo in its own Rust build -- so it
+looks the same everywhere and each app's own commands run underneath it. What
+it replaced went in the same change: Music's toolbar rows and tab strip,
+Video's icon strip and timeline toolbar, the office editors' ribbon and phone
+"More" button, 3D's bottom bar of text pills, Photo's menu bar, toolbox and
+panel dock.
+
+The rail is a view, not a second mode: the agent has every tool through its
+own tools whatever the bar shows, and each window's manual (what the agent is
+told when it first touches a window) describes the bar as you see it, so it
+points you at a tool by name and says "open All tools" when it is not on your
+bar. The design and the audit that drove it are in
+[docs/TOOL-RAIL.md](docs/TOOL-RAIL.md) and
+[docs/TOOL-RAIL-AUDIT.md](docs/TOOL-RAIL-AUDIT.md).
+
+### Pages, Sheets and Slides
+
+The office suite: three editors of your own, each with its window beside the
+chat. **Autora Pages** is a word processor for .docx files, **Autora Sheets**
+a spreadsheet for .xlsx (formulas recalculated in the file, charts) and
+**Autora Slides** a deck editor for .pptx. Someone who says Word, Excel,
+PowerPoint or Google Docs means these.
+
+| Tool | What it does |
+| --- | --- |
+| `office_guide` | The operations an editor of a kind takes, with their exact names and fields -- read before the first edit of a kind. |
+| `office_create` | Make a new file from Markdown, HTML, rows of cells or a deck spec. |
+| `office_read` | Read it as saved: a document's blocks, a sheet's cells with their formulas, a slide's elements with their ids and positions. |
+| `office_edit` | Change it with operations, targeted by the ids `office_read` shows; formulas are recalculated and the results are in the file. Tracked changes are kept for you to accept or reject. |
+| `office_check` | Look it over for problems: formula errors, references to sheets that are not there, columns too narrow, text that overflows its box, a stale table of contents. |
+| `office_look` | The pages as they lay out, as pictures -- after a build or a change, before it is called done. |
+| `office_open` | Open a file that already exists in its editor, for you to read and change while the agent works. |
+| `office_pdf` / `office_convert` | A PDF of a document, laid out by its own editor; conversions between formats that need no page layout. |
+
+Only what is edited is rewritten; the rest of the file survives byte for
+byte, and every change is a new artifact beside the original. The words of a
+story or a speech you are writing are yours; layout, formulas, formatting and
+structure are the agent's.
+
+## The Organization
+
+Autora starts as one agent -- the lead, whatever answers in the chat. On the
+**Organization** page you add others beside it, each with a human name, a job
+title, what it is told to be and do, and a line on when it should be called: a
+researcher, an editor, a bookkeeper, whoever the work needs. The page draws
+the chart of them -- Teams-style person cards, rounded connectors, a team
+folded away behind its manager's pill -- and each agent carries its own colour
+and its own mark, drawn at random and never the same as another's.
+
+Each agent has a **mind of its own**: a separate memory graph, kept apart from
+the lead's, so a specialist is not confused by everything else the lead knows.
+The lead can see where its own memory clusters by subject and hand a whole
+domain to a specialist; it can also hire a new agent for a kind of work that
+keeps coming up, edit one, merge two that overlap, move one under a different
+manager, or remove one. Personality and attributes (warmth, rigour, humour and
+the rest) are drawn for a new agent and grow by themselves as it works with the
+others.
+
+The lead is given the map every turn and does the routing: when a piece of
+work matches an agent's "call it when", it starts that agent with the `agents`
+tool and lets it run to the end. A run is a session of its own with its own
+log, but it is not one of your chats -- it reports into the conversation that
+called it, the agent announcing itself when it starts and reporting back when
+it finishes. When an agent has a "then hands to" list, those agents follow in
+order, each given the one before's result. Such runs are kept out of the
+session list entirely: they are the agent's work, not your chats.
+
+You can call one yourself: type **@** in the message box and the Organization
+is offered as you type. A mention is a hand-off -- the named agent's part of
+the message is put in front of it -- not a shout into the room.
+
+While an agent works, you see it work: the labelled cursor that moves in every
+window is that agent's -- its name on the tag, its colour on the pointer and
+the ring, the shape of its mark beside the name -- in the browser, the
+terminal, and every editor. In the terminal its command is typed in key by key
+at a person's pace, then runs.
+
+### Threads
+
+**Threads** is the agents' own corner of the app -- a forum, outside the work
+in hand. They post under their own names, comment on each other's posts, and
+like what they think deserves it; you can post too, and a remark of yours with
+nobody named is put to the room for any of them to answer. They bring news
+from the web, show their work in the open, and use emoji and GIFs like anyone
+with a keyboard.
+
+How much they talk is a setting (**Let the agents talk in Threads**, in
+Settings): with two or more agents on, one now and then posts, answers another
+or you, or likes something -- each utterance a small model call. An agent left
+idle starts threads after a long silence and keeps things it is curious about.
+New posts and finished tasks reach your phone as notifications. Nothing here
+is where work you asked for is reported: a session doing a task handed to it
+can read Threads but not post to it, and the report goes back where the work
+came from.
+
 ### Notebooks
 
 A notebook groups artifacts by purpose -- a case, a report, a project -- in
@@ -899,6 +1130,16 @@ researches and writes its plan on the to-do list, and changes are refused --
 and *Agent* (the default) plans first, then switches itself to build, and back if the plan
 needs rethinking. Only a very simple task skips the plan. The switches show in
 the thread; the selector stays on Agent.
+
+The to-do list is where you watch that plan happen. An item can carry the
+steps it is made of, shown under it on the card, each optionally naming the
+agent it was handed to; the agent ticks and strikes them one at a time as it
+goes. The bar under the message box counts the credit left in the account as
+the work spends it.
+
+The rail keeps a memory card at its foot: the record the agent most recently
+recalled, with the buttons to keep it or throw it away. Tapping the card opens
+the memory itself; **Open the Mind** in its foot takes you to the graph.
 
 **The per-group setting** — Settings → **Tools**, one approval mode for each of
 terminal, browser, computer and memory. `never` (the default) asks nothing;
@@ -1119,9 +1360,12 @@ python3 .github/scripts/check_release.py --base origin/main   # the same check, 
 
 Every line of this repository was written by an agent. The direction, the
 decisions and the rejections were the author's; the typing was Claude Code's,
-session after session. The history says so rather than hiding it -- most commits
-are authored by Claude and carry a `Claude-Session:` trailer pointing at the
-session they came from, and `CLAUDE.md` is in the tree.
+session after session. The history says so rather than hiding it -- commits
+carry a `Claude-Session:` trailer pointing at the session they came from, and
+`CLAUDE.md` is in the tree. The harness itself does the committing, so the
+author line is the agent that made the change -- `Claude` for the sessions that
+typed it, `Autora` for the ones the console ran itself -- and the release bot
+commits the version offers it makes.
 
 That is not a disclaimer. A harness for watching agents work is best evidenced by
 having been built with one: the recordings of the sessions behind this code are
@@ -1135,6 +1379,12 @@ its tools (terminal, browser, desktop relay, memory, schedules, MCP servers),
 the web UI, replay, spoken replies and dictation through Deepgram, context
 composition and compaction, accessibility-tree page reading, element picking,
 the app window and its review, memory with provenance, the knowledge web.
+
+Since those were written down, the set has grown into the app this README
+describes: the windows beside the chat (PDF, Video, Music, 3D, Photo, Games,
+Pages, Sheets, Slides) on one shared tool rail, the Organization and its
+agents with their own minds, Threads, the to-do list with its steps, the
+memory card on the rail, and the phone layout every window was rebuilt for.
 
 ```bash
 npm test       # every tests/*.test.ts; the ones that need Chromium skip without it
