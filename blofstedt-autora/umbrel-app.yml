@@ -186,7 +186,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Tool calls that lose their arguments on the way in are now caught at the door: the console names
-  the missing argument and asks for the call to be resent, instead of a tool saying its own vague
-  refusal and the model debugging the wrong end of the pipe. Agent handoffs (agents run) tell you
-  plainly when agent and task never arrived.
+  Models that bend the tool-call format, GLM among them, can now start agents and make notebooks.
+  Calls whose name is repeated in every chunk, whose arguments arrive as the text so far, whose
+  parallel calls share one index, or whose JSON is encoded twice or fenced are put back together
+  instead of losing their arguments. A call that still cannot be read is now reported as garbled,
+  not as cut off at the output limit.

@@ -5242,9 +5242,10 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           if (use.incomplete) {
             emitEvent(session, "tool.call", "agent", { name: use.name, args: {} }, span);
             const said =
-              `Not run: this ${use.name} call was cut off at the output limit before ` +
-              "its arguments were complete. Make it again with less in it -- " +
-              "for a long file, write it in several smaller parts.";
+              `Not run: the arguments of this ${use.name} call were not valid JSON ` +
+              "(cut off at the output limit, or garbled on the way). Make the call again, " +
+              "with the arguments as one plain JSON object; if it was long, " +
+              "split it into several smaller parts.";
             emitEvent(session, "tool.error", "agent", { error: said }, span);
             reply(false, said);
             continue;
