@@ -32,7 +32,7 @@ import { ensureHostNames } from "./server/hosts";
 import { attachDictation } from "./server/dictation";
 import { missingPathIn, pathHint } from "./server/hints";
 import { MANUAL_IDS, manualId, manualText, type ManualId } from "./server/handbook";
-import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, mcpServerOf, unloadedIndex, withoutUnloaded } from "./server/toolload";
+import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, mcpServerOf, preloadMcp, searchMcp, shortName, signatureOf, unloadedIndex, withoutUnloaded } from "./server/toolload";
 import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
 import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
 import {
@@ -2573,7 +2573,7 @@ async function systemInstructionFor(
   const agreed = autonomyBriefing();
   if (agreed) notes.push(agreed);
 
-  const unloaded = own ? unloadedIndex(loadedTools(own), mcpServerSummary()) : null;
+  const unloaded = own ? unloadedIndex(loadedTools(own), mcpTools()) : null;
   if (unloaded) notes.push(unloaded);
 
   const done = pastToolCalls(sessionId);
@@ -3791,23 +3791,17 @@ const manualGiven = (events: readonly { kind: string; payload?: Record<string, a
 /* Every tool is a default tool: all of them are in the list on every call, and the handbook (server/handbook.ts) says how
    each one works. AUTORA_LAZY_TOOLS=1 goes back to a short list that grows as it is wanted (the token-saving mode). */
 const allToolsOn = () => process.env.AUTORA_LAZY_TOOLS !== "1";
+/* Connected servers' tools are separate from that: they are loaded as the job calls for them whatever the switch
+   above says (one box had 192 of them, and sending every schema on every step cost more than all the built-in tools).
+   AUTORA_ALL_MCP=1 puts them all back in the list. */
+const allMcpOn = () => process.env.AUTORA_ALL_MCP === "1";
 /* The log only grows, so the families loaded from it are a function of its
    length: remember the last answer and walk only the events added since. The
    turn loop asks every round, and each round used to re-scan the whole
    conversation to return the same set. */
 const loadedCache = new WeakMap<Session, { upTo: number; set: Set<string> }>();
-/** The connected MCP servers and how many tools each would add to the list. */
-function mcpServerSummary(): { server: string; tools: number }[] {
-  const count = new Map<string, number>();
-  for (const t of mcpTools()) {
-    const server = mcpServerOf(t.name);
-    if (server) count.set(server, (count.get(server) ?? 0) + 1);
-  }
-  return [...count].map(([server, tools]) => ({ server, tools }));
-}
-
-function loadedTools(session: Session): Set<string> {
-  if (allToolsOn()) return new Set([...familyIds(), "mcp:*"]);
+/** What the log says is loaded, without the switches. */
+function loggedTools(session: Session): Set<string> {
   const events = session.events;
   const cached = loadedCache.get(session);
   if (cached && cached.upTo === events.length) return cached.set;
@@ -3818,16 +3812,26 @@ function loadedTools(session: Session): Set<string> {
   const from = base ? cached!.upTo : 0;
   for (let i = from; i < events.length; i++) {
     const e = events[i];
-    if (e.kind === "tools.enable" && typeof e.payload?.family === "string") set.add(e.payload.family);
-    else if (e.kind === "tool.call") {
+    if (e.kind === "tools.enable") {
+      if (typeof e.payload?.family === "string") set.add(e.payload.family);
+      if (Array.isArray(e.payload?.tools)) for (const t of e.payload.tools) set.add(`mcpt:${t}`);
+    } else if (e.kind === "tool.call") {
       const name = String(e.payload?.name ?? "");
       for (const f of FAMILIES) if (f.match(name)) set.add(f.id);
-      const server = mcpServerOf(name);
-      if (server) set.add(`mcp:${server}`);
+      if (mcpServerOf(name)) set.add(`mcpt:${name}`);
     }
   }
   loadedCache.set(session, { upTo: events.length, set });
   return set;
+}
+
+function loadedTools(session: Session): Set<string> {
+  const logged = loggedTools(session);
+  if (!allToolsOn() && !allMcpOn()) return logged;
+  const out = new Set(logged);
+  if (allToolsOn()) for (const id of familyIds()) out.add(id);
+  if (allMcpOn()) out.add("mcp:*");
+  return out;
 }
 
 /** Whether a PDF is in this chat: the window is open, or one came with a message. */
@@ -3843,11 +3847,17 @@ function pdfInChat(session: Session): boolean {
  * the log so the next turn has them without asking again.
  */
 function autoLoadTools(session: Session, text: string) {
-  if (allToolsOn()) return;
-  const have = loadedFromLog(session.events);
-  for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session), lazy: true, mcpServers: mcpServerSummary().map((m) => m.server) })) {
-    if (!have.has(id)) emitEvent(session, "tools.enable", "system", { family: id, why: "wanted" });
+  if (!allToolsOn()) {
+    const have = loadedFromLog(session.events);
+    for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session), lazy: true })) {
+      if (!have.has(id)) emitEvent(session, "tools.enable", "system", { family: id, why: "wanted" });
+    }
   }
+  /* Connected servers' tools are loaded one by one, the ones the message is about: a server can carry a hundred
+     and ten, and a chat about one file needs none of them. The agent can still ask for more (tools_enable query). */
+  if (allMcpOn()) return;
+  const hits = preloadMcp(mcpTools(), text, loadedTools(session));
+  if (hits.length > 0) emitEvent(session, "tools.enable", "system", { tools: hits, why: "wanted" });
 }
 
 function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = [], opts: TurnOptions = {}): Promise<TurnResult> {
@@ -4602,23 +4612,46 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           }
           return result;
         },
-        enableTools: (family) => {
-          /* An MCP server may be asked for as mcp:github or as github. */
-          const bare = family.replace(/^mcp:/, "");
-          const server = mcpServerSummary().find((m) => m.server === bare);
-          if (server && !FAMILIES.some((f) => f.id === family)) {
-            const id = `mcp:${server.server}`;
-            if (loadedTools(session).has(id)) return { ok: true, summary: `${id} is already in your list.` };
-            emitEvent(session, "tools.enable", "agent", { family: id, why: "asked" }, span);
-            return { ok: true, summary: `The ${server.tools} ${server.server} tools are in your list from your next step.` };
+        enableTools: ({ family, query, tools: named }) => {
+          const have = loadedTools(session);
+          const all = mcpTools();
+          const load: string[] = [];
+          const notes: string[] = [];
+          /* Exact tool names, with or without the mcp__server__ prefix. */
+          for (const want of named) {
+            const hit = all.find((t) => t.name === want || shortName(t.name) === want);
+            if (hit) load.push(hit.name);
+            else notes.push(`No tool called "${want}".`);
           }
-          if (!FAMILIES.some((f) => f.id === family)) {
-            const servers = mcpServerSummary().map((m) => `mcp:${m.server}`);
-            return { ok: false, summary: `There is no set called "${family}". The sets are: ${[...familyIds(), ...servers].join(", ")}.` };
+          /* A free-text search over every connected tool: the way to find the one for a job. */
+          if (query) {
+            const found = searchMcp(all, query);
+            if (found.length === 0) notes.push(`No connected tool matches "${query}".`);
+            load.push(...found.map((t) => t.name));
           }
-          if (loadedTools(session).has(family)) return { ok: true, summary: `${family} is already in your list.` };
-          emitEvent(session, "tools.enable", "agent", { family, why: "asked" }, span);
-          return { ok: true, summary: `${family} tools are in your list from your next step.` };
+          if (family) {
+            const bare = family.replace(/^mcp:/, "");
+            if (FAMILIES.some((f) => f.id === family)) {
+              if (!have.has(family)) emitEvent(session, "tools.enable", "agent", { family, why: "asked" }, span);
+              notes.push(have.has(family) ? `${family} is already in your list.` : `${family} tools are in your list from your next step.`);
+            } else {
+              const ofServer = all.filter((t) => mcpServerOf(t.name) === bare);
+              if (ofServer.length === 0) {
+                const servers = [...new Set(all.map((t) => mcpServerOf(t.name)).filter(Boolean))].map((x) => `mcp:${x}`);
+                notes.push(`There is no set called "${family}". The sets are: ${[...familyIds(), ...servers].join(", ")}.`);
+              } else if (ofServer.length <= 25) load.push(...ofServer.map((t) => t.name));
+              else notes.push(`${bare} has ${ofServer.length} tools, too many to load at once: give query (what you want to do) or tools (names).`);
+            }
+          }
+          const fresh = [...new Set(load)].filter((n) => !have.has(`mcpt:${n}`) && !have.has("mcp:*"));
+          if (fresh.length > 0) emitEvent(session, "tools.enable", "agent", { tools: fresh, why: "asked" }, span);
+          const lines = [...new Set(load)].map((n) => signatureOf(all.find((t) => t.name === n)!));
+          if (lines.length === 0 && notes.length === 0) notes.push("Say what to load: family, query or tools.");
+          const ok = lines.length > 0 || notes.some((n) => /tools are in your list|already in your list/.test(n));
+          return {
+            ok,
+            summary: [...notes, ...(lines.length ? [`In your list from your next step (* = required):`, ...lines] : [])].join("\n"),
+          };
         },
         requirements: (action) => {
           const result = applyRequirements(latestRequirements(session.events), action);
@@ -5323,6 +5356,21 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
              model knew it was there (the console note says so, and earlier
              turns used it). Bring the set in and run the call, rather than
              make it ask first. */
+          /* A connected server's tool that is not loaded yet, called by the name in the console note. If its
+             arguments already fit the real schema the call runs (the model knew them); otherwise it is told how
+             the tool is called and the tool is loaded, which is cheaper than guessing at arguments blind. */
+          if (spec && spec.group === "mcp" && !tools.some((t) => t.name === use.name)) {
+            emitEvent(session, "tools.enable", "system", { tools: [use.name], why: "called" }, span);
+            tools = await offered();
+            const bad = checkArgs(spec.name, spec.parameters, use.args ?? {});
+            if (bad) {
+              emitEvent(session, "tool.call", "agent", { name: use.name, args: use.args }, span);
+              const said = `Not run: ${use.name} was not loaded; it is now. How it is called (* = required):\n${signatureOf(spec)}\n${bad}`;
+              emitEvent(session, "tool.error", "agent", { error: said }, span);
+              reply(false, watched(use.name, use.args, false, said, said));
+              continue;
+            }
+          }
           if (spec && !tools.some((t) => t.name === use.name)) {
             const family = FAMILIES.find((f) => f.match(use.name));
             if (family && !loadedTools(session).has(family.id)) {

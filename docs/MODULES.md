@@ -299,6 +299,12 @@ Spectra's fetched renderer is most of what is on disk.
     call or a request brings them in (`tools.enable` in the log).
     Every tool is shown by default; `AUTORA_LAZY_TOOLS=1` goes back to the short list that grows as it is wanted. A new tool in one of those families is
     covered by its `match`; a new family goes in `FAMILIES`.
+    **Connected MCP servers are separate and always lazy** (`AUTORA_ALL_MCP=1` undoes it): their tools are loaded
+    one at a time, as `mcpt:<name>` in the log. A message preloads the best matches (`preloadMcp`: name hits count
+    over description hits, an action word like "create" alone counts for nothing; a small server named outright comes
+    in whole), the console note lists the rest by short name, `tools_enable` takes `query` / `tools` / `family`, and
+    calling an unloaded one by name runs it if its arguments fit the schema, else loads it and replies with its
+    signature. A server's tool count is not a cost until its tools are loaded.
   - `trace.ts`: `GET /api/sessions/:id/trace`, read from the log.
   - `suggest.ts`: what to suggest, from what is actually on the install --
     one-tap tasks for a new chat, a schedule offered once, next-step chips

@@ -47,6 +47,43 @@ async function main() {
       assert.match(toolBack(app), /hello Ada from the lab/);
       app.decide = null;
     });
+    await test("a connected tool the message is not about stays out of the list, and the note names it", async () => {
+      const s = await app.newSession();
+      app.seen.length = 0;
+      app.script.push({ text: "ok" });
+      await app.turn(s, "what is two plus two");
+      assert.ok(!app.seen[0].tools.includes("mcp__lab__greet"), "an unrelated chat still carries the server's tool");
+      assert.match(JSON.stringify(app.seen[0].messages), /lab \(2\): greet, boom/);
+    });
+    await test("tools_enable with a query loads the match and says how it is called", async () => {
+      const s = await app.newSession();
+      app.seen.length = 0;
+      let step = 0;
+      app.decide = (req) => {
+        step += 1;
+        if (step === 1) return { tools: [{ name: "tools_enable", args: { query: "greet somebody" } }] };
+        return req.tools.includes("mcp__lab__greet") ? { text: "loaded" } : { text: "missing" };
+      };
+      const ev = await app.turn(s, "what is two plus two");
+      assert.match(toolBack(app), /mcp__lab__greet\(name\*: string\) -- \[MCP: lab\] Greet somebody/);
+      assert.equal(ev.filter((e: any) => e.kind === "turn.agent.text").at(-1)?.payload.text, "loaded");
+      app.decide = null;
+    });
+    await test("calling an unloaded tool with the wrong arguments loads it and shows how it is called; the right ones just run", async () => {
+      const s = await app.newSession();
+      let step = 0;
+      app.decide = () => {
+        step += 1;
+        if (step === 1) return { tools: [{ name: "mcp__lab__greet", args: {} }] };
+        if (step === 2) return { tools: [{ name: "mcp__lab__greet", args: { name: "Grace" } }] };
+        return { text: "done" };
+      };
+      await app.turn(s, "what is two plus two");
+      const back = toolBack(app);
+      assert.match(back, /was not loaded; it is now/);
+      assert.match(back, /hello Grace from the lab/);
+      app.decide = null;
+    });
     await test("a tool that throws is reported to the model as an error and the turn carries on", async () => {
       const s = await app.newSession();
       app.decide = (req) => req.messages.some((m) => m.role === "tool")

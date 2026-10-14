@@ -664,7 +664,7 @@ export interface ToolContext {
   /** Folders that are Autora's own data, never read or edited as the agent's files. */
   protectedPaths?: string[];
   /** Bring in a set of tools (see toolload.ts); says what came in. */
-  enableTools?: (family: string) => { ok: boolean; summary: string };
+  enableTools?: (what: { family: string; query: string; tools: string[] }) => { ok: boolean; summary: string };
   /** The chat's working notes (see ledger.ts). */
   ledger?: (action: Record<string, any>) => LedgerResult;
   /** What the person asked for, kept whole (see requirements.ts). */
@@ -2313,8 +2313,14 @@ async function runToolUnredacted(
 
       case "tools_enable": {
         if (!ctx.enableTools) return { ok: false, summary: "There is nothing to load here." };
-        const r = ctx.enableTools(String(args.family ?? "").trim().toLowerCase());
-        return { ok: r.ok, summary: r.summary, preview: r.ok ? String(args.family) : undefined };
+        const named = Array.isArray(args.tools) ? args.tools : typeof args.tools === "string" && args.tools ? [args.tools] : [];
+        const what = {
+          family: String(args.family ?? "").trim().toLowerCase(),
+          query: String(args.query ?? "").trim(),
+          tools: named.map((t: unknown) => String(t).trim()).filter(Boolean),
+        };
+        const r = ctx.enableTools(what);
+        return { ok: r.ok, summary: r.summary, preview: r.ok ? (what.family || what.query || what.tools.join(", ")) : undefined };
       }
 
       case "requirements": {

@@ -186,12 +186,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Lower token use, and agents that cannot run in circles. Connected MCP servers no longer send every
-  tool on every step (one box paid for 192 of them each time): a server's tools come in when you name
-  it, when it is used, or when the agent asks. Threads now counts every model call against its hourly
-  and daily ceiling, not only the ones that posted. A failing context fold waits longer each time
-  instead of retrying every minute with the whole history. The agent can no longer schedule a plain
-  task more often than every 15 minutes (a watcher is the way to wait for a change), scheduled runs
-  skip the look-back model call, and a turn is stopped after 32 rounds in a row that changed nothing.
-  GLM can start agents and make notebooks (agent_run, notebook_create), and its folding no longer
-  fails on an empty summary.
+  Connected MCP servers now cost nothing until they are used. Their tools were all being sent on every
+  step (one box paid for 192), and the first fix did not apply because the all-tools default overrode it.
+  Now a message loads only the connected tools it is about, the prompt lists the rest by name, tools_enable
+  finds tools by a plain description of the job (query), and calling an unloaded tool either runs it or
+  shows how it is called and loads it. Also: Threads counts every model call against its ceiling, a failing
+  context fold waits longer each time, the agent cannot schedule a plain task more often than every 15
+  minutes, scheduled runs skip the look-back call, and a turn stops after 32 rounds that changed nothing.
+  GLM can start agents and make notebooks (agent_run, notebook_create) and fold long chats.
