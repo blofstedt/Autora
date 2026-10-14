@@ -164,7 +164,7 @@ export const filesSPECS: ToolSpec[] = [
       "The organization: the agents on the Organization page, each with its own task, who it reports to and which " +
       "agents follow it. You run it. Actions: list (the whole map, with when to call each); run (agent, task: start " +
       "that agent on a task in a chat of its own and wait for its report -- when it has a 'then hands to' list, those " +
-      "agents follow in order, each given the report before, but only when the work left something for them: the agent says, and a test, a question or a plan starts none); domains (where your own Mind clusters by subject, to decide who to hire); teach (agent, query, move: hand the memories that match query to that agent's own mind, moving them out of yours unless move is false); note (text, and kind fact, lesson, tip or colleague: keep one " +
+      "agents follow in order, each given the report before, but only if the work left something for them); domains (where your own Mind clusters by subject, to decide who to hire); teach (agent, query, move: hand the memories that match query to that agent's own mind, moving them out of yours unless move is false); note (text, and kind fact, lesson, tip or colleague: keep one " +
       "sentence in your own mind -- what you learned, what works, what a colleague is good at -- so it is in front of you " +
       "next time; agent defaults to you); hire (name: a human first name nobody has, role: its job title, instructions, when; optionally " +
       "reports_to and next -- a new agent for a kind of work that keeps coming up); edit (agent, then any of name, role, " +
