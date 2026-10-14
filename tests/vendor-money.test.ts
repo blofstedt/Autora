@@ -159,7 +159,13 @@ test("each vendor's reply is read in its own shape", () => {
   /* Promotional credit is scoped to a model and expires, so it is not money
      that was paid in and must not be counted as such. */
   near(readBalance("orcarouter", { unit: "USD", paid_balance: 19.99, promo_credits: [{ balance: 20 }] }) ?? -1, 19.99);
-  near(readBalance("openrouter", { data: { total_credits: 10, total_usage: 3.5 } }) ?? -1, 10);
+  /* total_credits is what was ever bought, not what is left: the remainder
+     is that less what has been used of it. */
+  near(readBalance("openrouter", { data: { total_credits: 10, total_usage: 3.5 } }) ?? -1, 6.5);
+  /* No usage reported is nothing spent yet. */
+  near(readBalance("openrouter", { data: { total_credits: 10 } }) ?? -1, 10);
+  /* Spent past zero is an empty account, not a negative one. */
+  near(readBalance("openrouter", { data: { total_credits: 10, total_usage: 10.2 } }) ?? -1, 0);
   assert.equal(readBalance("orcarouter", {}), null);
 });
 

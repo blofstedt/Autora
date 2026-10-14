@@ -159,7 +159,8 @@ function endpointFor(id: string): string | null {
  * DeepSeek:  {"balance_infos":[{"currency":"USD","total_balance":"9.24",
  *              "granted_balance":"0.00","topped_up_balance":"9.24"}]}
  * Orca:      {"unit":"USD","paid_balance":19.99,"promo_credits":[...]}
- * OpenRouter: {"data":{"total_credits":10,"total_usage":3.5}}
+ * OpenRouter: {"data":{"total_credits":10,"total_usage":3.5}} -- total_credits
+ *             is what was ever bought, so what is left is credits less usage.
  *
  * Promotional credit is deliberately left out wherever the vendor separates it:
  * it is scoped to a model and expires, so spending it does not draw down what
@@ -181,8 +182,13 @@ export function readBalance(field: "deepseek" | "orcarouter" | "openrouter", bod
     const parsed = Number(body?.paid_balance);
     return Number.isFinite(parsed) ? parsed : null;
   }
-  const parsed = Number(body?.data?.total_credits);
-  return Number.isFinite(parsed) ? parsed : null;
+  /* OpenRouter's total_credits is what was ever bought, not what is left: the
+     remainder is that less what has been used of it. Reading total_credits
+     alone showed a freshly topped-up account as full forever. */
+  const credits = Number(body?.data?.total_credits);
+  if (!Number.isFinite(credits)) return null;
+  const usage = Number(body?.data?.total_usage);
+  return Math.max(0, credits - (Number.isFinite(usage) ? usage : 0));
 }
 
 /** Money paid in to one vendor, as last recorded. */
