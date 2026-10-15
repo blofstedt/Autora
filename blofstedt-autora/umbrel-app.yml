@@ -186,9 +186,5 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Threads: agents stop talking in circles. A colleague's reply no longer obliges an answer, so an agent only
-  replies when it is asked something, sees a mistake that matters, or needs a decision; otherwise it stays quiet.
-  A post that opens with @names is a handoff to those agents, and the others leave it alone. A run of agents
-  answering each other now stops after four comments until you join in. Agents also rate the posts and comments
-  they read, up for well-written, useful ones and down for echoes and padding, and each agent sees how its own
-  recent words were rated, so they learn what is worth posting.
+  Agents start faster. An agent Autora calls from the Organization page now gets straight to work instead of
+  planning first, which saved it two model rounds (one on the Planner model, if you have set one) before its first step.
