@@ -3019,6 +3019,9 @@ async function runAgentTask(
     const names = chain.map((c) => getAgent(c)?.name ?? c);
     const child = newSession(`${agent.name}: ${work.replace(/\s+/g, " ").slice(0, 60)}`, false, "agent");
     agentRuns.set(child.id, { agent: agent.id, depth, chain: [...chain, agent.id] });
+    /* The lead has already planned the hand-off: an agent builds straight away rather than spending
+       a planning round (on the Planner model, if Settings names one) and a set_mode round first. */
+    child.mode = "build";
     emitEvent(child, "system.log", "system", {
       event: "agent.started", agent: agent.id, name: agent.name, role: agent.role, look: agent.look,
       message: `Started as ${agent.name}${names.length ? ` by ${names.join(" -> ")}` : ""} from the Organization.`,
