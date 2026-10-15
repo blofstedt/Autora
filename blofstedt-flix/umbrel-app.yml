@@ -44,8 +44,9 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  0.1.1 fixes the container not coming back after a restart or a killed
-  container: qBittorrent's WebUI settings were written to a config path it
-  does not read, and stale lock/ipc-socket files made the next start exit
-  after about a second. qBittorrent now starts reliably and Flix reconnects
-  to it on its own.
+  0.1.3 gets BTN search working properly. Asking BTN for a show's latest
+  releases was being rejected outright, and title searches came back empty
+  because BTN does not add wildcards of its own — both now return releases.
+  Each release in the list also has a download link that works. And the error
+  messages now say what to do: whether the API key is wrong, you have hit
+  BTN's rate limit, or the machine's IP needs approving in your BTN notices.
