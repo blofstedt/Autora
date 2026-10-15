@@ -36,6 +36,7 @@ import {
 } from "./artifacts";
 import { readFileRef as sharedFileRef, FileRefError, type FileInput } from "./fileref";
 import { replaceOnPage, type TextEdit } from "./pdftext";
+import type { HandJob, HandReply } from "./pdfhand";
 import { PdfRenderError, withPdf, type PageText, type PdfView, type Rect } from "./pdfrender";
 import { applyChanges, compose, ComposeError, outlineLines, type ComposeSource, type ImageLoader, type OutlineEntry } from "./compose";
 
@@ -56,6 +57,9 @@ interface PdfContext {
   onCancel: (stop: () => void) => void;
   /** The session's PDF window, when there is one to show the work in. */
   desk?: DeskHooks;
+  /** With Visible work on: hand an edit to the open window, to be done there by hand (server/pdfhand.ts). Null when
+      no window took it -- nobody is watching -- and it is done here instead. */
+  hand?: (job: HandJob, label: string) => Promise<HandReply | null>;
   /** Why an object may not be changed right now (the person is working on
       it), or null. */
   held?: (objectId: string) => string | null;
@@ -89,7 +93,7 @@ async function runOne(name: string, args: Record<string, any>, ctx: PdfContext):
     switch (name) {
       case "pdf_read": return await readTool(args, ctx);
       case "pdf_look": return await lookTool(args, ctx);
-      case "pdf_edit": return await editTool(args, ctx);
+      case "pdf_edit": return (await editByHand(args, ctx)) ?? await editTool(args, ctx);
       case "pdf_compose": return await composeTool(args, ctx);
       case "pdf_pages": return await pagesTool(args, ctx);
       case "pdf_redact": return await redactTool(args, ctx);
@@ -2173,6 +2177,72 @@ function gridStep(span: number): number {
 }
 
 // -- pdf_edit --
+
+/** What the editor's own tools make, so the agent's hand can make it in the window (spectra-editor/src/autora/hand.ts). */
+const BY_HAND = new Set(["text", "note", "highlight", "rect", "ellipse", "line", "arrow", "stamp", "check", "cross", "curve", "path"]);
+
+/**
+ * pdf_edit with Visible work on and the window open on this file: what the editor's tools can do is done in the window,
+ * live, by the agent's hand, and saved there; the rest (and anything the hand could not find a way to do) is then done
+ * here on the saved file, and simply appears. Null when there is nothing for the hand, or no window took it.
+ */
+async function editByHand(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome | null> {
+  if (!ctx.hand || !ctx.desk || password(args)) return null;
+  const desk = ctx.desk.current();
+  if (!desk) return null;
+  let given: Input;
+  try {
+    given = readPdf(args.file, ctx.cwd);
+  } catch {
+    return null;
+  }
+  if (!given.artifact || (given.artifact.id !== desk.working && given.artifact.id !== desk.source)) return null;
+  const flatten = args.flatten === true;
+  const values = !flatten && args.fields && typeof args.fields === "object" && !Array.isArray(args.fields) ? args.fields as Record<string, unknown> : null;
+  const listed: Record<string, any>[] = (Array.isArray(args.add) ? args.add : args.add ? [args.add] : []).filter((i: unknown) => i && typeof i === "object");
+  const handable = listed
+    .map((item, i): Record<string, any> & { i: number } => ({ ...item, i }))
+    .filter((item) => BY_HAND.has(String(item.type)) && /^\d+$/.test(String(item.page ?? 1)) && !item.image && !item.field && !item.background);
+  const fieldCount = values ? Object.keys(values).length : 0;
+  if (fieldCount === 0 && handable.length === 0) return null;
+  const what = [
+    ...(fieldCount ? [`filled ${fieldCount} field${fieldCount === 1 ? "" : "s"}`] : []),
+    ...handable.map((item) => (item.type === "text" || item.type === "note" ? `added ${item.type}` : `added a ${item.type}`)),
+  ];
+  const label = `By hand: ${what.slice(0, 4).join(", ")}${what.length > 4 ? ` and ${what.length - 4} more` : ""}`;
+  const reply = await ctx.hand({ ...(values ? { fields: values } : {}), add: handable }, label);
+  if (!reply) return null;
+
+  // What the hand could not do goes to the server, on the file the window saved.
+  const skippedFields = new Set(reply.steps.filter((s) => s.kind === "field" && s.skipped).map((s) => String(s.key)));
+  const doneItems = new Set(reply.steps.filter((s) => s.kind === "add" && !s.skipped).map((s) => Number(s.key)));
+  const restFields = flatten ? args.fields : values ? Object.fromEntries(Object.entries(values).filter(([k]) => skippedFields.has(k))) : undefined;
+  const restAdd = listed.filter((_, i) => !doneItems.has(i));
+  const rest: Record<string, any> = { ...args, add: restAdd, fields: restFields };
+  const restCount = restAdd.length + (restFields ? Object.keys(restFields).length : 0);
+  const restOther = flatten || args.watermark || args.page_numbers || args.metadata || args.strip_metadata
+    || (Array.isArray(args.change) ? args.change.length : args.change) || (Array.isArray(args.remove) ? args.remove.length : args.remove);
+
+  const lines = reply.steps.map((step) => {
+    const name = step.kind === "field" ? `field "${step.key}"` : `add[${step.key}] (${listed[Number(step.key)]?.type ?? step.what ?? "item"})`;
+    if (step.ok) return `- ${name}: done by hand in the window`;
+    if (step.skipped) return `- ${name}: done on the file instead (${step.error ?? "no tool for it on screen"})`;
+    return `- ${name}: FAILED in the window -- ${step.error ?? "it did not work"}`;
+  });
+  const failed = reply.steps.filter((s) => !s.ok && !s.skipped);
+  let after: PdfOutcome | null = null;
+  if (restCount > 0 || restOther) after = await editTool(rest, ctx);
+  const head = reply.saved
+    ? "Done by hand in the PDF window, where the person watched it, and saved there. It is marked for them to accept or decline."
+    : reply.steps.some((s) => s.ok)
+      ? `Done by hand in the PDF window, but the editor's save did not reach the file${reply.error ? ` (${reply.error})` : ""}: what you did is in the window and not yet in the file.`
+      : `The window could not do it by hand${reply.error ? ` (${reply.error})` : ""}.`;
+  return {
+    ok: failed.length === 0 && (after?.ok ?? true) && (reply.saved || !reply.steps.some((s) => s.ok)),
+    summary: [head, ...lines, ...(after ? [`The rest, done on the file: ${after.summary}`] : []), "Look at the pages with pdf_look before you say it is done."].join("\n"),
+    preview: `by hand: ${what.slice(0, 2).join(", ")}`,
+  };
+}
 
 async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
   const given = readPdf(args.file, ctx.cwd);

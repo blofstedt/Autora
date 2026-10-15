@@ -70,6 +70,7 @@ import {
 } from "./artifacts";
 import { checkWidget } from "./widgets";
 import { deskHooks } from "./pdfdesk";
+import { handToWindow } from "./pdfhand";
 import { officeHooks } from "./officedesk";
 import { runPdfTool } from "./pdf";
 import { runVideoTool } from "./opencut";
@@ -3251,7 +3252,7 @@ async function runToolUnredacted(
           onCancel: ctx.onCancel,
           // The PDF window shows the work; an incognito chat keeps nothing on
           // disk, so it works on files without one.
-          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session) }),
+          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session), hand: (job: Parameters<typeof handToWindow>[1], label: string) => handToWindow(ctx.session, job, label) }),
           ...(ctx.held ? { held: (id: string) => ctx.held!("pdf", id) } : {}),
         });
 

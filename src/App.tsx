@@ -19,7 +19,7 @@ import { ResizeHandle } from "./components/ResizeHandle";
 import { CHAT, RAIL, setChatWidth, setRailMini, setRailWidth, usePanes } from "./lib/panes";
 import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
 import { emitOfficePush, resetOffice, setOfficeState, useOfficeState, type OfficeKind } from "./lib/officedesk";
-import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
+import { emitDeskHand, resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { emitVideoCommand, resetVideo, setVideoState, useVideoState } from "./lib/opencut";
 import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
@@ -475,6 +475,7 @@ export function App() {
       },
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
+      onPdfHand: emitDeskHand,
       onCadDesk: setCadState,
       onGameDesk: setGameState,
       onPhotoDesk: setPhotoState,

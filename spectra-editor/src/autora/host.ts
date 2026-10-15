@@ -119,6 +119,12 @@ export function installHost(): void {
       });
       return;
     }
+    if (msg.type === "autora:spectra:hand" && typeof (msg as { id?: unknown }).id === "string") {
+      // The agent's edit, to be done here by its hand with the editor's own tools (Visible work; see hand.ts).
+      const m = msg as unknown as { id: string; job?: unknown; who?: unknown };
+      void import("./hand").then((h) => h.runHand(m.id, (m.job ?? {}) as import("./hand").HandJob, (m.who ?? {}) as { name?: string; color?: string }));
+      return;
+    }
     if (msg.type === "autora:spectra:result" && typeof msg.id === "number") {
       settle(msg.id, msg.ok !== false, msg.value);
     } else if (msg.type === "autora:spectra:event" && typeof msg.event === "string") {

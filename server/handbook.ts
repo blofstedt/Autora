@@ -119,6 +119,15 @@ const PDF = [
     "look. What you add is marked in the window for them to accept or decline. Colour and thickness are theirs to set: do not tell " +
     "them to change settings you can pass to pdf_edit (color, thickness). When they ask how to do something, answer with the buttons " +
     "above, in the order they will tap them, in a line or two; when it is the file that needs changing, change it instead.",
+  "  With Visible work on and the window open on the file, pdf_edit is done in the window by your hand, live, as a person does it: " +
+    "your cursor picks the tool on the bar (or in All tools), sets its colour in the tool's card, scrolls to the page, drags a box " +
+    "for Text, Highlight and Shapes, clicks for Note and Stamps, draws ticks, crosses, curves and paths with Draw, types the words " +
+    "into the editor's own text box, clicks each form field and types into it or ticks it, then presses \"Fill N fields\", goes back " +
+    "to Select and saves with Ctrl+S. The person watches every step, and it is one change for them to accept or decline. It takes " +
+    "seconds per item, so send what the change needs, not trials. Only the five stamps the editor has (APPROVED, REJECTED, DRAFT, " +
+    "CONFIDENTIAL, REVIEWED) are pressed by hand; a picture, a signature, an item over several pages, a watermark, page numbers and " +
+    "properties are done on the file afterwards, and the result says which. With Visible work off, or no window open, all of it is " +
+    "done on the file at once and the window shows the result.",
 ].join("\n");
 
 const VIDEO = [

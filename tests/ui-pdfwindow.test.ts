@@ -134,18 +134,90 @@ async function main() {
       assert.equal(await counter.inputValue(), "1", "the engine's page count reached the editor");
     });
 
-    await test("the agent's next edit reaches the open editor", async () => {
+    await test("with Visible work on, the agent's next edit is done in the open editor by its hand, live, and saved there", async () => {
       await editorIn(page);
       const before = editorLoads;
+      const cursorSeen: string[] = [];
+      await page.exposeFunction("__pdfSaw", (k: string) => { cursorSeen.push(k); }).catch(() => undefined);
+      await page.evaluate(() => window.addEventListener("message", (e) => {
+        const t = (e.data as { type?: unknown } | null)?.type;
+        if (typeof t === "string" && /autora:spectra:(cursor|handed)/.test(t)) (window as unknown as { __pdfSaw: (k: string) => void }).__pdfSaw(t);
+      }));
       let k = 0;
-      app.decide = () => k++ === 0
-        ? { tools: [{ name: "pdf_edit", args: { file, add: [{ type: "text", text: "Witness: Bob Smith", page: 1, x: 60, y: 640, size: 13 }] } }] }
+      app.decide = (req) => /You check one action/.test(req.system) ? { text: '{"destructive": false, "requested": true}' } : k++ === 0
+        ? { tools: [{ name: "pdf_edit", args: { file, add: [
+          { type: "text", text: "Witness: Bob Smith", page: 1, x: 60, y: 640, size: 13 },
+          { type: "rect", page: 1, x: 50, y: 630, width: 220, height: 30, color: "red" },
+        ] } }] }
         : { text: "Added the witness." };
-      await app.turn(s, "add Bob as witness");
+      const shots = process.env.AUTORA_PDF_SHOT;
+      const shot = (async () => {
+        for (let i = 0; i < 10 && shots; i++) {
+          await sleep(1500);
+          await page.screenshot({ path: shots.replace(/\.png$/, `-${i}.png`) }).catch(() => undefined);
+        }
+      })();
+      const events = await app.turn(s, "add Bob as witness", 120_000);
+      await shot;
+      const result = events.filter((e) => e.kind === "tool.result" || e.kind === "tool.error").slice(-1)[0];
+      assert.equal(result?.kind, "tool.result", JSON.stringify(result));
+      assert.match(String((result?.payload as { preview?: string }).preview), /^by hand:/);
+      // What the agent was told: the whole summary, as the model saw it.
+      const answers = JSON.stringify(app.seen.flatMap((r) => r.messages).filter((m: { role: string }) => m.role === "tool").slice(-1));
+      assert.match(answers, /Done by hand in the PDF window/, answers.slice(-1500));
+      assert.doesNotMatch(answers, /FAILED/, answers.slice(-1500));
+      assert.ok(cursorSeen.filter((t) => t === "autora:spectra:cursor").length > 10, "the hand's cursor moved in the editor");
+      assert.ok(cursorSeen.includes("autora:spectra:handed"));
+      assert.equal(editorLoads, before, "the frame was not reloaded: the edit was made in it");
+      // Saved by the editor and kept as the agent's change, which the person can decline.
+      const desk = (await app.api("GET", `/api/pdfdesk/${s}`)).body as { marks?: Array<{ kind: string; label: string }> };
+      assert.ok(desk.marks?.some((m) => m.kind === "page" && /^By hand/.test(m.label)), JSON.stringify(desk.marks));
+      // What the hand made is in the file the agent's tools read.
+      const working = (await app.api("GET", `/api/pdfdesk/${s}`)).body.working as string;
+      let r = 0;
+      app.decide = (req) => /You check one action/.test(req.system) ? { text: '{"destructive": false, "requested": true}' }
+        : r++ === 0 ? { tools: [{ name: "pdf_read", args: { file: working, find: ["Bob Smith"] } }] } : { text: "It is there." };
+      await app.turn(s, "check it");
+      const read = JSON.stringify(app.seen.flatMap((q) => q.messages).filter((m: { role: string }) => m.role === "tool").slice(-1));
+      assert.match(read, /Bob Smith/, read.slice(-800));
+    });
+
+    await test("with Visible work off, the edit is done on the server and the editor loads it", async () => {
+      await app.api("PATCH", "/api/agent-cursor", { on: false });
+      const before = editorLoads;
+      let k = 0;
+      app.decide = (req) => /You check one action/.test(req.system) ? { text: '{"destructive": false, "requested": true}' } : k++ === 0
+        ? { tools: [{ name: "pdf_edit", args: { file, add: [{ type: "text", text: "Second witness", page: 1, x: 60, y: 700, size: 13 }] } }] }
+        : { text: "Added." };
+      await app.turn(s, "add a second witness");
       for (let i = 0; i < 100 && editorLoads === before; i++) await sleep(200);
       assert.ok(editorLoads > before, "the window took the editor back to the file as it is now");
+      const done = (await app.events(s)).filter((e) => e.kind === "tool.result" || e.kind === "tool.error").slice(-1)[0];
+      assert.doesNotMatch(String((done?.payload as { preview?: string } | undefined)?.preview ?? ""), /by hand/i);
+      await app.api("PATCH", "/api/agent-cursor", { on: true });
       const again = await editorIn(page);
       assert.ok(await waitDrawn(again), "and draws it");
+    });
+
+    await test("by hand: a note, highlighted words, a stamp, a tick, an arrow and a drawn path; what has no tool is done on the file after", async () => {
+      let k = 0;
+      app.decide = (req) => /You check one action/.test(req.system) ? { text: '{"destructive": false, "requested": true}' } : k++ === 0
+        ? { tools: [{ name: "pdf_edit", args: { file, add: [
+          { type: "note", text: "Check the dates", page: 1, x: 300, y: 60 },
+          { type: "highlight", text: "Lease agreement", page: 1 },
+          { type: "stamp", stamp: "REJECTED", page: 1, x: 380, y: 300 },
+          { type: "check", page: 1, x: 40, y: 600, size: 16 },
+          { type: "arrow", page: 1, x: 60, y: 420, x2: 160, y2: 470, color: "blue" },
+          { type: "path", page: 1, x: 300, y: 420, d: "M 0 20 C 20 0, 40 40, 60 20" },
+        ], watermark: { text: "DRAFT" } } }] }
+        : { text: "Marked up." };
+      const events = await app.turn(s, "mark it up", 180_000);
+      const result = events.filter((e) => e.kind === "tool.result" || e.kind === "tool.error").slice(-1)[0];
+      assert.equal(result?.kind, "tool.result", JSON.stringify(result));
+      const answers = JSON.stringify(app.seen.flatMap((r) => r.messages).filter((m: { role: string }) => m.role === "tool").slice(-1));
+      assert.equal((answers.match(/done by hand in the window/g) ?? []).length, 6, answers.slice(-2000));
+      assert.match(answers, /The rest, done on the file/, "the watermark, which has no tool on the bar, was done on the file");
+      assert.doesNotMatch(answers, /FAILED/);
     });
 
     await test("put away, it stays away until the agent works on a PDF again", async () => {
@@ -465,6 +537,60 @@ async function main() {
       await wide.keyboard.press("Escape");
       await frame.waitForSelector('[data-testid="phone-menu"]', { state: "detached", timeout: 10_000 });
       await wide.close();
+    });
+
+    await test("by hand: a form's fields are found on the page, typed into and ticked", async () => {
+      // A page of its own: the one above was closed with the window.
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      await page.goto(`${app.base}/?session=${s}`);
+      const doc = await PDFDocument.create();
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      const p = doc.addPage([612, 792]);
+      p.drawText("Membership form", { x: 50, y: 740, size: 20, font });
+      const form = doc.getForm();
+      const name = form.createTextField("full_name");
+      name.addToPage(p, { x: 50, y: 650, width: 240, height: 22 });
+      const agree = form.createCheckBox("agree");
+      agree.addToPage(p, { x: 50, y: 600, width: 16, height: 16 });
+      const up2 = await fetch(`${app.base}/api/artifacts`, {
+        method: "POST", headers: { "Content-Type": "application/octet-stream", "X-File-Name": "member.pdf" }, body: new Uint8Array(await doc.save()),
+      });
+      const formFile = (await up2.json()).artifact.id as string;
+      // Open it in the window first (the server does that), then fill it there by hand.
+      let k = 0;
+      app.decide = (req) => /You check one action/.test(req.system) ? { text: '{"destructive": false, "requested": true}' } : k++ === 0
+        ? { tools: [{ name: "pdf_read", args: { file: formFile } }] } : { text: "Read it." };
+      await app.turn(s, "read the form");
+      await page.waitForSelector(".app-pane .pdf-window", { timeout: 20_000 });
+      // The window shows the form once something opens it there: an edit on the server does.
+      k = 0;
+      await app.api("PATCH", "/api/agent-cursor", { on: false });
+      app.decide = (req) => /You check one action/.test(req.system) ? { text: '{"destructive": false, "requested": true}' } : k++ === 0
+        ? { tools: [{ name: "pdf_edit", args: { file: formFile, metadata: { title: "Membership" } } }] } : { text: "Opened." };
+      await app.turn(s, "open the form");
+      await app.api("PATCH", "/api/agent-cursor", { on: true });
+      const working = (await app.api("GET", `/api/pdfdesk/${s}`)).body.working as string;
+      // The window reloads its editor onto the form: wait for the one that stays.
+      let drawnNow = false;
+      for (let i = 0; i < 40 && !drawnNow; i++) {
+        drawnNow = await editorIn(page).then((f) => drawn(f)).catch(() => false);
+        if (!drawnNow) await sleep(500);
+      }
+      assert.ok(drawnNow, "the form is drawn");
+      await sleep(1500);
+      k = 0;
+      app.decide = (req) => /You check one action/.test(req.system) ? { text: '{"destructive": false, "requested": true}' } : k++ === 0
+        ? { tools: [{ name: "pdf_edit", args: { file: working, fields: { full_name: "Jane Tenant", agree: true } } }] } : { text: "Filled." };
+      const events = await app.turn(s, "fill it in for Jane", 120_000);
+      const result = events.filter((e) => e.kind === "tool.result" || e.kind === "tool.error").slice(-1)[0];
+      assert.equal(result?.kind, "tool.result", JSON.stringify(result));
+      const answers = JSON.stringify(app.seen.flatMap((r) => r.messages).filter((m: { role: string }) => m.role === "tool").slice(-1));
+      assert.equal((answers.match(/done by hand in the window/g) ?? []).length, 2, answers.slice(-2000));
+      // What was typed and ticked is in the document the window saved.
+      const saved = await fetch(`${app.base}/api/pdfdesk/${s}/base`).then((r) => r.arrayBuffer());
+      const filled = (await PDFDocument.load(saved)).getForm();
+      assert.equal(filled.getTextField("full_name").getText(), "Jane Tenant");
+      assert.equal(filled.getCheckBox("agree").isChecked(), true);
     });
   } finally {
     await browser.close();

@@ -133,6 +133,7 @@ import {
   addressIn, DEVICES, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, } from "./server/preview";
 import { deskDocument, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase } from "./server/pdfdesk";
+import { pdfHandRoutes } from "./server/pdfhand";
 import { staticDir } from "./server/staticfiles";
 import { memoryRoutes } from "./server/routes/memory";
 import { healthRoutes } from "./server/routes/health";
@@ -6239,6 +6240,8 @@ async function startServer() {
   /** Gone for good: its log, its pictures, and its browser. */
   // The PDF window: its pages, and what the person changes in it.
   deskRoutes(app, { exists: (id) => sessions.has(id), cwd: () => terminalDir() });
+  // Visible work in the PDF window: the agent's pdf_edit, done there by hand.
+  pdfHandRoutes(app, { exists: (id) => sessions.has(id), push: (id, message) => sendEphemeral(id, message), visible: () => state.agentCursor });
 
   /* The PDF window's editor (server/spectra.ts): Spectra-PDF's own UI and its
      own PDF engine, with the desk above as the document both sides share. */

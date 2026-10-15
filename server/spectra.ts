@@ -44,6 +44,10 @@ interface Session {
    *  by every command: the engine is a file-based tool, so an operation that
    *  ran before the file existed would fail with "no such file". */
   ready: Promise<string | null> | null;
+  /** The bytes the editor itself last saved: the desk taking them is no reason to hand them back. */
+  saved: Buffer | null;
+  /** The document the window is showing, as last written: a folder can hold an earlier document too. */
+  file: string | null;
 }
 
 const sessions = new Map<string, Session>();
@@ -83,6 +87,8 @@ function sessionFor(session: string): Session {
       dir: folderFor(session),
       watchers: new Set(),
       ready: null,
+      saved: null,
+      file: null,
     };
     sessions.set(session, entry);
   }
@@ -114,6 +120,7 @@ async function materialise(session: string, force = false): Promise<string | nul
   const doc = await options!.document(session);
   if (!doc) return null;
   const file = path.join(entry.dir, path.basename(doc.name) || "document.pdf");
+  entry.file = file;
   /* Written once, and only when the desk's copy is a different size: a reload
      must not throw away what the person has done in the editor since. `force`
      is the other case — the desk's copy changed under the editor (the agent
@@ -148,6 +155,9 @@ function context(session: string): SpectraContext {
     health: entry.health,
     emit: (event, payload) => send(session, event, payload),
     documentPath: () => {
+      // The document the desk last handed over, not whichever PDF the folder lists first: the window may have shown
+      // another before it, and that file is still there.
+      if (entry.file && fs.existsSync(entry.file)) return entry.file;
       const doc = path.join(entry.dir, "");
       try {
         const found = fs.readdirSync(doc).find((name) => name.toLowerCase().endsWith(".pdf"));
@@ -159,6 +169,8 @@ function context(session: string): SpectraContext {
     refreshDocument: async () => {
       const doc = await options!.document(session);
       if (!doc) return;
+      // The desk moved on to what the editor itself saved (the person's save, or the agent's hand's): it has it already.
+      if (entry.saved && entry.saved.equals(doc.bytes)) return;
       const file = path.join(entry.dir, path.basename(doc.name) || "document.pdf");
       /* The editor writes the document back to the desk when the person saves,
          and that is a desk change like any other: telling the editor to open
@@ -180,7 +192,17 @@ function context(session: string): SpectraContext {
     appVersion: () => options?.version() ?? "",
 
     documentSaved: (file) => {
-      if (file) options?.saved(session, file);
+      if (!file) return;
+      let bytes: Buffer;
+      try {
+        bytes = fs.readFileSync(file);
+      } catch {
+        return;
+      }
+      // One Save can reach here twice (the pages, then the copy over the document): the same bytes are one save.
+      if (entry.saved && entry.saved.equals(bytes)) return;
+      entry.saved = bytes;
+      options?.saved(session, file);
     },
   };
 }

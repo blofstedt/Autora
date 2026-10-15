@@ -12,6 +12,7 @@ type Handlers = {
   onPreview?: (state: unknown) => void;
   /** The PDF window: whether a PDF is open, and what is on it. */
   onPdfDesk?: (state: unknown) => void;
+  onPdfHand?: (msg: unknown) => void;
   /** One event for the PDF editor: an engine reply, or the document changing
       under it. The window passes on the ones the editor asked for. */
   onSpectra?: (msg: { event: string; payload: unknown }) => void;
@@ -158,6 +159,9 @@ export class SessionStream {
           break;
         case "pdfdesk":
           this.handlers.onPdfDesk?.(msg.state);
+          break;
+        case "pdfdesk.hand":
+          this.handlers.onPdfHand?.(msg);
           break;
         case "spectra":
           if (typeof msg.event === "string") this.handlers.onSpectra?.({ event: msg.event, payload: msg.payload });

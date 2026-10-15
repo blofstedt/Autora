@@ -72,6 +72,13 @@ await test("the Photo manual teaches the tool bar and not the menu bar and toolb
   }
 });
 
+await test("the PDF manual says that with Visible work on pdf_edit is done in the window by hand, and what is not", () => {
+  const pdf = manualText("pdf");
+  for (const needle of ["With Visible work on", "by your hand, live", "Fill N fields", "Ctrl+S", "done on the file afterwards", "With Visible work off"]) {
+    assert.ok(pdf.includes(needle), `the PDF manual lacks "${needle}"`);
+  }
+});
+
 await test("the Photo manual says that with Visible work on the edit is done in the window by hand", () => {
   const photo = manualText("photo");
   for (const needle of ["Visible work on", "by your hand", "clicks its tile", "command's own dialog", "Visible work off"]) {

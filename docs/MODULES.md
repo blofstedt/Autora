@@ -48,8 +48,9 @@ Spectra's fetched renderer is most of what is on disk.
   ones. Edits run one at a time on the stream as the last left it, matches last
   first; the page stays vector, nothing is rasterised. Where it worked, and each
   object `pdf_edit` places (`cueForItem`), go to the window as `cues` on
-  `desk.open`. Nothing plays them today: the editor that did (`pdf-editor/`, SecurePDF's)
-  was replaced by Spectra's, and porting its cursor is open -- see docs/REVIEW.md D1), `pdfdesk.ts` (the PDF window: the file the
+  `desk.open`. Nothing plays them, on purpose: Visible work is live, never a replay (docs/VISIBLE-WORK.md); with it on,
+  `pdf_edit` is done in the editor by the agent's hand instead -- `pdfhand.ts` hands it to the window, `spectra-editor/src/autora/hand.ts`
+  does it with Spectra's own tools and saves, and `expectHandSave` in `pdfdesk.ts` keeps that save as the agent's change), `pdfdesk.ts` (the PDF window: the file the
   agent works on, open beside the chat in Spectra-PDF's editor (`spectra.ts`, `spectra/`, `spectra-editor/`). What `pdf_edit`
   places becomes the editor's own movable objects, each keeping the item it
   came from so the file shows exactly what was drawn until the person changes
@@ -389,6 +390,12 @@ Spectra's fetched renderer is most of what is on disk.
   origin (`components/SpectraWindow.tsx`) and talks to the page by `postMessage`. Only English is in the
   page; the other locales are files fetched on demand (`locale-loaders.ts`), and the metadata worker is
   built without them. `npm run typecheck` checks the renderer and the shim together.
+  Saving, as the port answers it (`server/spectra/commands.ts`): `save_as` is Save (the working copy over the document);
+  `publish_page_commit` / `abort_page_commit` / `acknowledge_page_commit` are Spectra's page-commit transaction
+  (`src-tauri/src/page_commit.rs`: stage over working copy with a snapshot, all or none; "Apply changes" and "Fill N fields"
+  stop dead without a `committed` reply), and a commit of the document's working copy is reported to the desk, so it follows
+  the editor as the person works. Only writes to the document itself count as a save (`isShown`): the editor writes scratch
+  files too. `documentPath()` is the file the desk last handed over (`entry.file`), not the first PDF in the folder.
   Search with `--glob '!spectra-editor/**'` unless the task is about it.
 - `opencut-editor/` + `server/opencut.ts`: **Autora Video**, OpenCut's editor (github.com/opencut-app/opencut-classic, MIT) in
   a window beside the chat. The linked `opencut-app/OpenCut` is mid-rewrite and has no editor yet, so the pin

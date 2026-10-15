@@ -58,3 +58,27 @@ const subscribe = (l: () => void) => { listeners.add(l); return () => { listener
 export function useDeskState(): DeskState {
   return useSyncExternalStore(subscribe, () => state, () => CLOSED);
 }
+
+/** The agent's edit, to be done in the window by hand (Visible work on; server/pdfhand.ts). */
+export type DeskHand = { id: string; job: Record<string, unknown> };
+
+const handListeners = new Set<(hand: DeskHand) => void>();
+
+/** The window listens for the agent's edits to do by hand. */
+export function onDeskHand(fn: (hand: DeskHand) => void): () => void {
+  handListeners.add(fn);
+  return () => { handListeners.delete(fn); };
+}
+
+/** One edit off the session stream (called from App, where the stream lives). */
+export function emitDeskHand(msg: unknown): void {
+  const m = msg as { id?: unknown; job?: unknown } | null;
+  if (!m || typeof m.id !== "string" || !m.job || typeof m.job !== "object") return;
+  for (const fn of handListeners) {
+    try {
+      fn({ id: m.id, job: m.job as Record<string, unknown> });
+    } catch (err) {
+      console.error("[pdf] a listener threw", err);
+    }
+  }
+}
