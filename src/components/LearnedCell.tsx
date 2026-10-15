@@ -120,13 +120,13 @@ export function LearnedCell({
                 item.action === "reinforced" ? "already known; counted as having worked" :
                   item.action === "merged" ? "folded into a similar unconfirmed memory" : "new"}
             </span>
-            {state === "open" || state === "busy" ? (
+            {state === "discarded" ? (
+              <span className="learned-fate">discarded</span>
+            ) : (
+              /* Remembered already; Discard is only there if it was wrong. */
               <span className="learned-actions">
-                <button type="button" className="btn tiny" disabled={state === "busy"} onClick={() => void decide(item.id, true).catch(() => undefined)}>Keep</button>
                 <button type="button" className="btn tiny ghost" disabled={state === "busy"} onClick={() => void decide(item.id, false).catch(() => undefined)}>Discard</button>
               </span>
-            ) : (
-              <span className="learned-fate">{state === "kept" ? "kept" : "discarded"}</span>
             )}
           </div>
         );

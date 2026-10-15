@@ -339,6 +339,7 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
         <input
           className="st-song-name"
           value={project.name}
+          size={Math.max(4, project.name.length + 1)}
           maxLength={80}
           aria-label="Song name"
           onChange={(e) => song.edit((d) => { d.name = e.target.value; }, "name")}

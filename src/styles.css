@@ -838,6 +838,13 @@ body::before {
   overflow-wrap: anywhere; color: var(--text);
 }
 .msg.user .msg-text { color: var(--text); }
+/* Where a message has got to (Thread.tsx Ticks): one grey tick sent, two delivered, two in the accent read. */
+.msg-receipt { display: inline-flex; vertical-align: -2px; margin-left: 5px; color: var(--text-3); transition: color var(--dur-3) var(--ease); }
+.msg-receipt svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.msg-receipt path + path { animation: tickIn var(--dur-3) var(--ease-spring) both; transform-origin: 11px 6px; }
+.msg-receipt.is-read { color: var(--accent); }
+@keyframes tickIn { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .msg-receipt path + path { animation: none; } }
 
 .reason-toggle {
   display: inline-flex; align-items: center; gap: 5px; background: none;
@@ -856,12 +863,38 @@ body::before {
   animation: rise var(--dur-2) var(--ease) both;
 }
 
-.working { display: flex; align-items: center; gap: 9px; color: var(--text-3); font-size: var(--fs-sm); padding-left: 13px; min-width: 0; }
+.working { display: flex; flex-direction: column; color: var(--text-3); font-size: var(--fs-sm); padding-left: 13px; min-width: 0; }
+/* The line itself is the button that opens what is behind it. */
+.working-top {
+  display: flex; align-items: center; gap: 9px; min-width: 0; width: 100%; padding: 2px 0;
+  border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.working-top:hover .working-chev { opacity: 1; }
+.working-chev { flex: none; display: inline-flex; opacity: 0.55; transition: transform var(--dur-2) var(--ease), opacity var(--dur-2) var(--ease); }
+.working.is-open .working-chev { transform: rotate(90deg); opacity: 1; }
+/* What is inside the work: the thinking now, then the turn's steps, newest last. */
+.working-peek {
+  margin: 8px 0 2px 24px; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid var(--border); border-left: 2px solid var(--accent-line); border-radius: var(--r-sm); background: var(--s1);
+  animation: rise var(--dur-2) var(--ease) both; min-width: 0;
+}
+.working-peek-label { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); font-weight: 600; color: var(--accent-light); text-transform: uppercase; letter-spacing: 0.04em; }
+.working-thought p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); max-height: 180px; overflow-y: auto; line-height: 1.5; }
+.working-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.working-steps li { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.working-steps i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); transform: translateY(-1px); }
+.working-steps li.is-ok i { background: var(--live); }
+.working-steps li.is-error i { background: var(--danger); }
+.working-steps li.is-denied i { background: var(--warn); }
+.working-steps li.is-running i { background: var(--accent); animation: workBreathe 1.2s var(--ease) infinite; }
+.working-steps b { flex: none; font-weight: 600; color: var(--text-2); }
+.working-steps span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-3); }
+.working-empty { margin: 0; color: var(--text-3); }
 /* The glyph on the busy line, not the mark (see Thread.tsx): the mark is the
    agent signing its own words and stays beside them, so this one is a plain
    glyph in one colour, breathing at the shimmer's own tempo. Reduced motion
    kills the animation with every other one, in the rule further down. */
-.working-mark { flex: 0 0 auto; display: inline-flex; color: var(--accent-2); animation: workBreathe 2.6s var(--ease) infinite; }
+.working-mark { flex: 0 0 auto; display: inline-flex; color: var(--accent); animation: workBreathe 2.6s var(--ease) infinite; }
 @keyframes workBreathe {
   0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
@@ -4241,7 +4274,7 @@ html[data-font="mono"] body { font-size: var(--fs-base); }
    ============================================================================ */
 .menu-btn { flex: 0 0 auto; margin-left: -6px; }
 .top-title { margin: 0; font-size: var(--fs-lg); font-weight: 650; letter-spacing: -0.01em; }
-@media (min-width: 1180px) { .app:not(.rail-collapsed) .menu-btn { display: none; } }
+@media (min-width: 1180px) { .menu-btn { display: none; } }
 
 .rail-top { gap: 9px; }
 .rail-icon-btn {
@@ -5456,7 +5489,13 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* The presence in the header, only where the sidebar is folded away. */
 .top-presence { display: inline-grid; place-items: center; flex: 0 0 auto; margin: 0 -6px 0 -4px; }
-@media (min-width: 1180px) { .app:not(.rail-collapsed) .top-presence { display: none; } }
+@media (min-width: 1180px) { .top-presence { display: none; } }
+/* The menu folded to icons: its way back and New session, at the left of the header beside the chat's name. */
+.top-rail-acts { display: none; }
+@media (min-width: 1180px) {
+  .app.rail-icons .top-rail-acts { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; margin-left: -10px; }
+  .top-rail-acts .btn.icon { width: 30px; height: 30px; }
+}
 
 /* The room's light. Two soft blooms of the theme's own colours, drifting very
    slowly; the mood only changes their colour and strength. */
@@ -6307,12 +6346,15 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .mode-sel-opt.on { background: var(--accent-soft); }
 
 /* Agent switching between planning and building, said in the thread. */
+/* The word for the mode is never broken or pushed to a line of its own: on a narrow screen the reason wraps under
+   it instead (a chip is a pill on one line, a rounded box on two). */
 .mode-chip {
-  display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; max-width: 100%;
-  padding: 4px 11px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--s1);
-  font-size: var(--fs-sm); color: var(--text-2); overflow-wrap: anywhere;
+  display: inline-flex; flex-wrap: wrap; align-items: center; column-gap: 7px; row-gap: 2px; align-self: flex-start; max-width: 100%;
+  padding: 4px 11px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--s1);
+  font-size: var(--fs-sm); color: var(--text-2); min-width: 0;
 }
-.mode-chip b { font-weight: 600; color: var(--text); }
+.mode-chip b { flex: none; font-weight: 600; color: var(--text); white-space: nowrap; }
+.mode-chip span { min-width: 0; overflow-wrap: anywhere; }
 .mode-chip i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--live); }
 .mode-chip.is-plan i { background: var(--warn); }
 
@@ -6413,6 +6455,17 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .pane-follow:hover { color: var(--text); }
 .pane-follow.is-on { color: var(--live); border-color: rgba(var(--live-rgb), 0.45); background: rgba(var(--live-rgb), 0.1); }
 .pane-follow:not(.is-on) .watch-dot { opacity: 0.35; animation: none; }
+/* Visible work and Follow, together at the right of the tab strip. */
+.pane-acts { flex: 0 0 auto; margin: 0 0 5px auto; position: sticky; right: 0; display: flex; align-items: center; gap: 6px; }
+.pane-acts .pane-follow { margin: 0; position: static; }
+/* Visible work on: the accent, because it is the agent's cursor that is being shown. */
+.pane-follow.visible-work.is-on, .stage-follow.visible-work.is-on { color: var(--accent-light); border-color: var(--accent-line); background: var(--accent-soft); }
+.stage-follow.visible-work { margin-left: auto; }
+.stage-follow.visible-work.is-compact { padding: 0 9px; }
+.stage-follow.visible-work + .stage-follow { margin-left: 6px; }
+.immersive-follow.visible-work { display: inline-flex; align-items: center; gap: 5px; }
+.immersive-follow.visible-work.is-compact { padding: 0 9px; }
+.immersive-follow.visible-work.is-on { opacity: 1; }
 @keyframes appPaneIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 
 .app-window { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; outline: none; background: var(--bg); }
@@ -6699,7 +6752,22 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* The editor and, over it, the agent's cursor (components/OfficeCursor.tsx). */
 .office-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .office-cursor-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
-.office-cursor { position: absolute; left: 0; top: 0; will-change: transform; transition: opacity var(--dur-3) var(--ease); }
+.office-cursor { position: absolute; left: 0; top: 0; will-change: transform; }
+/* Every agent cursor comes and goes the same way: it pops into being where it starts work, out of a blur and a little
+   past full size, and when it is done it swells a touch and dissolves. Never a cut. The tip of the arrow stays put. */
+.cursor-pop { display: block; position: relative; transform-origin: 1px 1px; }
+.office-cursor .cursor-pop { animation: cursorIn var(--dur-3) var(--ease-spring) both; }
+.office-cursor.is-gone .cursor-pop { animation: cursorOut var(--dur-3) var(--ease) both; }
+@keyframes cursorIn {
+  0% { opacity: 0; transform: scale(0.25); filter: blur(4px); }
+  55% { opacity: 1; filter: none; }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+@keyframes cursorOut {
+  0% { opacity: 1; transform: none; filter: none; }
+  35% { opacity: 1; transform: scale(1.18); filter: none; }
+  100% { opacity: 0; transform: scale(0.2); filter: blur(5px); }
+}
 .office-cursor-name, .agent-pointer-name {
   position: absolute; left: 14px; top: 14px; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 6px;
   border-radius: var(--r-pill); background: var(--agent-accent); color: #fff;
@@ -6797,9 +6865,6 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .diff-writing, .diff-caret::before { animation: none; } }
 
 /* The switch for the agent's cursor in the app window's bar. */
-.app-cursor { font: 600 11px/1 var(--sans, system-ui); padding: 5px 9px; border-radius: var(--r-pill); border: 1px solid rgba(255, 255, 255, .12); background: transparent; color: var(--text-3); cursor: pointer; white-space: nowrap; }
-.app-cursor.on { color: var(--accent-light); border-color: rgba(var(--accent-rgb), .55); background: rgba(var(--accent-rgb), .14); }
-@media (max-width: 560px) { .app-cursor { display: none; } }
 
 /* Taking a window from the agent, and giving it back. */
 .app-control { font: 600 11px/1 var(--sans, system-ui); padding: 5px 9px; border-radius: var(--r-pill); border: 1px solid rgba(255, 255, 255, .16); background: transparent; color: var(--text, #e8e8ee); cursor: pointer; white-space: nowrap; }
@@ -6810,7 +6875,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 
 /* A phone's PDF bar has room for the name, Take control and Full screen; the
    cursor switch is in Settings there. */
-.pdf-window.is-phone .pdf-cursor-pill, .pdf-window.is-phone .pdf-bar-note { display: none; }
+.pdf-window.is-phone .pdf-bar-note { display: none; }
 /* A phone gives the bar 390px, and the controls in it come to more than that:
    at 390 the bar was 12px too wide and the full-screen button sat off the
    right edge (82px off at 320), so the way out of a full-screen tool was the
@@ -6880,8 +6945,6 @@ body.is-resizing iframe { pointer-events: none; }
   .pane-handle.is-rail { display: block; }
   .pane-handle.is-chat { display: block; }
   .rail-slot { flex-basis: var(--rail-w, 56px); }
-  /* Folded away: the menu button and the mark are back in the header, at the far left. */
-  .app.rail-collapsed .rail-slot, .app.rail-collapsed .pane-handle.is-rail { display: none; }
 }
 
 /* The browser's menu and its panels: find, bookmarks, history, downloads. */
@@ -7158,17 +7221,20 @@ body.is-resizing iframe { pointer-events: none; }
 .rail:not(.is-drawer) .rail-ctx-pct { font-size: var(--fs-xs); }
 .rail:not(.is-drawer) .rail-ctx-track, .rail:not(.is-drawer) .rail-ctx-fill, .rail:not(.is-drawer) .rail-ctx-tick { stroke-width: 4.5; }
 .rail:not(.is-drawer) .brand-word { display: none; }
-.rail-chev-left { transform: rotate(90deg); }
-.rail-chev-right { transform: rotate(-90deg); }
+/* The chevron points right as drawn: "show the whole menu" is right, "fold it" is left. (It was turned to point down
+   and up, which read as scrolling.) */
+.rail-chev-left { transform: rotate(180deg); }
+.rail-chev-right { transform: none; }
 @media (max-width: 1179px) { .rail-mini-btn { display: none; } }
 
 /* ---- Folded to icons (desktop): a strip of icons, with the context as one vertical bar under the last of them. */
 @media (min-width: 1180px) {
-  .app.rail-mini:not(.rail-collapsed) .rail-slot { flex-basis: 56px; }
+  .app.rail-mini .rail-slot { flex-basis: 56px; }
   .app.rail-mini .pane-handle.is-rail { display: none; }
 }
-.rail.is-mini .rail-top { flex-direction: column; height: auto; padding: 10px 0 8px; gap: 6px; align-items: center; }
-.rail.is-mini .rail-top .spacer, .rail.is-mini .rail-top .brand-word, .rail.is-mini .rail-top .rail-icon-btn[aria-label="New incognito chat"] { display: none; }
+.rail.is-mini .rail-top { height: var(--top-h, 52px); padding: 0; justify-content: center; }
+/* Folded, the top of the strip is the mark alone: its buttons are in the header (.top-rail-acts). */
+.rail.is-mini .rail-top .spacer, .rail.is-mini .rail-top .brand-word, .rail.is-mini .rail-top .rail-icon-btn { display: none; }
 .rail.is-mini .rail-scroll { padding: 6px 6px 12px; }
 .rail.is-mini .rail-nav-item { justify-content: center; padding: 9px 0; gap: 0; }
 .rail.is-mini .rail-nav-item > span { display: none; }
@@ -7192,8 +7258,9 @@ body.is-resizing iframe { pointer-events: none; }
 .st-window { outline: none; --ph: 0; --lvl: 0; position: relative; }
 .st-window.is-phone { height: min(62dvh, 560px); }
 .st-window.is-phone.is-full { height: auto; }
+/* As wide as the name (its size is the name's length), so "Saved as you go" sits right after it as in every window. */
 .st-song-name {
-  min-width: 0; flex: 0 1 220px; background: transparent; border: 1px solid transparent; border-radius: var(--r-xs);
+  min-width: 0; flex: 0 1 auto; max-width: 260px; field-sizing: content; background: transparent; border: 1px solid transparent; border-radius: var(--r-xs);
   color: var(--text); font: 600 var(--fs-base) var(--sans); padding: 3px 6px;
 }
 .st-song-name:hover { border-color: var(--border-strong); }
@@ -7466,9 +7533,16 @@ body.is-resizing iframe { pointer-events: none; }
 
 /* The agent's pointer in the windows that are part of this page (lib/pointer.ts): over everything, touching nothing. */
 .agent-pointer-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; overflow: hidden; }
-.agent-pointer { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity var(--dur-2) var(--ease); will-change: transform; }
-.agent-pointer-layer.is-on .agent-pointer { opacity: 1; }
-.agent-pointer > svg { display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); }
+.agent-pointer { position: absolute; left: 0; top: 0; opacity: 0; will-change: transform; }
+.agent-pointer-layer.is-on .agent-pointer, .agent-pointer-layer.is-off .agent-pointer { opacity: 1; }
+.agent-pointer-layer.is-on .cursor-pop { animation: cursorIn var(--dur-3) var(--ease-spring) both; }
+.agent-pointer-layer.is-off .cursor-pop { animation: cursorOut var(--dur-3) var(--ease) both; }
+.agent-pointer .cursor-pop > svg { display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); }
+/* What it types beside the pointer ends in a caret, so it reads as typing rather than a label. */
+.agent-pointer-typed::after {
+  content: ""; display: inline-block; width: 0; height: 1em; margin-left: 2px; vertical-align: -2px;
+  border-right: 2px solid #fff; animation: office-blink 0.7s steps(1) infinite;
+}
 
 .agent-pointer-typed {
   position: absolute; left: 14px; top: 36px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -7644,7 +7718,7 @@ body.is-resizing iframe { pointer-events: none; }
   .pdf-window.is-full, .app-window.is-full { background: var(--bg); }
   .pdf-window.is-full .pdf-bar, .app-window.is-full .app-bar { padding-right: 56px; }
   body:has(.immersive-follow) .cell.widget.is-expanded .cell-top, body:has(.immersive-follow) .cell.shot.is-max .cell-top,
-  body:has(.immersive-follow) .pdf-window.is-full .pdf-bar, body:has(.immersive-follow) .app-window.is-full .app-bar { padding-right: 130px; }
+  body:has(.immersive-follow) .pdf-window.is-full .pdf-bar, body:has(.immersive-follow) .app-window.is-full .app-bar { padding-right: 172px; }
   .immersive-corner { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 5px); right: 8px; }
   .immersive-chat { width: 38px; height: 38px; opacity: 0.9; }
 }
@@ -7667,7 +7741,6 @@ body.is-resizing iframe { pointer-events: none; }
 
 /* The editor's bar on a phone has no room for the cursor switch (it is in Settings); the page view is an icon like the rest. */
 @media (max-width: 680px) {
-  .is-phone .pdf-bar .pdf-cursor-pill { display: none; }
 }
 
 /* The browser on a phone: back, reload, the address, hand-over, drag and enlarge. Forward, bookmark, the menu, the zoom
@@ -7959,10 +8032,8 @@ body.is-resizing iframe { pointer-events: none; }
 /* An agent's own report in the chat, under the line that announced it. */
 .chime-report { margin-top: 6px; padding: 8px 10px; border-left: 2px solid var(--accent-line); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--s2); font-size: var(--fs-base); color: var(--text); overflow-wrap: anywhere; }
 .chime-report.is-bad { border-left-color: var(--danger); }
-.working-quiet { margin-left: 8px; font-size: var(--fs-sm); color: var(--warn); }
 .chime-progress { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; font-size: var(--fs-sm); color: var(--text-3); overflow-wrap: anywhere; }
 .chime-now { animation: chimeIn var(--dur-2) var(--ease) both; }
-.chime-progress.is-quiet .chime-meta { color: var(--warn); }
 @media (prefers-reduced-motion: reduce) { .chime-now { animation: none; } }
 .chime-report > :first-child { margin-top: 0; }
 .chime-report > :last-child { margin-bottom: 0; }
@@ -8024,7 +8095,7 @@ body.is-resizing iframe { pointer-events: none; }
 
 .dock-card-body { display: flex; flex-direction: column; gap: 4px; }
 /* The agent's pointer takes the theme's accent, as its label does. */
-.office-cursor-arrow path, .agent-pointer > svg path { fill: var(--agent-accent); }
+.office-cursor-arrow path, .agent-pointer .cursor-pop > svg path { fill: var(--agent-accent); }
 
 /* The few words beside the agent's cursor (components/AgentThought.tsx): a pill up and to the right of the pointer, its
    tail pointing back at it, above the pointer layer so it is never under what it describes. */

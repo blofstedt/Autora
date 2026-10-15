@@ -31,13 +31,13 @@
     /* What a command opens inside the ribbon (a table size, a list of styles) is seen, though the ribbon is not. */
     html.autora-rail-ui.rail-ribbon .ribbon :is([class*="picker"], [class*="popover"], [class*="popup"], [class*="menu"], [class*="dropdown"], [class*="gallery"], [role="menu"], [role="listbox"], [role="dialog"]),
     html.autora-rail-ui.rail-ribbon header.excel-header :is([class*="picker"], [class*="popover"], [class*="popup"], [class*="menu"], [class*="dropdown"], [class*="gallery"], [role="menu"], [role="listbox"], [role="dialog"]) { visibility: visible; pointer-events: auto; box-shadow: 0 16px 48px -10px #000; outline: 1px solid rgba(255,255,255,.16); border-radius: 10px; }
-    html.autora-desktop.rail-ribbon .ribbon, html.autora-desktop.rail-ribbon header.excel-header { right: 76px; top: 12px; width: min(680px, calc(100vw - 100px)); }
+    html.autora-desktop.rail-ribbon .ribbon, html.autora-desktop.rail-ribbon header.excel-header { right: 66px; top: 12px; width: min(680px, calc(100vw - 100px)); }
     html.autora-phone.rail-ribbon .ribbon, html.autora-phone.rail-ribbon header.excel-header { left: 8px; right: 8px; bottom: 64px; max-height: 46vh !important; }
     /* A side pane (Styles, Comments, the format pane) floats over the work area, beside the bar (above the dock on a phone): it never
        pushes the page or the slide sideways, so what is being worked on stays where it is. */
     html.autora-rail-ui aside.styles-pane, html.autora-rail-ui aside.comments-pane, html.autora-rail-ui aside.format-pane, html.autora-rail-ui aside.nav-pane {
       position: fixed !important; z-index: 60; box-sizing: border-box; border: 1px solid rgba(255,255,255,.14) !important; border-radius: 16px; box-shadow: 0 24px 60px -16px #000; overflow: hidden; }
-    html.autora-desktop aside.styles-pane, html.autora-desktop aside.comments-pane, html.autora-desktop aside.format-pane { right: 76px; top: 12px; bottom: 12px; width: 300px !important; }
+    html.autora-desktop aside.styles-pane, html.autora-desktop aside.comments-pane, html.autora-desktop aside.format-pane { right: 66px; top: 12px; bottom: 12px; width: 300px !important; }
     html.autora-desktop aside.nav-pane { left: 12px; top: 12px; bottom: 12px; }
     html.autora-phone aside.styles-pane, html.autora-phone aside.comments-pane, html.autora-phone aside.format-pane, html.autora-phone aside.nav-pane { left: 8px; right: 8px; bottom: 64px; top: auto; width: auto !important; max-height: 55vh; }
     html.autora-rail-ui .qa-btn, html.autora-rail-ui .autosave-toggle, html.autora-rail-ui .ribbon-tab-file { display: none !important; }
@@ -47,7 +47,7 @@
     html.autora-rail-ui .ribbon-body { overflow-x: auto; }
     html.autora-phone footer.status-bar, html.autora-phone .status-bar { display: none !important; }
     html.autora-phone #root { box-sizing: border-box; padding-bottom: 56px; }
-    html.autora-desktop #root { box-sizing: border-box; padding-right: 66px; }
+    html.autora-desktop #root { box-sizing: border-box; padding-right: 60px; }
     html.autora-phone .ribbon-tab { min-height: 40px; padding: 0 12px; border-radius: 12px; }
     html.autora-phone .slide-list { width: 76px !important; min-width: 0 !important; }
     html.autora-phone .thumb-resizer, html.autora-phone .notes-pane { display: none !important; }
@@ -56,18 +56,19 @@
 
     #autora-rail { position: fixed; z-index: 70; box-sizing: border-box; display: flex; align-items: center; gap: 4px; padding: 8px; font-family: inherit;
       background: rgba(21,24,36,.92); border: 1px solid rgba(255,255,255,.13); box-shadow: 0 18px 48px -12px rgba(0,0,0,.7); backdrop-filter: blur(8px); }
-    html.autora-desktop #autora-rail { right: 8px; top: 50%; transform: translateY(-50%); flex-direction: column; border-radius: 999px; max-height: calc(100% - 16px); overflow: hidden; }
+    html.autora-desktop #autora-rail { right: 10px; top: 50%; transform: translateY(-50%); flex-direction: column; gap: 3px; padding: 5px; border-radius: 999px; max-height: calc(100% - 16px); overflow: hidden; }
     html.autora-phone #autora-rail { left: 0; right: 0; bottom: 0; height: 56px; justify-content: center; gap: 2px; padding: 8px 6px; border-width: 1px 0 0; border-radius: 0; background: #0e1016; box-shadow: none; }
     #autora-rail button.rb { --tc: #98a1b6; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; cursor: pointer; padding: 0; color: var(--tc);
       background: color-mix(in srgb, var(--tc) 16%, transparent); touch-action: manipulation; transition: background .15s, box-shadow .15s; }
-    html.autora-desktop #autora-rail button.rb { width: 44px; height: 44px; }
+    html.autora-desktop #autora-rail button.rb { width: 34px; height: 34px; }
+    html.autora-desktop #autora-rail button.rb svg { width: 18px; height: 18px; }
     html.autora-phone #autora-rail button.rb { width: 40px; height: 40px; }
     #autora-rail button.rb:hover:not(:disabled) { background: color-mix(in srgb, var(--tc) 28%, transparent); }
     #autora-rail button.rb.on { color: #fff; background: var(--tc); box-shadow: 0 6px 18px color-mix(in srgb, var(--tc) 45%, transparent); }
     #autora-rail button.rb:disabled { opacity: .35; cursor: default; }
     #autora-rail button.rb svg, .ar-tile svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     #autora-rail .div { flex: none; background: rgba(255,255,255,.13); }
-    html.autora-desktop #autora-rail .div { width: 24px; height: 1px; margin: 2px 0; }
+    html.autora-desktop #autora-rail .div { width: 20px; height: 1px; margin: 2px 0; }
     html.autora-phone #autora-rail .div { width: 1px; height: 24px; margin: 0 2px; }
 
     #autora-grid { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 16px; background: rgba(8,9,13,.68); backdrop-filter: blur(3px); font-family: inherit; }
@@ -320,7 +321,8 @@
   const byId = new Map(TOOLS.map((x) => [x.id, x]));
   const shownIds = () => (phone ? TOOLS.filter((x) => x.phone).map((x) => x.id) : pins.filter((id) => byId.has(id)));
 
-  const BTN = phone ? 40 : 44, GAP = phone ? 2 : 4, PAD = 8;
+  // The sizes every app's bar uses (docs/TOOL-RAIL.md, "Sizes").
+  const BTN = phone ? 40 : 34, GAP = phone ? 2 : 3, PAD = phone ? 8 : 5;
   const room = () => {
     const space = phone ? window.innerWidth : window.innerHeight - 16;
     return Math.max(1, Math.floor((space - 2 * PAD - 12 + GAP) / (BTN + GAP)) - 1);

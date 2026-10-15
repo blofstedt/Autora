@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AutoraMark, type MarkState } from "./AutoraMark";
 import {
-  IconBrain, IconChart, IconClock, IconFolder, IconList, IconMask, IconMenu, IconMessage,
+  IconBrain, IconChart, IconClock, IconFolder, IconList, IconMask, IconMessage,
   IconMonitor, IconNotebook, IconOrg, IconPlug, IconThreads, IconPlus, IconServer, IconSliders, IconStore, IconWrench, IconZap,
   IconX, IconCheck, IconChevron,
 } from "./Icons";
@@ -57,7 +57,7 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  */
 export function Rail({
   page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, onIncognito,
-  onStartTask, drawer = false, onClose, onFold, mini = false, onMini,
+  onStartTask, drawer = false, onClose, mini = false, onMini,
   mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0, mindGlow = false, threadsUnread = 0,
 }: {
   page: PageId;
@@ -77,9 +77,8 @@ export function Rail({
   onStartTask?: (text: string, title?: string) => void;
   drawer?: boolean;
   onClose?: () => void;
-  /** Fold the menu away to the far left (a desktop only). */
-  onFold?: () => void;
-  /** Folded to a strip of icons (a desktop only), and the way to fold it there and back. */
+  /** Folded to a strip of icons (a desktop only), and the way to fold it there and back. Folded, the way back and
+      New session are in the header beside the chat's name (App.tsx, .top-rail-acts), not stacked over the icons. */
   mini?: boolean;
   onMini?: (mini: boolean) => void;
   /** The agent's presence: what the mark at the top is doing. */
@@ -152,11 +151,6 @@ export function Rail({
             aria-label={mini ? "Show the whole menu" : "Fold the menu to icons"}
           >
             <IconChevron size={13} className={mini ? "rail-chev-right" : "rail-chev-left"} />
-          </button>
-        )}
-        {!drawer && onFold && (
-          <button className="rail-icon-btn" onClick={onFold} title="Fold the menu away" aria-label="Fold the menu away">
-            <IconMenu size={15} />
           </button>
         )}
         {drawer && (

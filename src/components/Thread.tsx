@@ -1,5 +1,5 @@
 import { Suspense, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Bucket, Cell, MemoryTouch } from "../lib/derive";
+import type { Bucket, Cell, MemoryTouch, SpanState } from "../lib/derive";
 import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
 import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconCheck, IconChevron, IconCopy, IconDownload, IconFile, IconNotebook, IconSpeaker, IconSpeakerOff, IconTerminal, IconUser, IconWrench } from "./Icons";
@@ -11,7 +11,7 @@ import { setFollowing, useFollowing } from "../lib/follow";
 import { setFullscreen, useFullscreen } from "../lib/fullscreen";
 import { AutoraMark } from "./AutoraMark";
 import type { MarkPhase } from "../lib/activity";
-import { stuckNote } from "../lib/activity";
+import { thoughtForTool } from "../lib/thought";
 import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
 import { FileCell } from "./FileCell";
@@ -67,7 +67,6 @@ export function Thread({
   busy,
   doing,
   elapsedMs = 0,
-  quietMs = 0,
   steps = 0,
   phase = "thinking",
   sessionId,
@@ -79,6 +78,7 @@ export function Thread({
   placeholder,
   dock,
   dockedPlanKey = "",
+  outbox = NO_OUTGOING,
   ...work
 }: {
   /** A desktop has a work area beside the conversation (see WorkFeed), so what the agent looks at and does is shown
@@ -95,13 +95,13 @@ export function Thread({
   /** The key (cellKey) of the to-do list docked above the message box, which
       the thread then shows as a one-line stub. */
   dockedPlanKey?: string;
+  /** Sent from this page and not in the log yet: shown with one tick until it is. */
+  outbox?: Outgoing[];
   busy: boolean;
   /** What it is on right now, in a few words (see lib/activity.ts). */
   doing?: string | null;
   /** How long this turn has been going, in ms. Zero before it starts. */
   elapsedMs?: number;
-  /** How long since the turn last did anything. Past a minute the line says so, so a long step reads differently from a stall. */
-  quietMs?: number;
   /** How many tool calls this turn has made. A long turn with no visible
       progress looks stalled; the count says it is still moving. */
   steps?: number;
@@ -265,7 +265,7 @@ export function Thread({
   const tailLength =
     (tail?.replies.reduce((n, r) => n + r.text.length, 0) ?? 0) + (tail?.cells.length ?? 0) +
     // Next-step chips arriving count as the thread growing, so they are scrolled into view.
-    (tail?.next?.length ?? 0);
+    (tail?.next?.length ?? 0) + outbox.length;
   const prevCount = useRef(count);
 
   const toBottom = useCallback((behavior: ScrollBehavior) => {
@@ -379,7 +379,7 @@ export function Thread({
     return () => observer.disconnect();
   }, [stuck, toBottom, count]);
 
-  if (buckets.length === 0 && !busy) {
+  if (buckets.length === 0 && !busy && outbox.length === 0) {
     return (
       <div className="empty">
         {/* Still: the sidebar mark is the one that breathes at rest. */}
@@ -457,6 +457,11 @@ export function Thread({
             phase={phase}
           />
         ))}
+        {outbox.length > 0 && (
+          <article className="turn is-outgoing">
+            {outbox.map((m) => <UserMessage key={m.id} text={m.text} receipt="sent" />)}
+          </article>
+        )}
         {/* What to do next, under the last reply once it is finished. Outside
             the memoised cards: they come and go without redrawing any. */}
         {!busy && onSuggest && tail?.next && tail.next.length > 0 && (
@@ -477,28 +482,13 @@ export function Thread({
           </div>
         )}
         {busy && (
-          <div className="working" aria-live="polite">
-            {/* The line under the thread wears a glyph of its own, not the
-                mark: the mark is the agent signing its own words, and a second
-                one down here turned the brand into a progress spinner.
-                Thinking is a brain, doing is a wrench -- see phaseGlyph. */}
-            <span className="working-mark" aria-hidden="true">{phaseGlyph(phase)}</span>
-            {/* Keyed on the words, so each new step fades in over the last
-                rather than snapping -- a train of thought, not a counter. */}
-            <span className="working-what" key={chatOnly ? "working" : doing || "working"}>{chatOnly ? "Working" : doing || "Working"}</span>
-            {/* How far in it is. A step count alone is noise on a short turn,
-                so it waits for two, and the clock waits for a few seconds
-                rather than counting 0s under every reply. */}
-            {(elapsedMs >= 3000 || (steps > 1 && !chatOnly)) && (
-              <span className="working-when">
-                {elapsedMs >= 3000 ? clock(elapsedMs) : ""}
-                {steps > 1 && !chatOnly ? `${elapsedMs >= 3000 ? " · " : ""}${steps} steps` : ""}
-              </span>
-            )}
-            {quietMs >= 60_000 && (
-              <span className="working-quiet">nothing new for {clock(quietMs)}{stuckNote(quietMs)}</span>
-            )}
-          </div>
+          <WorkingLine
+            tail={tail}
+            doing={doing ?? null}
+            elapsedMs={elapsedMs}
+            steps={steps}
+            phase={phase}
+          />
         )}
         </div>
       </div>
@@ -677,14 +667,9 @@ const TurnBucket = memo(function TurnBucket({
   return (
     <article className="turn">
       {(bucket.prompt || bucket.attachments.length > 0 || (bucket.notebooks?.length ?? 0) > 0) && (
-        <div className="msg user">
-          <span className="avatar"><IconUser size={14} /></span>
-          <div className="msg-body">
-            <div className="msg-who">User</div>
-            {bucket.prompt && <div className="msg-text">{bucket.prompt}</div>}
-            <MessageFiles files={bucket.attachments} notebooks={bucket.notebooks} />
-          </div>
-        </div>
+        <UserMessage text={bucket.prompt} receipt={bucket.cells.length > 0 || bucket.replies.length > 0 ? "read" : "received"}>
+          <MessageFiles files={bucket.attachments} notebooks={bucket.notebooks} />
+        </UserMessage>
       )}
 
       <div className="work">
@@ -704,6 +689,41 @@ const TurnBucket = memo(function TurnBucket({
     </article>
   );
 });
+
+/** Where a message the person sent has got to: on its way, with the server, or taken in by the agent. */
+export type Receipt = "sent" | "received" | "read";
+
+const RECEIPT_LABEL: Record<Receipt, string> = { sent: "Sent", received: "Delivered", read: "Read by the agent" };
+
+/** The ticks on a message: one when it has gone, two once the server has it, two in the accent once the agent has
+    read it. Ticks only, no words; the words are for a screen reader and a hover. */
+const Ticks = memo(function Ticks({ receipt }: { receipt: Receipt }) {
+  return (
+    <span className={`msg-receipt is-${receipt}`} role="img" aria-label={RECEIPT_LABEL[receipt]} title={RECEIPT_LABEL[receipt]}>
+      <svg viewBox="0 0 17 12" width="16" height="11" aria-hidden="true">
+        <path d="M1.2 6.6 4.4 9.8 10.4 2.6" />
+        {receipt !== "sent" && <path d="M7.6 9.8 13.9 2.6" />}
+      </svg>
+    </span>
+  );
+});
+
+/** One thing the person said: at the start of a turn, added while the agent worked, or still on its way. */
+const UserMessage = memo(function UserMessage({ text, receipt, children }: { text: string; receipt: Receipt; children?: ReactNode }) {
+  return (
+    <div className={`msg user is-${receipt}`}>
+      <span className="avatar"><IconUser size={14} /></span>
+      <div className="msg-body">
+        <div className="msg-who">User <Ticks receipt={receipt} /></div>
+        {text && <div className="msg-text">{text}</div>}
+        {children}
+      </div>
+    </div>
+  );
+});
+
+/** Messages sent from this page that the log has not shown yet. */
+export type Outgoing = { id: number; text: string };
 
 /** Everything a cell needs to draw itself, apart from which cell it is. */
 type CellContext = {
@@ -753,6 +773,100 @@ function clock(ms: number): string {
   const s = total % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
+
+/** One thing the agent did in the turn in flight, as the working line's panel lists it. */
+type Peek = { key: string; text: string; detail: string; status: SpanState["status"] };
+
+/** The steps of a turn, newest last, the page cards' own steps included. */
+function peekSteps(cells: Cell[], out: Peek[] = []): Peek[] {
+  for (const cell of cells) {
+    if (cell.kind === "screen") peekSteps(cell.log, out);
+    else if (cell.kind === "tool") {
+      const { name, args, status } = cell.span;
+      out.push({ key: cellKey(cell), text: thoughtForTool(name, args) ?? name.replace(/_/g, " "), detail: describeArgs(args), status });
+    } else if (cell.kind === "terminal") {
+      const failed = cell.exitCode !== null && cell.exitCode !== 0;
+      out.push({ key: cellKey(cell), text: cell.status === "running" ? "Running a command" : "Ran a command", detail: cell.command, status: failed ? "error" : cell.status });
+    }
+  }
+  return out;
+}
+
+/** What it is thinking right now: the end of the newest reasoning in the turn. */
+function liveThinking(bucket: Bucket | undefined): string {
+  if (!bucket) return "";
+  for (let i = bucket.replies.length - 1; i >= 0; i--) {
+    const text = bucket.replies[i].thinking?.trim();
+    if (text) return text.length > 900 ? `\u2026${text.slice(-900)}` : text;
+  }
+  return "";
+}
+
+/**
+ * The line under the thread while the agent works: what it is on, in a few words, and how long it has been going.
+ * It opens: under it, what the agent is thinking now and the steps it has taken in this turn, newest last, so the
+ * person can see inside the work without leaving the conversation.
+ */
+const WorkingLine = memo(function WorkingLine({ tail, doing, elapsedMs, steps, phase }: {
+  tail: Bucket | undefined;
+  doing: string | null;
+  elapsedMs: number;
+  steps: number;
+  phase: MarkPhase;
+}) {
+  const [open, setOpen] = useState(false);
+  const cells = tail?.cells;
+  const items = useMemo(() => (cells ? peekSteps(cells).slice(-8) : []), [cells]);
+  const thinking = useMemo(() => liveThinking(tail), [tail]);
+  const words = doing || "Working";
+  return (
+    <div className={`working${open ? " is-open" : ""}`} aria-live="polite">
+      <button type="button" className="working-top" onClick={() => setOpen(!open)} aria-expanded={open}
+        title={open ? "Hide what the agent is doing" : "See what the agent is thinking and doing"}>
+        {/* The line under the thread wears a glyph of its own, not the
+            mark: the mark is the agent signing its own words, and a second
+            one down here turned the brand into a progress spinner.
+            Thinking is a brain, doing is a wrench -- see phaseGlyph. */}
+        <span className="working-mark" aria-hidden="true">{phaseGlyph(phase)}</span>
+        {/* Keyed on the words, so each new step fades in over the last
+            rather than snapping -- a train of thought, not a counter. */}
+        <span className="working-what" key={words}>{words}</span>
+        {/* How far in it is. A step count alone is noise on a short turn,
+            so it waits for two, and the clock waits for a few seconds
+            rather than counting 0s under every reply. */}
+        {(elapsedMs >= 3000 || steps > 1) && (
+          <span className="working-when">
+            {elapsedMs >= 3000 ? clock(elapsedMs) : ""}
+            {steps > 1 ? `${elapsedMs >= 3000 ? " \u00b7 " : ""}${steps} steps` : ""}
+          </span>
+        )}
+        <span className="working-chev" aria-hidden="true"><IconChevron size={11} /></span>
+      </button>
+      {open && (
+        <div className="working-peek">
+          {thinking && (
+            <div className="working-thought">
+              <span className="working-peek-label"><IconBrain size={12} /> Thinking</span>
+              <p>{thinking}</p>
+            </div>
+          )}
+          {items.length > 0 && (
+            <ol className="working-steps">
+              {items.map((item) => (
+                <li key={item.key} className={`is-${item.status}`}>
+                  <i aria-hidden="true" />
+                  <b>{item.text}</b>
+                  {item.detail && <span title={item.detail}>{item.detail}</span>}
+                </li>
+              ))}
+            </ol>
+          )}
+          {!thinking && items.length === 0 && <p className="working-empty">Reading your message and working out where to start.</p>}
+        </div>
+      )}
+    </div>
+  );
+});
 
 /**
  * One turn's commands, folded into a line.
@@ -1094,6 +1208,8 @@ const CellView = memo(function CellView({
           {cell.reason && <span>· {cell.reason}</span>}
         </div>
       );
+    case "said":
+      return <UserMessage text={cell.text} receipt={cell.read ? "read" : "received"} />;
     case "note":
       return (
         <div className={`cell-note tone-${cell.tone}`}>
@@ -1231,3 +1347,4 @@ const Reply = memo(function Reply({
 /** One empty list for every reply without memories, so the default does not
     count as a change on each render. */
 const NO_MEMORIES: MemoryTouch[] = [];
+const NO_OUTGOING: Outgoing[] = [];

@@ -55,6 +55,8 @@ async function main() {
       assert.equal(ev.filter((e) => e.kind === "turn.agent.done").length, 1, "one turn, not two");
       assert.ok(!ev.some((e) => e.kind === "turn.agent.done" && e.payload.stopped), "it was not stopped");
       assert.ok(ev.some((e) => e.kind === "turn.amend" && /also add tests/.test(e.payload.text)), "it is in the thread");
+      const amendAt = ev.find((e) => e.kind === "turn.amend")!.seq;
+      assert.ok(ev.some((e) => e.kind === "turn.amend.read" && e.seq > amendAt), "the thread is told the agent read it");
       const note = told(app);
       assert.match(note, /added this while you were working -- you were not stopped/);
       assert.match(note, /also add tests for the toggle/);

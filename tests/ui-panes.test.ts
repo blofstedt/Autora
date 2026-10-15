@@ -59,19 +59,14 @@ async function main() {
       assert.ok(back >= 150 && back <= 180, String(back));
     });
 
-    await test("the menu folds away to the far left, and the button there brings it back", async () => {
-      await page.getByRole("button", { name: "Fold the menu away" }).click();
-      assert.equal(await page.locator(".rail-slot").evaluate((el) => getComputedStyle(el).display), "none");
-      const burger = page.getByRole("button", { name: "Open the menu" });
-      const box = (await burger.boundingBox())!;
-      assert.ok(box.x < 40, `the button sits at the far left (${box.x})`);
+    await test("a desktop has no way to fold the menu away: it is whole or icons, and no menu button", async () => {
+      assert.equal(await page.getByRole("button", { name: "Fold the menu away" }).count(), 0);
+      assert.equal(await page.locator(".menu-btn").isVisible(), false);
+      // Folded away by an older version: still shown.
+      await page.evaluate(() => localStorage.setItem("autora.panes", JSON.stringify({ ...JSON.parse(localStorage.getItem("autora.panes") ?? "{}"), collapsed: true })));
       await page.reload();
-      await page.waitForSelector(".menu-btn");
-      assert.equal(await page.locator(".rail-slot").evaluate((el) => getComputedStyle(el).display), "none", "folded stays folded");
-      await page.getByRole("button", { name: "Open the menu" }).click();
-      await sleep(200);
-      assert.ok((await width(".rail-slot")) > 150);
-      assert.equal(await page.locator(".drawer-scrim").count(), 0, "it came back in the margin, not as a sheet");
+      await page.waitForSelector(".rail-slot .rail-nav");
+      assert.notEqual(await page.locator(".rail-slot").evaluate((el) => getComputedStyle(el).display), "none");
     });
 
     await test("with a document open beside the conversation, the seam between them drags too, and the window keeps room", async () => {
@@ -130,6 +125,12 @@ async function main() {
       const rail = (await page.locator(".rail-slot").boundingBox())!;
       assert.ok(bar.y > last.y + last.height - 1, "the bar starts under the last icon");
       assert.ok(bar.y + bar.height <= rail.y + rail.height && bar.y + bar.height > rail.y + rail.height - 40, "and runs to the foot of the strip");
+      // The way back and New session are in the header, just right of the strip, left of the chat's name.
+      const back = (await page.getByRole("button", { name: "Show the whole menu" }).boundingBox())!;
+      const plus = (await page.locator(".top-rail-acts").getByRole("button", { name: "New session" }).boundingBox())!;
+      const name = (await page.locator(".session-btn").boundingBox())!;
+      assert.ok(back.x >= rail.x + rail.width && back.x < rail.x + rail.width + 40 && back.y < 60, `the way back sits beside the strip (${back.x}, ${back.y})`);
+      assert.ok(plus.x > back.x && plus.x + plus.width <= name.x && Math.abs(plus.y - back.y) < 4, "New session beside it, before the name, on one row");
       await page.reload();
       await page.waitForSelector(".rail-ctxbar");
       await page.getByRole("button", { name: "Show the whole menu" }).click();

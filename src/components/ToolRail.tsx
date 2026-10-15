@@ -3,9 +3,11 @@ import { createPortal } from "react-dom";
 import { usePins, type RailTool } from "../lib/toolrail";
 import { IconGrid, IconPin, IconX } from "./Icons";
 
-const BTN = { phone: 40, desktop: 44 };
-const GAP = { phone: 2, desktop: 4 };
-const PAD = 8;
+/* The desktop bar is the size of the rest of Autora's chrome (the menu's icons, the header's buttons): 34px buttons
+   with 18px icons, 5px of padding, 46px across. Every app's bar uses the same numbers (docs/TOOL-RAIL.md, "Sizes"). */
+const BTN = { phone: 40, desktop: 34 };
+const GAP = { phone: 2, desktop: 3 };
+const PAD = { phone: 8, desktop: 5 };
 
 /**
  * The one tool bar (docs/TOOL-RAIL.md). A vertical pill down the right of the window on a desktop, a dock along the
@@ -42,7 +44,7 @@ export function ToolRail({
     if (!host) return;
     const measure = () => {
       const space = phone ? host.clientWidth : host.clientHeight - 80;
-      const slots = Math.floor((space - 2 * PAD - 12 + GAP[kind]) / (BTN[kind] + GAP[kind])) - 1;
+      const slots = Math.floor((space - 2 * PAD[kind] - 12 + GAP[kind]) / (BTN[kind] + GAP[kind])) - 1;
       setRoom(Math.max(1, slots));
     };
     measure();

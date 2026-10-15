@@ -930,6 +930,7 @@ function browserFor(session: Session): LiveBrowser {
     },
     onFields: () => broadcastBrowserState(session),
     who: () => cursorWhoFor(session.id),
+    visible: () => state.agentCursor,
     onAction: (action, at, url) => {
       emitEvent(session, "browser.action", "agent", {
         action,
@@ -981,6 +982,7 @@ function previewRunFor(session: Session, device: Device): PreviewRun {
   const current = () => previews.get(session.id) === run && run.opened;
   run.live = new LiveBrowser({
     watchers: () => sessionSockets.get(session.id)?.size ?? 0,
+    visible: () => state.agentCursor,
     onFrame: (jpegBase64) => {
       const size = run.live.viewport();
       sendEphemeral(session.id, {
@@ -1135,7 +1137,7 @@ async function previewAct(
         const dy = Number.isFinite(args.dy) && args.dy !== 0 ? Number(args.dy) : 500;
         const size = live.viewport();
         if (state.agentCursor) await live.glideTo(size.width / 2, size.height / 2);
-        await live.mouseWheel(0, Math.max(-5000, Math.min(5000, dy)));
+        await live.mouseWheel(0, Math.max(-5000, Math.min(5000, dy)), false);
         await settle();
         done = `Scrolled ${dy > 0 ? "down" : "up"} ${Math.abs(dy)} pixels.`;
         break;
@@ -3665,6 +3667,8 @@ async function reflect(session: Session, request: string, startSeq: number, prev
       memoryLinks.push({ src: record.id, dst: lesson.revises, rel: "revises" });
       saveMemory();
     }
+    /* Remembered at once. The thread offers Discard, which deletes it (and gives back what a rewrite replaced). */
+    if (record.status === "provisional" && action !== "reinforced") mind.confirm(record.id);
     items.push({
       id: record.id, title: record.title, kind: record.kind, action, status: record.status,
       revises: record.replaces ?? null,
@@ -3774,10 +3778,13 @@ export interface TurnResult {
 /** Messages sent while a turn ran, to be told to it at its next step. */
 const amendments = new Map<string, string[]>();
 
-/** Take what is waiting for this session, once. */
+/** Take what is waiting for this session, once. Taking it is the agent reading it: the thread marks those messages
+    read (turn.amend.read). */
 function takeAmendments(sessionId: string): string[] {
   const waiting = amendments.get(sessionId) ?? [];
   amendments.delete(sessionId);
+  const session = waiting.length > 0 ? sessions.get(sessionId) : undefined;
+  if (session) emitEvent(session, "turn.amend.read", "agent", { count: waiting.length });
   return waiting;
 }
 
@@ -5222,9 +5229,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const files: CodeChange[] = await workspace.scan();
         if (workspace.tooMany && !workspaceWarned) {
           workspaceWarned = true;
-          emitEvent(session, "system.log", "system", {
-            message: `${workspace.root} has too many files to follow, so the code the agent writes there is not shown as it is written.`,
-          });
+          /* Not said in the chat: it is a limit of the code cards, not something the person can act on, and a broad
+             folder like /host trips it every turn. */
+          log("debug", "codediff", `${workspace.root} has too many files to follow; code written there is not shown as diff cards.`);
         }
         if (files.length > 0) codeTouched.add(session.id);
         for (const f of files.slice(0, MAX_CHANGE_CARDS)) {

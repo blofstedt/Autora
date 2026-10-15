@@ -46,7 +46,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
   const pages = phone && !editing;
   const collab = useCollab();
   const mine = collab.held.includes("office");
-  const [cursorOn, setCursorOn] = useAgentCursor();
+  const [cursorOn] = useAgentCursor();
   /** The agent's last change, being played over the editor (see OfficeCursor). */
   const [play, setPlay] = useState<{ seq: number; items: OfficeCue[]; stage: { rev: number; count: number } | null } | null>(null);
   const played = useRef<number | undefined>(undefined);
@@ -325,16 +325,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
           </button>
         )}
         <TakeControl sessionId={sessionId} surface="office" mine={mine} phone={phone} thing="document" />
-        {!pages && (
-          <button
-            className="pdf-pill pdf-cursor-pill"
-            onClick={() => setCursorOn(!cursorOn)}
-            aria-pressed={cursorOn}
-            title={cursorOn ? "Stop showing where the agent edits" : "Show where the agent edits, as it edits"}
-          >
-            Agent cursor {cursorOn ? "on" : "off"}
-          </button>
-        )}
+        {/* Whether the agent's cursor shows is Visible work, the eye beside Follow: not a switch of this window's own. */}
         {word.working && (
           <a
             className="btn icon ghost"

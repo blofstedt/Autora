@@ -73,8 +73,8 @@ export function CollabSettings() {
       <label className="set-switch">
         <input type="checkbox" checked={cursor} onChange={(e) => setCursor(e.target.checked)} />
         <span>
-          <b>Show the agent's cursor and typing</b>
-          <small>Its cursor in the PDF and app windows, and code typed out as it is written.</small>
+          <b>Visible work</b>
+          <small>See the agent's cursor click and type in every window, and code typed out as it is written. Off, it works at speed and the changes just land. Also the eye beside Follow.</small>
         </span>
       </label>
       <label className="set-switch">

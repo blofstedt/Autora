@@ -47,6 +47,8 @@ export const Kind = {
   SessionEnded: "session.ended",
   UserMessage: "turn.user",
   Amend: "turn.amend",
+  /** The running turn took in what the person added (every turn.amend before this one). */
+  AmendRead: "turn.amend.read",
   AgentText: "turn.agent.text",
   AgentThinking: "turn.agent.thinking",
   AgentDone: "turn.agent.done",

@@ -2,19 +2,22 @@
    the editors that build it into their own frame (OpenCut's, src/autora/rail.tsx there). Colours and surfaces come from the page's
    tokens (--s1, --s2, --text, --accent...): the app defines them, and a frame defines the same names beside its own. */
 .has-rail { position: relative; }
-.has-rail.is-desk { padding-right: 68px; }
+.has-rail.is-desk { padding-right: 60px; }
+/* The window's own bars run the full width, over the column kept for the rail: only what is under them makes room. */
+.has-rail.is-desk > .pdf-bar, .has-rail.is-desk > .st-transport { margin-right: -60px; }
 .rail-bar {
   display: flex; align-items: center; gap: 4px; padding: 8px; z-index: 5; box-sizing: border-box;
   background: color-mix(in srgb, var(--s2) 92%, transparent); backdrop-filter: blur(8px);
   border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
 }
-.rail-bar.is-desktop { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); flex-direction: column; border-radius: var(--r-pill, 999px); max-height: calc(100% - 24px); overflow: hidden; }
+.rail-bar.is-desktop { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); flex-direction: column; gap: 3px; padding: 5px; border-radius: var(--r-pill, 999px); max-height: calc(100% - 24px); overflow: hidden; }
 .rail-bar.is-phone { flex: 0 0 auto; justify-content: center; gap: 2px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)); border-width: 1px 0 0; border-radius: 0; box-shadow: none; background: var(--s1); }
 .rail-btn {
   --tc: var(--text-2); flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; cursor: pointer;
   color: var(--tc); background: color-mix(in srgb, var(--tc) 16%, transparent); transition: background var(--dur-1, 0.15s) var(--ease, cubic-bezier(0.32, 0.72, 0, 1)), box-shadow var(--dur-1, 0.15s) var(--ease, cubic-bezier(0.32, 0.72, 0, 1));
 }
-.rail-bar.is-desktop .rail-btn { width: 44px; height: 44px; }
+.rail-bar.is-desktop .rail-btn { width: 34px; height: 34px; }
+.rail-bar.is-desktop .rail-btn > svg { width: 18px; height: 18px; }
 .rail-bar.is-phone .rail-btn { width: 40px; height: 40px; }
 .rail-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--tc) 28%, transparent); }
 .rail-btn.is-on { color: #fff; background: var(--tc); box-shadow: 0 6px 18px color-mix(in srgb, var(--tc) 45%, transparent); }
@@ -22,7 +25,7 @@
 .rail-btn.is-grid { --tc: var(--text-2); background: color-mix(in srgb, var(--text-2) 12%, transparent); }
 .rail-btn:focus-visible, .rail-tile:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .rail-div { flex: none; background: var(--border-strong); }
-.rail-bar.is-desktop .rail-div { width: 24px; height: 1px; margin: 2px 0; }
+.rail-bar.is-desktop .rail-div { width: 20px; height: 1px; margin: 2px 0; }
 .rail-bar.is-phone .rail-div { width: 1px; height: 24px; margin: 0 2px; }
 
 .rail-tray {
@@ -36,7 +39,7 @@
 .rail-tray-hint { margin: 0; flex: 1 1 100%; font-size: calc(11px * var(--ts, 1)); color: var(--text-3); }
 .rail-x { border: 0; background: transparent; color: var(--text-3); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; flex: none; }
 .rail-x:hover { background: var(--s3, rgba(255, 255, 255, 0.08)); color: var(--text); }
-.has-rail.is-desk .rail-tray { position: absolute; right: 74px; top: 50%; transform: translateY(-50%); width: 252px; padding: 12px 14px; border-radius: var(--r-lg, 16px); box-shadow: var(--shadow-lg); flex-direction: column; align-items: stretch; }
+.has-rail.is-desk .rail-tray { position: absolute; right: 64px; top: 50%; transform: translateY(-50%); width: 252px; padding: 12px 14px; border-radius: var(--r-lg, 16px); box-shadow: var(--shadow-lg); flex-direction: column; align-items: stretch; }
 .has-rail.is-desk .rail-tray-head { padding-right: 28px; }
 .has-rail.is-desk .rail-tray-x { position: absolute; top: 8px; right: 8px; }
 .has-rail.is-phone .rail-tray { flex: 0 0 auto; padding: 6px 44px 6px 10px; border-width: 1px 0 0; min-height: 46px; }

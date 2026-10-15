@@ -49,6 +49,15 @@ Live copy of the first version: https://claude.ai/artifact/A5vaGaNwJ8EFLA35jv3gD
 13. Keep the editor's own commands underneath (as `spectra-editor/src/autora/phone.tsx` does with
    `invokeCommand`): restyle and re-arrange, do not re-implement.
 
+## Sizes (every app's bar, the same numbers)
+
+The desktop bar is the size of the rest of Autora's chrome, not bigger: **34px round buttons with 18px icons, 3px apart, 5px of
+padding (46px across with its border), 10px from the window's right edge**, a 20px divider before the grid button. The window
+keeps 60px clear on its right for it, and a tool's card sits 64px from the edge. A phone's dock stays 40px buttons, 2px apart.
+The numbers are written in each implementation: `src/components/ToolRail.tsx` + `src/rail.css` (Music, Video), `spectra-editor/src/autora/rail.tsx` +
+`spectra-editor/overlay/renderer/autora.css` (PDF), `office/shim/rail.js` (Pages, Sheets, Slides), `autora-3d/src/components/Rail.tsx` (3D; also
+make the change in `docs/autora-3d-tool-rail.patch` before the next sync), `photo/overlay/autora.rs` (Photo). Change one, change all.
+
 ## Retrofit order
 
 PDF first, then Music (done, 0.9.196: the first user of the shared host-side component below), 3D (0.9.199), Pages, Sheets and

@@ -282,6 +282,9 @@ export type Cell =
       progress: { text: string; steps: number; at: number } | null }
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
+  /** The person's words sent while the agent worked, added to the turn in flight: drawn as their own message. `read`
+      once the agent has taken them in (turn.amend.read). */
+  | { kind: "said"; seq: number; text: string; read: boolean }
   /** Agent mode moving between planning and building: said in the thread,
       where it happened, and nowhere else. */
   | { kind: "mode"; seq: number; to: "plan" | "build"; reason: string;
@@ -572,7 +575,14 @@ export function derive(events: AutoraEvent[]): Derived {
       case Kind.Amend:
         /* Said while the agent worked and added to what it was doing, so it
            sits in the turn it joined rather than starting a new one. */
-        push({ kind: "note", seq: e.seq, tone: "plain", text: `You added: ${e.payload.text ?? ""}` });
+        push({ kind: "said", seq: e.seq, text: String(e.payload.text ?? ""), read: false });
+        break;
+
+      case Kind.AmendRead:
+        /* The agent took in everything the person had added up to here. */
+        for (const b of buckets) {
+          for (const c of b.cells) if (c.kind === "said" && c.seq < e.seq) c.read = true;
+        }
         break;
 
       case Kind.MemoryRecall:
@@ -1226,7 +1236,7 @@ const COLOUR = /\u001b\[[0-?]*[ -/]*[@-~]/g;
     person has to answer or act on, and the pictures handed over. They sit
     beside the card without ending it -- a sign-in is part of working the
     page. Everything else said or done meanwhile is shown inside the card. */
-const KEPT_OUT = new Set<Cell["kind"]>(["ask", "permission", "todo", "images", "widget", "app", "mode"]);
+const KEPT_OUT = new Set<Cell["kind"]>(["ask", "permission", "todo", "images", "widget", "app", "mode", "said"]);
 
 /** The screen card a still-running turn is working in, if it is in one. */
 const openBoxes = new WeakMap<Bucket, ScreenCell>();

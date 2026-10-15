@@ -128,7 +128,9 @@ async function main() {
       );
       const shown = (await row.innerText()).replace(/\s+/g, " ");
       assert.match(shown, /a correction to an existing memory/);
-      assert.match(shown, /Keep/);
+      // Remembered already: the only thing offered is Discard.
+      assert.match(shown, /Discard/);
+      assert.ok(!/Keep/.test(shown), `the row still offers Keep: "${shown}"`);
     });
 
     await test("a turn streaming past the row does not make it ask again and again", async () => {
@@ -180,7 +182,7 @@ async function main() {
       const shown = (await row.innerText()).replace(/\s+/g, " ");
       assert.ok(settled, `the row still reads "${shown}" -- it only catches up on a reload`);
       assert.ok(!/Keep/.test(shown), `the row still offers Keep: "${shown}"`);
-      assert.match(shown, /kept/);
+      assert.match(shown, /Discard/);
     });
   } finally {
     await browser.close();

@@ -186,5 +186,9 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Agents start faster. An agent Autora calls from the Organization page now gets straight to work instead of
-  planning first, which saved it two model rounds (one on the Planner model, if you have set one) before its first step.
+  A tidier desktop. The tool bar on the right of every app (PDF, Pages, Sheets, Slides, Video, Music, 3D, Photo) is
+  smaller and matches the rest of the interface. The menu on the left is always there, whole or as icons: the hamburger
+  and "fold away" are gone, and when it is icons, expand and New session sit in the top bar beside the chat's name. Also
+  fixed: 3D's view-cube buttons were hidden under the tool bar, 3D now has the same top bar as the other apps, Music's
+  bars reach the edge, Video no longer shows the project name twice, Sheets no longer shows a "Streaming ... rows
+  available" message, and the duplicate "Agent cursor" buttons are gone (the Visible switch does that).

@@ -138,6 +138,8 @@ export function memoryRoutes(app: Express, deps: { mind: MemoryGraph }) {
   });
 
   app.delete("/api/memory/:id", (req: Request, res: Response) => {
+    // Discarding a rewrite that was remembered gives back the memory it replaced.
+    for (const other of mind.records) if (other.superseded_by === req.params.id) other.superseded_by = null;
     if (!mind.forget(req.params.id)) return res.status(404).json({ error: "Record not found" });
     res.json({ ok: true });
   });

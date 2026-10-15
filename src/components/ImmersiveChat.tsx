@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { recentCursor } from "../lib/cursorPos";
 import { IconArrow, IconX } from "./Icons";
+import { VisibleWork } from "./VisibleWork";
 
 /**
  * Messaging lite, over a tool that is full screen on a phone: what the agent
@@ -110,6 +111,7 @@ export function ImmersiveChat({
       )}
       {!open && (
         <div className="immersive-corner">
+          <VisibleWork className="immersive-follow" compact />
           {canFollow && (
             <button type="button" className={`immersive-follow${following ? " on" : ""}`} aria-pressed={following} onClick={onFollow}
               title={following ? "Following the agent between tools" : "Follow the agent between tools"}>

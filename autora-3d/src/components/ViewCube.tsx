@@ -69,7 +69,7 @@ export default function ViewCube({ camera, onSelectFace, onResetCamera, children
   }, [camera]);
 
   return (
-    <div className="absolute top-3 right-3 z-20 flex flex-col items-center gap-1 pointer-events-auto max-sm:scale-[0.78] max-sm:origin-top-right">
+    <div className="absolute top-3 right-3 sm:right-[4.25rem] z-20 flex flex-col items-center gap-1 pointer-events-auto max-sm:scale-[0.78] max-sm:origin-top-right">
       <div className="relative" style={{ width: SIZE + 28, height: SIZE + 28, perspective: 380 }}>
         <div
           ref={cubeRef}

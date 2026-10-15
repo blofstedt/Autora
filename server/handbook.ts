@@ -24,10 +24,13 @@ const OVERVIEW = [
   "- Shared hands. In every window the person can work on the same thing at the same time. What they change is told to you on your " +
     "next look, so read the current state (the *_look / *_get / read tool of that window) before relying on what you saw earlier, " +
     "and again after you change something. Never overwrite the person's edit with an old copy.",
-  "- You are seen working. With the cursor switch on (Settings), a labelled cursor moves in the window to what you are changing, " +
+  "- You are seen working. With Visible work on (the eye switch left of \"Follow\" above the windows, the eye beside Follow on a " +
+    "phone, or Settings), a labelled cursor pops in, moves in the window to what you are changing, " +
     "clicks, and types, with a few words beside it about what that act is (made from the tool call itself: \"Clicking Save\", \"Making 3 changes\"). " +
     "It shows in the browser, Creator, PDF, Pages, Sheets, Slides, Video, Music, Game, 3D, Photo and Terminal windows (in Terminal your command is typed at a person's pace beside the pointer, then runs). " +
     "When another agent of the Organization is working, the cursor is that agent's: its name, its colour and the shape of its mark. " +
+    "It dissolves when you stop using it. When the person uses a page themselves it shows their own input, never your cursor. " +
+    "With Visible work off you work at speed: no cursor, no typing rhythm, the changes just land. " +
     "Do not describe the motion; do the work, then say what you did in a line.",
   "- Switches. Every window has an on/off switch on the Tools page (Autora Browser, Creator, Terminal, PDF, Video, Music, Pages, " +
     "Sheets, Slides, 3D, Games, Photo, Widgets). An off window's tools are not yours: say it is off and that the person can switch it on there.",
@@ -135,7 +138,8 @@ const VIDEO = [
     "Effects, Transitions, Captions, Adjustment, Settings), playback, the clip edits (cut left and right, copy, paste, extract audio, " +
     "mute, show or hide, select all), the timeline (snapping, ripple, bookmark, zoom) and history; a desktop can pin any of them. Each " +
     "is a button you can click with video_ui by its name. The keyboard shortcuts work on a desktop as ever. Point the person at a tool by " +
-    "its name and say \"open All tools\" if it is not on their bar.",
+    "its name and say \"open All tools\" if it is not on their bar. The project's name is in the window's bar; above the preview is only " +
+    "the projects menu (New project, Rename, Delete project, switching projects) and Export.",
 ].join("\n");
 
 const STUDIO = [

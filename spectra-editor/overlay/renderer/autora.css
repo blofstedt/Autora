@@ -259,7 +259,7 @@
 .autora-desktop .nav-icon-strip,
 .autora-rail-ui [data-testid="tool-dock-grid"],
 .autora-rail-ui .tool-dock-resize { display: none !important; }
-.autora-desktop .app-shell { padding-top: 40px; padding-right: 76px; }
+.autora-desktop .app-shell { padding-top: 40px; padding-right: 60px; }
 
 /* The bar: round coloured buttons, as many as fit (the script counts), never scrolling; the grid button last. */
 .autora-rail {
@@ -300,18 +300,19 @@
 .autora-phone .autora-rail-btn { width: 40px; height: 40px; }
 .autora-phone .autora-rail-div { width: 1px; height: 24px; }
 
+/* The sizes every app's bar uses (docs/TOOL-RAIL.md, "Sizes"): 34px buttons, 18px icons, 46px across. */
 .autora-desktop .autora-rail {
-  right: 16px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
   flex-direction: column;
-  gap: 4px;
-  padding: 8px;
+  gap: 3px;
+  padding: 5px;
   border-radius: 28px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
 }
-.autora-desktop .autora-rail-btn { width: 44px; height: 44px; }
-.autora-desktop .autora-rail-div { width: 24px; height: 1px; margin: 2px 0; }
+.autora-desktop .autora-rail-btn { width: 34px; height: 34px; }
+.autora-desktop .autora-rail-div { width: 20px; height: 1px; margin: 2px 0; }
 /* A name beside the button, since there is room for one and a colour is not a name. */
 .autora-desktop [data-tip]:hover::after {
   content: attr(data-tip);
@@ -385,7 +386,7 @@
 .autora-phone .autora-tray-hint { flex: 1 1 100%; }
 
 .autora-desktop .autora-tray {
-  right: 84px;
+  right: 64px;
   top: 50%;
   transform: translateY(-50%);
   width: 264px;
@@ -407,7 +408,7 @@
 .autora-desktop .secondary-toolbar {
   position: fixed;
   z-index: 38;
-  right: 84px;
+  right: 64px;
   top: 50%;
   transform: translateY(-50%);
   width: 320px;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CommandIcon, FolderLibraryIcon, PlusSignIcon, Edit02Icon, Delete02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -17,7 +17,6 @@ import { DeleteProjectDialog } from "@/project/components/delete-project-dialog"
 import { ShortcutsDialog } from "@/actions/components/shortcuts-dialog";
 import { ExportButton } from "./export-button";
 import { useEditor } from "@/editor/use-editor";
-import { cn } from "@/utils/ui";
 import { openProject } from "next/navigation";
 
 /**
@@ -27,11 +26,12 @@ import { openProject } from "next/navigation";
  * projects, because the window is one editor and has no projects page.
  */
 export function EditorHeader() {
+	/* The project's name is in the window's own bar above this (Autora Video · name), so it is not said twice:
+	   it is renamed from the projects menu here. A slim row, the menu and Export. */
 	return (
-		<header className="bg-background flex h-[3.4rem] items-center justify-between px-3 pt-0.5">
+		<header className="bg-background flex h-[2.6rem] items-center justify-between px-3">
 			<div className="flex items-center gap-1">
 				<ProjectDropdown />
-				<EditableProjectName />
 			</div>
 			<nav className="flex items-center gap-2">
 				<ExportButton />
@@ -146,79 +146,5 @@ function ProjectDropdown() {
 			/>
 			<ShortcutsDialog isOpen={openDialog === "shortcuts"} onOpenChange={(isOpen) => setOpenDialog(isOpen ? "shortcuts" : null)} />
 		</>
-	);
-}
-
-function EditableProjectName() {
-	const editor = useEditor();
-	const activeProject = useEditor((e) => e.project.getActive());
-	const [isEditing, setIsEditing] = useState(false);
-	const inputRef = useRef<HTMLInputElement>(null);
-	const originalNameRef = useRef("");
-	const projectName = activeProject.metadata.name || "";
-
-	// The name changes under the input when the agent renames the project or
-	// another is opened: an uncontrolled input has to be told.
-	useEffect(() => {
-		if (inputRef.current && !isEditing) inputRef.current.value = projectName;
-	}, [projectName, isEditing]);
-
-	const startEditing = () => {
-		if (isEditing) return;
-		originalNameRef.current = projectName;
-		setIsEditing(true);
-		requestAnimationFrame(() => inputRef.current?.select());
-	};
-
-	const saveEdit = async () => {
-		if (!inputRef.current) return;
-		const newName = inputRef.current.value.trim();
-		setIsEditing(false);
-		if (!newName) {
-			inputRef.current.value = originalNameRef.current;
-			return;
-		}
-		if (newName !== originalNameRef.current) {
-			try {
-				await editor.project.renameProject({ id: activeProject.metadata.id, name: newName });
-			} catch (error) {
-				toast.error("Failed to rename project", {
-					description: error instanceof Error ? error.message : "Please try again",
-				});
-			}
-		}
-	};
-
-	const handleKeyDown = (event: React.KeyboardEvent) => {
-		if (event.key === "Enter") {
-			event.preventDefault();
-			inputRef.current?.blur();
-		} else if (event.key === "Escape") {
-			event.preventDefault();
-			if (inputRef.current) {
-				inputRef.current.value = originalNameRef.current;
-				inputRef.current.setSelectionRange(0, 0);
-			}
-			setIsEditing(false);
-			inputRef.current?.blur();
-		}
-	};
-
-	return (
-		<input
-			ref={inputRef}
-			type="text"
-			defaultValue={projectName}
-			readOnly={!isEditing}
-			onClick={startEditing}
-			onBlur={() => void saveEdit()}
-			onKeyDown={handleKeyDown}
-			aria-label="Project name"
-			style={{ fieldSizing: "content" }}
-			className={cn(
-				"text-[0.9rem] h-8 px-2 py-1 rounded-sm bg-transparent outline-none cursor-pointer hover:bg-accent hover:text-accent-foreground",
-				isEditing && "ring-1 ring-ring cursor-text hover:bg-transparent",
-			)}
-		/>
 	);
 }
