@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
 import { useAgentCursor } from "../lib/agentCursor";
-import { onPhotoState, photoStateNow, usePhotoState } from "../lib/photodesk";
+import { onPhotoHand, onPhotoState, photoStateNow, usePhotoState, type PhotoHand } from "../lib/photodesk";
+import { clearCursor, reportCursor } from "../lib/cursorPos";
+import { getCursorWho, whoColors } from "../lib/cursorWho";
 import { pointerGo, pointerRest } from "../lib/pointer";
 import { IconImage, IconMaximize, IconMinimize } from "./Icons";
 
@@ -16,8 +18,20 @@ import { IconImage, IconMaximize, IconMinimize } from "./Icons";
  *   - the frame says it is up -> the picture is fetched and sent down;
  *   - the person changes it (the frame says so, after a pause in their edits) -> it is saved on the server;
  *   - the agent changes it (the server says so) -> the picture is fetched again and sent down;
- *   - the person saves or exports a file in the editor -> it is offered as a download here, since a frame cannot start one.
+ *   - the person saves or exports a file in the editor -> it is offered as a download here, since a frame cannot start one;
+ *   - with Visible work on, the agent's edit (the server says so, `photodesk.hand`) is not loaded as a finished picture:
+ *     it is handed to the editor, where the agent's cursor does it with the editor's own controls as a person would, and
+ *     the picture it ends with goes back to the server.
  */
+
+/** The cursor's colour as #rrggbb, which the editor reads: the chat's agent's own, else the theme's accent. */
+function cursorColor(): string {
+  const own = whoColors()?.accent;
+  if (own && /^#[0-9a-f]{6}$/i.test(own)) return own;
+  const rgb = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").split(",").map((v) => Number(v.trim()));
+  if (rgb.length !== 3 || rgb.some((v) => !Number.isFinite(v))) return "#6e5bff";
+  return `#${rgb.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("")}`;
+}
 export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: boolean }) {
   const photo = usePhotoState();
   const frame = useRef<HTMLIFrameElement>(null);
@@ -94,6 +108,37 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
     }
   }, [sessionId]);
 
+  /** The agent's edits being done in the editor by hand, by id: answered when the editor says it is done. */
+  const handing = useRef(new Map<string, (json: string, bytes: ArrayBuffer | null) => void>());
+
+  /** One edit, done in the editor by the agent's hand, and its answer sent to the server. */
+  const byHand = useCallback(async (hand: PhotoHand) => {
+    const q = `/api/photo/${encodeURIComponent(sessionId)}/hand`;
+    const claim = await fetch(`${q}/claim?id=${encodeURIComponent(hand.id)}`, { method: "POST" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ won?: boolean }>) : { won: false }))
+      .catch(() => ({ won: false }));
+    if (!claim.won) return;
+    const answer = await new Promise<{ json: string; bytes: ArrayBuffer | null }>((resolve) => {
+      handing.current.set(hand.id, (json, bytes) => resolve({ json, bytes }));
+      post({ autoraPhoto: "hand", json: JSON.stringify({ id: hand.id, commands: hand.commands, who: { name: getCursorWho().name, color: cursorColor() } }) });
+    });
+    handing.current.delete(hand.id);
+    let said: { results?: unknown; error?: unknown } = {};
+    try { said = JSON.parse(answer.json) as typeof said; } catch { /* nothing said */ }
+    await fetch(`${q}/reply?id=${encodeURIComponent(hand.id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "X-Photo-Hand": encodeURIComponent(JSON.stringify({ results: said.results ?? [], error: said.error })) },
+      body: answer.bytes ?? new ArrayBuffer(0),
+    }).catch(() => undefined);
+    clearCursor();
+  }, [post, sessionId]);
+
+  // The agent's edits to do by hand. Only once the editor is up: before that the server sends again, then does it itself.
+  useEffect(() => onPhotoHand((hand) => {
+    if (!ready.current) return;
+    void byHand(hand);
+  }), [byHand]);
+
   /** A file the person saved or exported in the editor, as a download. */
   const offer = useCallback((name: string, bytes: ArrayBuffer) => {
     const url = URL.createObjectURL(new Blob([bytes]));
@@ -111,7 +156,7 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow || e.origin !== window.location.origin) return;
-      const msg = e.data as { autoraPhoto?: string; name?: unknown; bytes?: unknown } | null;
+      const msg = e.data as { autoraPhoto?: string; name?: unknown; bytes?: unknown; json?: unknown; x?: unknown; y?: unknown } | null;
       if (!msg || typeof msg !== "object") return;
       if (msg.autoraPhoto === "ready") {
         ready.current = true;
@@ -120,6 +165,14 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
         void save(msg.bytes);
       } else if (msg.autoraPhoto === "file" && msg.bytes instanceof ArrayBuffer && typeof msg.name === "string") {
         offer(msg.name, msg.bytes);
+      } else if (msg.autoraPhoto === "handed" && typeof msg.json === "string") {
+        let id = "";
+        try { id = String((JSON.parse(msg.json) as { id?: unknown }).id ?? ""); } catch { /* not an answer */ }
+        handing.current.get(id)?.(msg.json, msg.bytes instanceof ArrayBuffer ? msg.bytes : null);
+      } else if (msg.autoraPhoto === "cursor" && typeof msg.x === "number" && typeof msg.y === "number") {
+        // The agent's cursor in the editor, for the few words beside it (AgentThought).
+        const r = frame.current.getBoundingClientRect();
+        reportCursor(r.left + msg.x, r.top + msg.y);
       }
     };
     window.addEventListener("message", onMessage);
@@ -132,7 +185,8 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
       onPhotoState(() => {
         const now = photoStateNow();
         if (!now.open || now.rev === undefined || !ready.current) return;
-        if (now.by === "agent" && now.rev > known.current) void load();
+        // An edit the window made itself, by the agent's hand, is already in it.
+        if (now.by === "agent" && now.rev > known.current && now.hand !== now.rev) void load();
         else known.current = Math.max(known.current, now.rev);
       }),
     [load],

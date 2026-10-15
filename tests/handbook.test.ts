@@ -72,6 +72,13 @@ await test("the Photo manual teaches the tool bar and not the menu bar and toolb
   }
 });
 
+await test("the Photo manual says that with Visible work on the edit is done in the window by hand", () => {
+  const photo = manualText("photo");
+  for (const needle of ["Visible work on", "by your hand", "clicks its tile", "command's own dialog", "Visible work off"]) {
+    assert.ok(photo.includes(needle), `the Photo manual lacks "${needle}"`);
+  }
+});
+
 await test("a tool finds its window's manual, and a tool with no window finds none", () => {
   assert.equal(manualId("browser_click"), "browser");
   assert.equal(manualId("web_search"), "browser");

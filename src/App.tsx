@@ -11,7 +11,7 @@ import { ScreencastCell } from "./components/ScreencastCell";
 import { AppPreview, CadWindow, GameWindow, OfficeWindow, OpenCutWindow, PhotoWindow, SpectraWindow, StudioWindow, TerminalWindow } from "./components/lazyWindows";
 import { resetCad, setCadState, useCadState } from "./lib/caddesk";
 import { resetGame, setGameState, useGameState } from "./lib/gamedesk";
-import { resetPhoto, setPhotoState, usePhotoState } from "./lib/photodesk";
+import { emitPhotoHand, resetPhoto, setPhotoState, usePhotoState } from "./lib/photodesk";
 import { resetTerm, setTermState, useTermState } from "./lib/termdesk";
 import { emitStudioCommand, resetStudio, setStudioState, useStudioState } from "./lib/studio";
 import { emitSpectraEvent } from "./lib/spectra";
@@ -478,6 +478,7 @@ export function App() {
       onCadDesk: setCadState,
       onGameDesk: setGameState,
       onPhotoDesk: setPhotoState,
+      onPhotoHand: emitPhotoHand,
       onTermDesk: setTermState,
       onStudioDesk: setStudioState,
       onStudioCommand: emitStudioCommand,

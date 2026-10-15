@@ -224,7 +224,12 @@ const PHOTO = [
     "settings and Colour open as a small card beside the bar. The last button, All tools, opens every one of the editor's tools in groups " +
     "(Select, Paint, Retouch, Type and shapes...), the three cards, and every live command of the menus under its menu's name (File, Edit, " +
     "Image, Layer, Filter...), with a search box. Name a tool by its button and say \"open All tools\" if it is not on their bar. The " +
-    "editor's keyboard shortcuts work on a desktop as ever. You have every tool and command through the photo_* tools whatever is shown.",
+    "editor's keyboard shortcuts work on a desktop as ever. You have every tool and command through the photo_* tools whatever is shown. " +
+    "With Visible work on and the window open, photo_edit is done in the window by your hand, as a person does it: your cursor opens " +
+    "All tools, types the command's name in its search, clicks its tile, sets each of your values in the command's own dialog and " +
+    "clicks OK, so the person watches every step. That takes a few seconds per command: send the commands the change needs, not " +
+    "experiments. A command with no tile in All tools runs as the editor's command, and its result says so. With Visible work off, " +
+    "or no window open, the edit runs at once on the server's copy and the window shows the result.",
 ].join("\n");
 
 const WIDGETS = [

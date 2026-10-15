@@ -6271,6 +6271,8 @@ async function startServer() {
     exists: (id: string) => sessions.has(id),
     incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
     off: () => windowOff("photo_look"),
+    push: (id: string, message: Record<string, unknown>) => sendEphemeral(id, message),
+    visible: () => state.agentCursor,
   });
   // Autora Games: the game window's game and files, and opening and putting it away.
   gameRoutes(app, {

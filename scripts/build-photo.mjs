@@ -9,7 +9,7 @@
  *   dist/photo/LICENSE-*, NOTICE
  *
  * photo/overlay/autora.rs is laid over the web app: it is how the window and the editor talk (postMessage; see the
- * file). Three small patches to PhotoCraft's own web.rs and main.rs hook it in; each is checked, so a pin that moves
+ * file). Small patches to PhotoCraft's own web.rs, main.rs, widgets.rs and dialogs.rs hook it in; each is checked, so a pin that moves
  * them fails here, loudly, rather than building an editor with no wire.
  *
  * Nothing here is required to run Autora: without the build the photo tools say so. So a machine with no network or no
@@ -79,6 +79,12 @@ function overlay() {
   patch(webrs, "        self.serve_fonts(ctx);\n        self.app.logic(ctx, frame);", "        self.serve_fonts(ctx);\n        crate::autora::pump(&mut self.app, &self.inbox);\n        self.app.logic(ctx, frame);\n        crate::autora::tick(&self.app, ctx);");
   // A saved file goes to the page, which offers it: a frame cannot start a download itself.
   patch(webrs, "fn download(path: &str, bytes: &[u8]) -> Result<(), String> {\n", "fn download(path: &str, bytes: &[u8]) -> Result<(), String> {\n    if crate::autora::framed() {\n        return crate::autora::file(path, bytes);\n    }\n");
+  // The agent's hand (Visible work) is input of the editor's own: its moves, presses and keys join the frame's raw input.
+  patch(webrs, "    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {\n        self.app.ui(ui, frame);\n    }\n}", "    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {\n        self.app.ui(ui, frame);\n    }\n\n    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {\n        crate::autora::raw_input(raw_input);\n    }\n}");
+  // Where a dialog's OK is, for the hand to click, and what pressing it said, for the hand to report.
+  const ui = path.join(src, "crates/ui-egui/src");
+  patch(path.join(ui, "widgets.rs"), "                if r.clicked() {\n                    hit = Some(b.role);\n                }\n", "                if r.clicked() {\n                    hit = Some(b.role);\n                }\n                if b.role == ButtonRole::Default {\n                    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(\"autora-dialog-ok\"), r.rect));\n                }\n");
+  patch(path.join(ui, "dialogs.rs"), "            Some(true) => {\n                let _ = confirm(app, d.id);\n            }", "            Some(true) => {\n                let said = confirm(app, d.id).err();\n                ctx.data_mut(|m| m.insert_temp(egui::Id::new(\"autora-dialog-result\"), said));\n            }");
 }
 
 try {
@@ -94,7 +100,7 @@ try {
     run("git", ["-C", src, "checkout", "-q", "-f", "FETCH_HEAD"], { env: { GIT_LFS_SKIP_SMUDGE: "1" } });
   }
   // A clean tree each time, so the patches apply to PhotoCraft's own files and not to a patched copy.
-  run("git", ["-C", src, "checkout", "-q", "-f", "--", "apps"]);
+  run("git", ["-C", src, "checkout", "-q", "-f", "--", "apps", "crates/ui-egui"]);
   fs.rmSync(path.join(src, "apps/photocraft-web/src/autora.rs"), { force: true });
 
   fs.mkdirSync(out, { recursive: true });

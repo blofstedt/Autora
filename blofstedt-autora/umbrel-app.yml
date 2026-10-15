@@ -186,6 +186,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Smoother scrolling in Photo. Scrolling or panning the picture, and scrolling the All tools list, no longer stutters:
-  the tool bar used to rebuild the editor's whole list of commands on every frame, and now builds it once and again
-  only when All tools opens or after a command runs.
+  Visible work now means the agent really uses the app, starting with Photo. With Visible on and the photo window open,
+  the agent edits the picture by hand: its cursor opens All tools, types the command's name, clicks it, sets each value
+  in the command's own dialog and clicks OK, at a person's pace, so you watch every step. With Visible off it works at
+  full speed and the picture just changes. Also: smoother scrolling in Photo (the tool bar no longer rebuilds the whole
+  command list on every frame).

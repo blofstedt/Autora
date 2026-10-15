@@ -5,12 +5,16 @@
 //!
 //! Page -> editor:
 //!   { autoraPhoto: "load", name, bytes }   the working picture, as a .pcraft: it replaces what is open
+//!   { autoraPhoto: "hand", json }          the agent's edit, done here by hand with Visible work on (see `hand_*` below):
+//!                                          json is { id, commands: [{ id, params }], who: { name, color } }
 //!
 //! Editor -> page:
 //!   { autoraPhoto: "ready" }               the editor is up and listening
 //!   { autoraPhoto: "changed", name, bytes } the person changed the picture (a .pcraft, after a pause in their edits)
 //!   { autoraPhoto: "file", name, bytes }   the person saved or exported a file (File > Save, Export): the page offers it
 //!                                          as a download, since a frame cannot start one the way a page can
+//!   { autoraPhoto: "handed", json, bytes } the agent's edit is done: json is { id, results }, bytes the picture after it
+//!   { autoraPhoto: "cursor", x, y }        where the agent's cursor is, in the frame's CSS pixels (for its few words)
 //!
 //! The picture that is synced is the active document, so what the agent works on is what the person is looking at.
 
@@ -105,7 +109,18 @@ pub fn start(ctx: &egui::Context) {
             return;
         }
         let Ok(data) = Reflect::get(&ev, &"data".into()) else { return };
-        if !data.is_object() || Reflect::get(&data, &NS.into()).ok().and_then(|v| v.as_string()).as_deref() != Some("load") {
+        if !data.is_object() {
+            return;
+        }
+        let kind = Reflect::get(&data, &NS.into()).ok().and_then(|v| v.as_string());
+        if kind.as_deref() == Some("hand") {
+            if let Some(json) = Reflect::get(&data, &"json".into()).ok().and_then(|v| v.as_string()) {
+                hand_take(&json);
+                ctx.request_repaint();
+            }
+            return;
+        }
+        if kind.as_deref() != Some("load") {
             return;
         }
         let name = Reflect::get(&data, &"name".into()).ok().and_then(|v| v.as_string()).unwrap_or_else(|| WORK_NAME.into());
@@ -123,6 +138,7 @@ pub fn start(ctx: &egui::Context) {
 pub fn pump(app: &mut PhotocraftApp, inbox: &Inbox) {
     if rail_on() {
         rail_pump(app);
+        hand_pump(app);
     }
     let loads = SYNC.with(|s| std::mem::take(&mut s.borrow_mut().loads));
     // Only the newest matters: a quick run of agent edits is one picture.
@@ -145,6 +161,12 @@ pub fn tick(app: &PhotocraftApp, ctx: &egui::Context) {
     }
     if rail_on() {
         rail_bar(app, ctx);
+    }
+    hand_draw(ctx);
+    // The agent's hand is at work: what it changes goes back with its answer, not as the person's change.
+    if hand_busy() {
+        SYNC.with(|s| s.borrow_mut().seen = None);
+        return;
     }
     let now = js_sys::Date::now();
     let Some(st) = app.session.active() else { return };
@@ -229,6 +251,18 @@ struct Rail {
     /// Every tool, panel and command, made once and kept (`catalogue`): asking the editor for its menus checks each of
     /// its ~800 commands, far too much to do every frame. Made again when All tools opens and after a command ran.
     catalogue: Option<std::rc::Rc<Catalogue>>,
+    /// Where the bar drew what the agent's hand may press, last frame (`hand_*`).
+    spots: Spots,
+}
+
+/// Where things the agent's hand presses were drawn, in the editor's points.
+#[derive(Default)]
+struct Spots {
+    grid_button: Option<egui::Rect>,
+    search: Option<(egui::Rect, egui::Id)>,
+    tiles: Vec<(String, egui::Rect)>,
+    /// The visible part of All tools' list: a tile outside it is scrolled to first.
+    list: Option<egui::Rect>,
 }
 
 thread_local! {
@@ -370,7 +404,15 @@ fn rail_pump(app: &mut PhotocraftApp) {
                     p.grid = false;
                     p.catalogue = None;
                 });
-                drop(menus::invoke(app, ctx, &id, params));
+                // The agent's hand pressed the tile of the command it is doing: it opens the command's dialog to set the
+                // agent's values in it, as a person does; with nothing to set, the tile does what it does for anyone.
+                match hand_pressed(&id) {
+                    Some((label, true)) => {
+                        photocraft_ui_egui::dialogs::open_command_dialog(app, &id, &label);
+                    }
+                    Some((_, false)) => hand_result(menus::invoke(app, ctx, &id, params)),
+                    None => drop(menus::invoke(app, ctx, &id, params)),
+                }
             }
             Ask::Tool(t) => {
                 app.ui.tool = t;
@@ -594,7 +636,9 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
             ui.add_space(2.0 * k);
             ui.separator();
         }
-        if round(ui, "panels-top-left", SLATE, grid, true, size, "All tools").clicked() {
+        let all_tools = round(ui, "panels-top-left", SLATE, grid, true, size, "All tools");
+        RAIL.with(|p| p.borrow_mut().spots.grid_button = Some(all_tools.rect));
+        if all_tools.clicked() {
             RAIL.with(|p| {
                 let mut p = p.borrow_mut();
                 p.grid = !grid;
@@ -725,13 +769,17 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
                 let hint = toast.clone().unwrap_or_else(|| if phone { "Tap a tool to use it.".to_string() } else { format!("Pin the tools you use most to your bar. It has room for {slots} at this window size ({} pinned).", shown.len()) });
                 ui.label(egui::RichText::new(hint).size(11.5 * k).color(egui::Color32::from_rgb(122, 130, 151)));
                 let mut query = RAIL.with(|p| p.borrow().search.clone());
-                if ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search every tool and command").desired_width(width)).changed() {
+                let field = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search every tool and command").desired_width(width));
+                RAIL.with(|p| p.borrow_mut().spots.search = Some((field.rect, field.id)));
+                if field.changed() {
                     RAIL.with(|p| p.borrow_mut().search = query.clone());
                 }
                 let needle = query.trim().to_lowercase();
                 let cols: usize = if phone { 3 } else { 5 };
                 let tile_w = (width - 6.0 * k * (cols as f32 - 1.0) - 14.0 * k) / cols as f32;
-                egui::ScrollArea::vertical().max_height(screen.height() * 0.7).max_width(width).auto_shrink([false, true]).show(ui, |ui| {
+                let aim = hand_aim();
+                let mut tiles: Vec<(String, egui::Rect)> = Vec::new();
+                let list = egui::ScrollArea::vertical().max_height(screen.height() * 0.7).max_width(width).auto_shrink([false, true]).show(ui, |ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(6.0 * k, 6.0 * k);
                     for (at, section) in all.sections.iter().enumerate() {
                         let items: Vec<&Entry> = all.entries.iter().filter(|e| e.section == at && (needle.is_empty() || e.find.contains(&needle))).collect();
@@ -739,7 +787,7 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
                             continue;
                         }
                         let commands = items.first().is_some_and(|e| matches!(e.item.act, Act::Command(_)));
-                        let body = |ui: &mut egui::Ui, asks: &mut Vec<Ask>| {
+                        let mut body = |ui: &mut egui::Ui, asks: &mut Vec<Ask>| {
                             for row in items.chunks(cols) {
                                 ui.horizontal(|ui| {
                                 for entry in row {
@@ -750,6 +798,11 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
                                     ui.vertical(|ui| {
                                         ui.set_width(tile_w);
                                         let (rect, resp) = ui.allocate_exact_size(egui::vec2(tile_w, 54.0 * k), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+                                        tiles.push((item.id.clone(), rect));
+                                        // The tile the agent's hand is going to: scrolled into view, as a person scrolls to it.
+                                        if aim.as_deref() == Some(item.id.as_str()) {
+                                            ui.scroll_to_rect(rect, Some(egui::Align::Center));
+                                        }
                                         let resp = resp.on_hover_text(&item.label);
                                         let fill = with_alpha(item.color, if on { 90 } else if resp.hovered() && enabled { 60 } else { 38 });
                                         ui.painter().rect_filled(rect, 14.0 * k, if enabled { fill } else { with_alpha(item.color, 18) });
@@ -785,12 +838,623 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
                         }
                     }
                 });
+                RAIL.with(|p| {
+                    let mut p = p.borrow_mut();
+                    p.spots.tiles = tiles;
+                    p.spots.list = Some(list.inner_rect);
+                });
             });
+        });
+    } else {
+        RAIL.with(|p| {
+            let mut p = p.borrow_mut();
+            p.spots.tiles.clear();
+            p.spots.search = None;
+            p.spots.list = None;
         });
     }
 
     if !asks.is_empty() {
         RAIL.with(|p| p.borrow_mut().asks.extend(asks));
         ctx.request_repaint();
+    }
+}
+
+// ---- the agent's hand --------------------------------------------------------------------------------------------
+//
+// With Visible work on, the agent's photo_edit is not run on the server's copy of the picture: the window hands it here,
+// and the agent does it in this editor as a person does, with the same controls. Its cursor (drawn here, in its colour,
+// with its name) goes to All tools on the bar and clicks it, clicks the search field and types the command's name, goes
+// to the command's tile (scrolling the list to it) and clicks it. The command's own dialog opens; each of the agent's
+// values is set in it in turn, a number moving to its value as a slider does and words typed, while the person watches
+// the preview change; then the cursor clicks OK. A command with nothing to set does what its tile does for anyone.
+//
+// Every move, press and key is an input event of the editor's own (`raw_input`, fed through eframe's raw input hook), so
+// the bar, the search field and the dialog's buttons answer the hand exactly as they answer a mouse. When the edit is
+// done the picture goes back to the page with what each command did (`handed`), and the window keeps it as the agent's.
+//
+// What is not done by hand yet, and says so in its result (`how: "direct"`): a command with no tile in All tools (one
+// that is in no menu, such as layer.setProps) runs as the editor's own command while the cursor rests on the picture.
+
+use std::collections::VecDeque;
+
+/// How long a key takes, between two, in milliseconds: a person typing at an ordinary pace.
+const HAND_TYPE_MS: (f64, f64) = (55.0, 115.0);
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Target {
+    GridButton,
+    Search,
+    Tile,
+    Field(usize),
+    Ok,
+    Picture,
+}
+
+#[derive(Clone)]
+enum Step {
+    Go(Target),
+    Press,
+    Release,
+    Pause(f64),
+    /// Select what is in the focused field (Ctrl/Cmd+A), so what is typed replaces it.
+    SelectAll,
+    Type(String),
+    /// After the tile: wait for its dialog, or for the command it ran.
+    AwaitTile,
+    /// Set the agent's value number `n` in the open dialog, over a moment.
+    SetField(usize),
+    /// After OK: wait for the dialog to close and the command (and any job it started) to finish.
+    AwaitOk,
+    /// No tile for it: the editor's own command, run directly.
+    Direct,
+}
+
+struct Motion {
+    from: egui::Pos2,
+    to: egui::Pos2,
+    bend: egui::Pos2,
+    start: f64,
+    dur: f64,
+}
+
+struct HandJob {
+    id: String,
+    cmds: Vec<(String, serde_json::Map<String, serde_json::Value>)>,
+    n: usize,
+    acts: VecDeque<Step>,
+    since: f64,
+    motion: Option<Motion>,
+    results: Vec<serde_json::Value>,
+    stop: bool,
+    // The command in hand.
+    item: String,
+    label: String,
+    how: &'static str,
+    before: Vec<u64>,
+    dialog: Option<u64>,
+    pressed: bool,
+    outcome: Option<Result<(), String>>,
+    typed: usize,
+    next_key: f64,
+    field_from: Option<f64>,
+    ok_tries: u8,
+}
+
+#[derive(Default)]
+struct Hand {
+    job: Option<HandJob>,
+    /// Input for the next frame.
+    events: Vec<egui::Event>,
+    at: Option<egui::Pos2>,
+    name: String,
+    color: Option<egui::Color32>,
+    /// When the last job ended: the cursor stays a moment, then goes.
+    ended: f64,
+    told: f64,
+    bend_side: f32,
+}
+
+thread_local! {
+    static HAND: RefCell<Hand> = RefCell::new(Hand::default());
+}
+
+fn now_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+fn rand(lo: f64, hi: f64) -> f64 {
+    lo + (hi - lo) * js_sys::Math::random()
+}
+
+/// A job from the page. One at a time: a second while one is in hand is answered at once, as refused.
+fn hand_take(json: &str) {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return };
+    let Some(id) = v.get("id").and_then(|x| x.as_str()).map(str::to_string) else { return };
+    let cmds: Vec<(String, serde_json::Map<String, serde_json::Value>)> = v
+        .get("commands")
+        .and_then(|c| c.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| {
+                    let cid = c.get("id").and_then(|x| x.as_str())?.to_string();
+                    let params = c.get("params").and_then(|p| p.as_object()).cloned().unwrap_or_default();
+                    Some((cid, params))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let busy = HAND.with(|h| h.borrow().job.is_some());
+    if busy {
+        let reply = serde_json::json!({ "id": id, "error": "The editor is already doing an edit." });
+        send_json("handed", &reply.to_string(), None).ok();
+        return;
+    }
+    HAND.with(|h| {
+        let mut h = h.borrow_mut();
+        if let Some(who) = v.get("who") {
+            h.name = who.get("name").and_then(|x| x.as_str()).unwrap_or("Autora").chars().take(24).collect();
+            h.color = who.get("color").and_then(|x| x.as_str()).and_then(|c| egui::Color32::from_hex(c.trim()).ok());
+        }
+        h.job = Some(HandJob {
+            id,
+            cmds,
+            n: 0,
+            acts: VecDeque::new(),
+            since: now_ms(),
+            motion: None,
+            results: Vec::new(),
+            stop: false,
+            item: String::new(),
+            label: String::new(),
+            how: "ui",
+            before: Vec::new(),
+            dialog: None,
+            pressed: false,
+            outcome: None,
+            typed: 0,
+            next_key: 0.0,
+            field_from: None,
+            ok_tries: 0,
+        });
+    });
+}
+
+fn send_json(kind: &str, json: &str, bytes: Option<&[u8]>) -> Result<(), String> {
+    let js = |e: JsValue| format!("{e:?}");
+    let up = parent().ok_or("not framed")?;
+    let origin = window().ok_or("no window")?.location().origin().map_err(js)?;
+    let msg = Object::new();
+    Reflect::set(&msg, &NS.into(), &kind.into()).map_err(js)?;
+    Reflect::set(&msg, &"json".into(), &json.into()).map_err(js)?;
+    if let Some(bytes) = bytes {
+        Reflect::set(&msg, &"bytes".into(), &Uint8Array::from(bytes).buffer()).map_err(js)?;
+    }
+    up.post_message(&msg, &origin).map_err(js)
+}
+
+fn hand_busy() -> bool {
+    HAND.with(|h| h.borrow().job.is_some())
+}
+
+/// The tile the hand is on its way to, so All tools scrolls it into view.
+fn hand_aim() -> Option<String> {
+    HAND.with(|h| h.borrow().job.as_ref().filter(|j| !j.pressed && !j.item.is_empty()).map(|j| j.item.clone()))
+}
+
+/// The bar was asked for command `id`: if that is the hand pressing the tile of the command it is doing, its label and
+/// whether it has values to set (so its dialog is opened for them).
+fn hand_pressed(id: &str) -> Option<(String, bool)> {
+    HAND.with(|h| {
+        let mut h = h.borrow_mut();
+        let j = h.job.as_mut()?;
+        let (cid, params) = j.cmds.get(j.n)?;
+        if j.pressed || cid != id || j.item.is_empty() {
+            return None;
+        }
+        j.pressed = true;
+        Some((j.label.clone(), !params.is_empty()))
+    })
+}
+
+/// What the command the hand's tile ran said.
+fn hand_result(r: Result<serde_json::Value, String>) {
+    HAND.with(|h| {
+        if let Some(j) = h.borrow_mut().job.as_mut() {
+            j.outcome = Some(r.map(|_| ()));
+        }
+    });
+}
+
+/// The hand's input, into the frame's raw input (eframe's raw input hook, patched in by build-photo.mjs).
+pub fn raw_input(raw: &mut egui::RawInput) {
+    HAND.with(|h| raw.events.append(&mut h.borrow_mut().events));
+}
+
+fn ease(t: f64) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    if t < 0.5 { 4.0 * t * t * t } else { 1.0 - (-2.0 * t + 2.0).powi(3) / 2.0 }
+}
+
+impl Motion {
+    fn at(&self, now: f64) -> (egui::Pos2, bool) {
+        let t = ((now - self.start) / self.dur).clamp(0.0, 1.0);
+        let e = ease(t) as f32;
+        let a = self.from.lerp(self.bend, e);
+        let b = self.bend.lerp(self.to, e);
+        (a.lerp(b, e), t >= 1.0)
+    }
+}
+
+/// Where a target is on screen now, if it is there.
+fn spot(app: &PhotocraftApp, ctx: &egui::Context, j: &HandJob, t: Target) -> Option<egui::Pos2> {
+    let rail = |f: &dyn Fn(&Spots) -> Option<egui::Rect>| RAIL.with(|p| f(&p.borrow().spots));
+    let inside = |r: egui::Rect| r.center() + egui::vec2(rand(-0.2, 0.2) as f32 * r.width(), rand(-0.2, 0.2) as f32 * r.height());
+    match t {
+        Target::GridButton => rail(&|s| s.grid_button).map(inside),
+        Target::Search => rail(&|s| s.search.map(|(r, _)| r)).map(|r| egui::pos2(r.left() + r.width() * 0.3, r.center().y)),
+        Target::Tile => {
+            let r = rail(&|s| s.tiles.iter().find(|(id, _)| *id == j.item).map(|(_, r)| *r))?;
+            // Only once the list has scrolled to it.
+            let shown = rail(&|s| s.list).is_none_or(|l| l.contains(r.center()));
+            shown.then(|| inside(r))
+        }
+        Target::Ok => {
+            app.ui.dialogs.iter().any(|d| Some(d.id) == j.dialog).then_some(())?;
+            ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new("autora-dialog-ok"))).map(inside)
+        }
+        Target::Field(i) => {
+            let did = j.dialog?;
+            let ok = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new("autora-dialog-ok")));
+            let area = ctx.memory(|m| m.area_rect(egui::Id::new(("dialog", did)))).or_else(|| ok.map(|o| egui::Rect::from_min_max(egui::pos2(o.right() - 400.0, o.top() - 220.0), egui::pos2(o.right(), o.top() - 8.0))))?;
+            let y = (area.top() + 64.0 + i as f32 * 30.0).min(area.bottom() - 60.0).max(area.top() + 30.0);
+            Some(egui::pos2(area.left() + area.width() * rand(0.45, 0.65) as f32, y))
+        }
+        Target::Picture => Some(ctx.content_rect().center() + egui::vec2(rand(-60.0, 60.0) as f32, rand(-40.0, 40.0) as f32)),
+    }
+}
+
+/// Every frame, before the app runs: the hand's next movement, press or key.
+fn hand_pump(app: &mut PhotocraftApp) {
+    let Some(ctx) = RAIL.with(|p| p.borrow().ctx.clone()) else { return };
+    if !hand_busy() {
+        return;
+    }
+    ctx.request_repaint();
+    let now = now_ms();
+    let k = per_css_px(&ctx);
+    // The hand is taken out while it works, and put back after, so the app can be borrowed freely in between.
+    let mut h = HAND.with(|h| std::mem::take(&mut *h.borrow_mut()));
+    let Some(mut j) = h.job.take() else {
+        HAND.with(|x| *x.borrow_mut() = h);
+        return;
+    };
+    let mut events: Vec<egui::Event> = Vec::new();
+    let at = h.at.unwrap_or_else(|| ctx.content_rect().center());
+    let mut pos = at;
+
+    if j.acts.is_empty() {
+        if j.stop || j.n >= j.cmds.len() {
+            hand_finish(app, &j);
+            h.ended = now;
+            HAND.with(|x| *x.borrow_mut() = h);
+            return;
+        }
+        // The next command: by hand through All tools when it has a tile there, else the editor's own command.
+        let (cid, _) = j.cmds[j.n].clone();
+        let item = format!("c:{cid}");
+        let found = catalogue(app).find(&item);
+        j.before = app.ui.dialogs.iter().map(|d| d.id).collect();
+        j.dialog = None;
+        j.pressed = false;
+        j.outcome = None;
+        j.ok_tries = 0;
+        j.since = now;
+        match found {
+            Some(it) => {
+                j.item = item;
+                j.label = it.label.clone();
+                j.how = "ui";
+                let grid = RAIL.with(|p| p.borrow().grid);
+                if !grid {
+                    j.acts.extend([Step::Go(Target::GridButton), Step::Press, Step::Release, Step::Pause(rand(220.0, 320.0))]);
+                }
+                j.acts.extend([
+                    Step::Go(Target::Search),
+                    Step::Press,
+                    Step::Release,
+                    Step::Pause(rand(120.0, 200.0)),
+                    Step::SelectAll,
+                    Step::Type(it.label.to_lowercase()),
+                    Step::Pause(rand(280.0, 420.0)),
+                    Step::Go(Target::Tile),
+                    Step::Pause(rand(60.0, 140.0)),
+                    Step::Press,
+                    Step::Release,
+                    Step::AwaitTile,
+                ]);
+            }
+            None => {
+                j.item.clear();
+                j.label = cid.clone();
+                j.how = "direct";
+                j.acts.extend([Step::Go(Target::Picture), Step::Pause(160.0), Step::Direct]);
+            }
+        }
+    }
+
+    let fail = |j: &mut HandJob, app: &mut PhotocraftApp, why: String| {
+        let (cid, _) = &j.cmds[j.n];
+        j.results.push(serde_json::json!({ "command": cid, "ok": false, "error": why, "how": j.how }));
+        if let Some(d) = j.dialog.take() {
+            app.ui.close_dialog(d);
+        }
+        RAIL.with(|p| p.borrow_mut().grid = false);
+        j.stop = true;
+        j.acts.clear();
+    };
+    let elapsed = now - j.since;
+    let mut next = false;
+    match j.acts.front().cloned() {
+        Some(Step::Go(t)) => {
+            if j.motion.is_none() {
+                match spot(app, &ctx, &j, t) {
+                    Some(to) => {
+                        let d = (to - at).length() / k.max(0.25);
+                        let dur = 260.0 + 115.0 * (1.0 + d as f64 / 24.0).log2();
+                        h.bend_side = if h.bend_side >= 0.0 { -1.0 } else { 1.0 };
+                        let mid = at.lerp(to, 0.5);
+                        let perp = (to - at).rot90().normalized() * (to - at).length() * 0.14 * h.bend_side;
+                        j.motion = Some(Motion { from: at, to, bend: mid + perp, start: now, dur });
+                    }
+                    None if elapsed > 2500.0 => {
+                        fail(&mut j, app, format!("the hand could not find {t:?} on screen"));
+                    }
+                    None => {}
+                }
+            }
+            if let Some(m) = &j.motion {
+                let (p, arrived) = m.at(now);
+                let tremor = egui::vec2(((now / 37.0).sin() * 0.35) as f32, ((now / 53.0).cos() * 0.35) as f32) * k;
+                pos = if arrived { p } else { p + tremor };
+                events.push(egui::Event::PointerMoved(pos));
+                if arrived {
+                    j.motion = None;
+                    next = true;
+                }
+            }
+        }
+        Some(Step::Press) => {
+            events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+            next = true;
+        }
+        Some(Step::Release) => {
+            events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+            next = true;
+        }
+        Some(Step::Pause(ms)) => next = elapsed >= ms,
+        Some(Step::SelectAll) => {
+            // The click gave the search field the keyboard; if it did not, it is given it, so no key reaches the canvas.
+            if let Some((_, id)) = RAIL.with(|p| p.borrow().spots.search) {
+                if !ctx.memory(|m| m.has_focus(id)) {
+                    ctx.memory_mut(|m| m.request_focus(id));
+                }
+            }
+            let m = egui::Modifiers::COMMAND;
+            events.push(egui::Event::Key { key: egui::Key::A, physical_key: None, pressed: true, repeat: false, modifiers: m });
+            events.push(egui::Event::Key { key: egui::Key::A, physical_key: None, pressed: false, repeat: false, modifiers: m });
+            next = true;
+        }
+        Some(Step::Type(text)) => {
+            let chars: Vec<char> = text.chars().collect();
+            let focused = RAIL.with(|p| p.borrow().spots.search).is_some_and(|(_, id)| ctx.memory(|m| m.has_focus(id)));
+            if !focused {
+                if elapsed > 1500.0 {
+                    fail(&mut j, app, "the search field did not take the keyboard".into());
+                }
+            } else if j.typed >= chars.len() {
+                j.typed = 0;
+                next = true;
+            } else if now >= j.next_key {
+                events.push(egui::Event::Text(chars[j.typed].to_string()));
+                j.typed += 1;
+                j.next_key = now + rand(HAND_TYPE_MS.0, HAND_TYPE_MS.1);
+            }
+        }
+        Some(Step::AwaitTile) => {
+            let opened = app.ui.dialogs.iter().map(|d| d.id).find(|id| !j.before.contains(id));
+            if let Some(did) = opened {
+                if app.ui.dialogs.iter().any(|d| d.id == did && d.kind == photocraft_ui_egui::state::DialogKind::Error) {
+                    let why = app.ui.dialogs.iter().find(|d| d.id == did).and_then(|d| d.fields.get("message")).and_then(|m| m.as_str()).unwrap_or("it failed").to_string();
+                    app.ui.close_dialog(did);
+                    fail(&mut j, app, why);
+                } else {
+                    j.dialog = Some(did);
+                    let fields = j.cmds[j.n].1.len();
+                    j.acts.pop_front();
+                    for i in 0..fields {
+                        j.acts.push_back(Step::Go(Target::Field(i)));
+                        j.acts.push_back(Step::SetField(i));
+                        j.acts.push_back(Step::Pause(rand(140.0, 260.0)));
+                    }
+                    j.acts.extend([Step::Pause(rand(200.0, 320.0)), Step::Go(Target::Ok), Step::Pause(rand(60.0, 140.0)), Step::Press, Step::Release, Step::AwaitOk]);
+                    ctx.data_mut(|m| m.remove::<Option<String>>(egui::Id::new("autora-dialog-result")));
+                    j.since = now;
+                }
+            } else {
+                match j.outcome.take() {
+                    Some(Ok(())) if !app.session.has_jobs() => next = true,
+                    Some(Ok(())) => j.outcome = Some(Ok(())),
+                    Some(Err(e)) => fail(&mut j, app, e),
+                    None if elapsed > 3000.0 => fail(&mut j, app, "its tile did not answer the click".into()),
+                    None => {}
+                }
+            }
+        }
+        Some(Step::SetField(i)) => {
+            let (key, want) = j.cmds[j.n].1.iter().nth(i).map(|(k, v)| (k.clone(), v.clone())).unwrap_or_default();
+            let did = j.dialog.unwrap_or(u64::MAX);
+            let current = app.ui.dialogs.iter().find(|d| d.id == did).and_then(|d| d.fields.get(&key)).cloned();
+            match (&want, current.as_ref().and_then(|c| c.as_f64())) {
+                // A number moves to its value, as a slider dragged there; the dialog's preview follows it.
+                (serde_json::Value::Number(n), Some(from)) if n.as_f64().is_some() => {
+                    let to = n.as_f64().unwrap_or(from);
+                    let start = *j.field_from.get_or_insert(from);
+                    let t = (elapsed / 520.0).clamp(0.0, 1.0);
+                    let v = start + (to - start) * ease(t);
+                    let value = if t >= 1.0 { want.clone() } else if n.is_f64() { serde_json::json!(v) } else { serde_json::json!(v.round() as i64) };
+                    if let Some(d) = app.ui.dialog_mut(did) {
+                        d.fields.insert(key, value);
+                    }
+                    pos += egui::vec2(((t - 0.5) * 40.0) as f32 * k * ((to - start).signum() as f32), 0.0);
+                    events.push(egui::Event::PointerMoved(pos));
+                    if t >= 1.0 {
+                        j.field_from = None;
+                        next = true;
+                    }
+                }
+                // Words are typed into it.
+                (serde_json::Value::String(text), _) => {
+                    let chars: Vec<char> = text.chars().collect();
+                    if j.typed >= chars.len() {
+                        if let Some(d) = app.ui.dialog_mut(did) {
+                            d.fields.insert(key, want.clone());
+                        }
+                        j.typed = 0;
+                        next = true;
+                    } else if now >= j.next_key {
+                        j.typed += 1;
+                        let shown: String = chars[..j.typed].iter().collect();
+                        if let Some(d) = app.ui.dialog_mut(did) {
+                            d.fields.insert(key, serde_json::json!(shown));
+                        }
+                        j.next_key = now + rand(HAND_TYPE_MS.0, HAND_TYPE_MS.1);
+                    }
+                }
+                // A switch, a choice or a value the dialog had none of: set as it is.
+                _ => {
+                    if let Some(d) = app.ui.dialog_mut(did) {
+                        d.fields.insert(key, want.clone());
+                    }
+                    next = true;
+                }
+            }
+        }
+        Some(Step::AwaitOk) => {
+            let open = j.dialog.is_some_and(|d| app.ui.dialogs.iter().any(|x| x.id == d));
+            let said = ctx.data(|m| m.get_temp::<Option<String>>(egui::Id::new("autora-dialog-result")));
+            if !open {
+                if app.session.has_jobs() {
+                    // A filter running as a job: wait for it, however long a large picture takes.
+                } else {
+                    match said {
+                        Some(Some(e)) => fail(&mut j, app, e),
+                        _ => {
+                            j.dialog = None;
+                            next = true;
+                        }
+                    }
+                }
+            } else if elapsed > 1800.0 {
+                // The click missed (the dialog moved, or was still being laid out): try OK again, twice.
+                j.ok_tries += 1;
+                if j.ok_tries > 2 {
+                    fail(&mut j, app, "the dialog's OK did not take the click".into());
+                } else {
+                    j.acts.pop_front();
+                    for a in [Step::AwaitOk, Step::Release, Step::Press, Step::Go(Target::Ok)] {
+                        j.acts.push_front(a);
+                    }
+                    j.since = now;
+                }
+            }
+        }
+        Some(Step::Direct) => {
+            if j.outcome.is_none() {
+                let (cid, params) = j.cmds[j.n].clone();
+                let r = menus::invoke(app, &ctx, &cid, serde_json::Value::Object(params));
+                j.outcome = Some(r.map(|_| ()));
+            }
+            match j.outcome.clone() {
+                Some(Err(e)) => fail(&mut j, app, e),
+                _ if app.session.has_jobs() => {}
+                _ => next = true,
+            }
+        }
+        None => {}
+    }
+    if next && !j.stop {
+        j.acts.pop_front();
+        j.since = now;
+        if j.acts.is_empty() {
+            let (cid, _) = &j.cmds[j.n];
+            j.results.push(serde_json::json!({ "command": cid, "ok": true, "how": j.how }));
+            j.n += 1;
+            j.item.clear();
+        }
+    }
+    h.at = Some(pos);
+    h.events.extend(events);
+    h.job = Some(j);
+    HAND.with(|x| *x.borrow_mut() = h);
+}
+
+/// The edit is done (or stopped): the picture and what each command did, to the page.
+fn hand_finish(app: &PhotocraftApp, j: &HandJob) {
+    let mut reply = serde_json::json!({ "id": j.id, "results": j.results });
+    let bytes = app.session.active().and_then(|st| {
+        let key = (st.doc.id, st.revision);
+        match photocraft_io::export(&st.doc, WORK_NAME, &ExportOptions::default()) {
+            Ok(done) => {
+                SYNC.with(|s| s.borrow_mut().sent = Some(key));
+                Some(done.bytes)
+            }
+            Err(e) => {
+                reply["error"] = serde_json::json!(format!("the picture could not be kept: {e}"));
+                None
+            }
+        }
+    });
+    if bytes.is_none() && reply.get("error").is_none() {
+        reply["error"] = serde_json::json!("no picture is open in the editor");
+    }
+    send_json("handed", &reply.to_string(), bytes.as_deref()).ok();
+}
+
+/// After the app ran: the agent's cursor over everything, in its colour and with its name, while it works and a moment after.
+fn hand_draw(ctx: &egui::Context) {
+    let (at, busy, ended, name, color) = HAND.with(|h| {
+        let h = h.borrow();
+        (h.at, h.job.is_some(), h.ended, h.name.clone(), h.color)
+    });
+    let Some(at) = at else { return };
+    let now = now_ms();
+    if !busy && now - ended > 1500.0 {
+        return;
+    }
+    if !busy {
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+    let k = per_css_px(ctx);
+    let color = color.unwrap_or(egui::Color32::from_rgb(110, 91, 255));
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Debug, egui::Id::new("autora-hand")));
+    let arrow: Vec<egui::Pos2> = [(0.0, 0.0), (0.0, 17.0), (4.6, 13.2), (7.6, 20.0), (10.2, 18.9), (7.3, 12.4), (12.6, 12.4)].iter().map(|(x, y)| at + egui::vec2(*x, *y) * k).collect();
+    painter.add(egui::Shape::convex_polygon(arrow, color, egui::Stroke::new(1.4 * k, egui::Color32::WHITE)));
+    let label = if name.is_empty() { "Autora".to_string() } else { name };
+    let galley = painter.layout_no_wrap(label, egui::FontId::proportional(11.0 * k), egui::Color32::WHITE);
+    let tag = egui::Rect::from_min_size(at + egui::vec2(14.0, 18.0) * k, galley.size() + egui::vec2(12.0, 6.0) * k);
+    painter.rect_filled(tag, 6.0 * k, color);
+    painter.galley(tag.min + egui::vec2(6.0, 3.0) * k, galley, egui::Color32::WHITE);
+    // Where it is, for the few words the page shows beside it; a few times a second is enough.
+    let told = HAND.with(|h| h.borrow().told);
+    if busy && now - told > 80.0 {
+        HAND.with(|h| h.borrow_mut().told = now);
+        let msg = Object::new();
+        let _ = Reflect::set(&msg, &NS.into(), &"cursor".into());
+        let _ = Reflect::set(&msg, &"x".into(), &JsValue::from_f64(f64::from(at.x / k.max(0.01))));
+        let _ = Reflect::set(&msg, &"y".into(), &JsValue::from_f64(f64::from(at.y / k.max(0.01))));
+        if let (Some(up), Some(origin)) = (parent(), window().and_then(|w| w.location().origin().ok())) {
+            let _ = up.post_message(&msg, &origin);
+        }
     }
 }

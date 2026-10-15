@@ -21,6 +21,7 @@ type Handlers = {
   onCadDesk?: (state: unknown) => void;
   onGameDesk?: (state: unknown) => void;
   onPhotoDesk?: (state: unknown) => void;
+  onPhotoHand?: (msg: unknown) => void;
   /** The Terminal window: whether it is open, where it is, and that something moved in it. */
   onTermDesk?: (state: unknown) => void;
   /** Autora Music's window: whether it is open, and what changed last. */
@@ -177,6 +178,9 @@ export class SessionStream {
           break;
         case "photodesk":
           this.handlers.onPhotoDesk?.(msg.state);
+          break;
+        case "photodesk.hand":
+          this.handlers.onPhotoHand?.(msg);
           break;
         case "caddesk":
           this.handlers.onCadDesk?.(msg.state);
