@@ -150,7 +150,7 @@ export function useSong(sessionId: string) {
         if (!now.open || now.rev === undefined) return;
         if (now.by === "agent" && now.rev > known.current) {
           if (holding.current > 0) waiting.current = true;
-          else void load(true);
+          else void load(now.quiet !== now.rev);
         } else known.current = Math.max(known.current, now.rev);
       }),
     [load],

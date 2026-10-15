@@ -73,7 +73,8 @@ async function main() {
       await shot("2-roll");
     });
 
-    await test("the agent's change appears live, lights the clip it touched, and one Ctrl+Z takes it back", async () => {
+    await test("with Visible work off, the agent's change appears, lights the clip it touched, and one Ctrl+Z takes it back", async () => {
+      await app.api("PATCH", "/api/agent-cursor", { on: false });
       const before = (await doc()).tracks.length;
       app.script.push({ tools: [{ name: "studio_make", args: { kind: "bass", progression: "C G Am F", style: "eighths", bars: 4 } }] });
       app.script.push({ text: "Bass line in." });
@@ -85,6 +86,69 @@ async function main() {
       await page.keyboard.press("Control+z");
       await until("the bass is gone again", async () => (await page.locator(".st-name:has-text('Bass')").count()) === 0);
       await until("and the server agrees", async () => (await doc()).tracks.length === before);
+      await app.api("PATCH", "/api/agent-cursor", { on: true });
+    });
+
+    const told = () => JSON.stringify(app.seen.flatMap((r) => r.messages).filter((m: { role: string }) => m.role === "tool").slice(-1));
+    /** Whether the agent's pointer showed while `run` went, and how many notes the window had at its busiest. */
+    const watching = async (run: () => Promise<unknown>) => {
+      let seen = false;
+      let on = true;
+      void (async () => { while (on) { if (await page.locator(".agent-pointer-layer.is-on").count()) seen = true; await sleep(60); } })();
+      await run();
+      on = false;
+      return seen;
+    };
+
+    await test("with Visible work on, the agent adds a track by hand: Add track, the instrument, its name typed in", async () => {
+      app.script.push({ tools: [{ name: "studio_track", args: { action: "add", instrument: "pad", name: "Strings" } }] });
+      app.script.push({ text: "Added." });
+      const seen = await watching(() => app.turn(s, "add a pad track called Strings", 120_000));
+      assert.ok(seen, "the agent's pointer was there");
+      assert.match(told(), /Done by hand in the Music window/, told().slice(-1200));
+      assert.match(told(), /added a pad track with Add track/);
+      assert.match(told(), /named a track \\"Strings\\"/);
+      await page.waitForSelector(".st-name:has-text('Strings')");
+      assert.ok((await doc()).tracks.some((t: { name: string; instrument: string }) => t.name === "Strings" && t.instrument === "pad"));
+      assert.equal(await page.locator(".st-clip.is-flash").count(), 0, "nothing lit up: the person watched it being done");
+    });
+
+    await test("with Visible work on, a clip is drawn on its lane and its notes placed in the piano roll by hand", async () => {
+      const notes = [{ pitch: 60, start: 0, length: 1 }, { pitch: 64, start: 1, length: 1 }, { pitch: 67, start: 2, length: 2 }];
+      app.script.push({ tools: [{ name: "studio_clip", args: { action: "add", track: "Strings", bar: 1, bars: 1, name: "Pad chords", notes } }] });
+      app.script.push({ text: "Drawn." });
+      let filming = Boolean(shots);
+      const film = (async () => { for (let i = 0; filming && i < 40; i++) { await sleep(1500); await page.screenshot({ path: `${shots}/hand-${i}.png` }).catch(() => undefined); } })();
+      await app.turn(s, "write a little line on the strings", 180_000);
+      filming = false;
+      await film;
+      assert.match(told(), /drew a clip on its lane/, told().slice(-1500));
+      assert.match(told(), /placed 3 notes in the piano roll/);
+      const d = await doc();
+      const clip = d.tracks.find((t: { name: string }) => t.name === "Strings").clips[0];
+      assert.equal(clip.name, "Pad chords");
+      await sleep(600);
+      assert.equal(await page.locator(".st-clip-name-input").inputValue(), "Pad chords", "the clip it drew is still open in the roll, the finished song taken in under it");
+      assert.equal(await page.locator(".st-roll .st-note").count(), 3);
+      assert.match(told(), new RegExp(`clip ${clip.id}`), "the agent is told the clip's id as the window has it");
+      assert.deepEqual(clip.notes.map((n: { pitch: number; start: number; length: number }) => [n.pitch, n.start, n.length]).sort(), [[60, 0, 1], [64, 1, 1], [67, 2, 2]]);
+      await shot("3b-hand");
+    });
+
+    await test("with Visible work on, the tempo is typed into the Song tray and hits are clicked into the drum grid", async () => {
+      const drums = (await doc()).tracks.find((t: { instrument: string }) => t.instrument === "kit");
+      const beat = drums.clips[0];
+      app.script.push({ tools: [{ name: "studio_song", args: { bpm: 96 } }] });
+      app.script.push({ tools: [{ name: "studio_notes", args: { action: "replace", clip: beat.id, notes: [{ pitch: "kick", start: 0 }, { pitch: "snare", start: 1 }, { pitch: "kick", start: 2 }, { pitch: "snare", start: 3 }] } }] });
+      app.script.push({ text: "Done." });
+      await app.turn(s, "slow it to 96 and simplify the beat", 240_000);
+      const all = JSON.stringify(app.seen.flatMap((r) => r.messages).filter((m: { role: string }) => m.role === "tool").slice(-2));
+      assert.match(all, /set the tempo to 96 in the Song tray/, all.slice(-2000));
+      assert.match(all, /pressed Clear in the piano roll/);
+      assert.match(all, /placed 4 notes in the drum grid/);
+      const d = await doc();
+      assert.equal(d.bpm, 96);
+      assert.equal(d.tracks.find((t: { id: string }) => t.id === drums.id).clips[0].notes.length, 4);
     });
 
     await test("play moves the playhead and makes sound; stop brings it back", async () => {

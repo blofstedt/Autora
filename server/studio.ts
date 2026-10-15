@@ -29,6 +29,7 @@ import {
   type BassStyle, type Chord, type ChordStyle, type Clip, type DrumStyle, type InstrumentId, type Note, type Project, type Track,
 } from "../src/lib/studio/model";
 import { MAX_ARTIFACT_BYTES, keepCopy, saveArtifact } from "./artifacts";
+import { stepWords, studioSteps } from "../src/lib/studio/handsteps";
 import { chatTitle } from "./folders";
 import { stateDir } from "./state";
 import { readDoc, saveDoc } from "./store";
@@ -63,6 +64,8 @@ interface Entry {
   focus: Focus;
   /** The window has said its page is up and can take commands. */
   ready: boolean;
+  /** The revision the agent's hand made in the window (Visible work): the window has it, so it loads it without a flash. */
+  quiet?: number;
 }
 
 interface Saved {
@@ -74,6 +77,11 @@ interface Saved {
 const entries = new Map<string, Entry>();
 const listeners = new Set<(session: string) => void>();
 let pushed: (session: string, message: Record<string, unknown>) => void = () => undefined;
+/** Whether Visible work is on (server.ts says): then an edit is done in the open window by the agent's hand. */
+let visible: () => boolean = () => false;
+export function studioVisible(fn: () => boolean) {
+  visible = fn;
+}
 
 const validSession = (id: string) => /^[A-Za-z0-9_-]{1,80}$/.test(id);
 const savedName = (session: string) => `studio-${session}`;
@@ -110,7 +118,7 @@ export function studioState(session: string): StudioState {
   if (!validSession(session)) return { open: false };
   const e = entryFor(session);
   if (!e.open) return { open: false };
-  return { open: true, since: e.since, rev: e.rev, by: e.by, name: e.project.name, bpm: e.project.bpm, tracks: e.project.tracks.length };
+  return { open: true, since: e.since, rev: e.rev, by: e.by, name: e.project.name, bpm: e.project.bpm, tracks: e.project.tracks.length, ...(e.quiet === e.rev ? { quiet: e.rev } : {}) };
 }
 
 /** Told after every change to a chat's window or song, so the page can be told. */
@@ -182,7 +190,7 @@ function rejectAll(session: string, why: string) {
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Ask the open window to do something only a browser can, and wait for what it says. */
-async function command(session: string, name: string, args: Record<string, unknown> = {}, timeoutMs = 60_000): Promise<unknown> {
+async function command(session: string, name: string, args: Record<string, unknown> = {}, timeoutMs = 60_000, claimMs?: number): Promise<unknown> {
   setOpen(session, true);
   const e = entryFor(session);
   // The page loads after the window opens: give it time to say it is up.
@@ -196,6 +204,15 @@ async function command(session: string, name: string, args: Record<string, unkno
     }, timeoutMs);
     const entry: Pending = { session, resolve, reject, timer, claimed: false };
     pending.set(id, entry);
+    // Asked of a window that may not be there: nobody taking it soon is an answer.
+    if (claimMs) {
+      setTimeout(() => {
+        if (entry.claimed || !pending.has(id)) return;
+        clearTimeout(timer);
+        pending.delete(id);
+        entry.reject(new Error("unclaimed"));
+      }, claimMs);
+    }
     const send = () => pushed(session, { type: "studio.command", session, id, name, args });
     send();
     // The same chat open in two tabs hears it twice and the first to claim does it; one that missed it is sent it again.
@@ -208,6 +225,43 @@ async function command(session: string, name: string, args: Record<string, unkno
     const refuse = entry.reject;
     entry.reject = (err) => { clearInterval(again); refuse(err); };
   });
+}
+
+// ------------------------------------------------------------- by hand --
+
+/**
+ * With Visible work on and the window up, the edit is done there by the agent's hand while this waits: the steps from the
+ * song as it is to the song as it will be (src/lib/studio/handsteps.ts), each with the window's own controls
+ * (src/components/studio/hand.ts). Then the finished song goes in, with whatever had no step. Says what was done by
+ * hand, for the agent; null when nothing was (Visible off, no window, or nothing a hand could do).
+ */
+async function byHand(session: string, e: Entry, tool: string, args: Record<string, unknown>, next: Project): Promise<{ said: string; ids: Record<string, string> } | null> {
+  if (!visible() || !e.open || !e.ready) return null;
+  const plan = studioSteps(tool, args, e.project, next);
+  if (!plan.steps.length) return null;
+  type Reply = { results?: Array<{ i: number; ok: boolean; error?: string }>; ids?: Record<string, string> } | null;
+  let reply: Reply;
+  try {
+    reply = (await command(session, "hand", { steps: plan.steps }, 60_000 + plan.steps.length * 20_000, 4000)) as Reply;
+  } catch {
+    return null;
+  }
+  const results = reply?.results ?? [];
+  const did = results.filter((r) => r.ok).map((r) => stepWords(plan.steps[r.i]!));
+  const not = results.filter((r) => !r.ok).map((r) => `${stepWords(plan.steps[r.i]!)} (${r.error ?? "not done"})`);
+  if (!did.length) return null;
+  // The tracks and clips the hand made keep the ids the window gave them.
+  const ids: Record<string, string> = {};
+  for (const [from, to] of Object.entries(reply?.ids ?? {})) {
+    if (typeof to !== "string" || !/^[\w-]{1,40}$/.test(to)) continue;
+    for (const t of next.tracks) {
+      if (t.id === from) { t.id = to; ids[from] = to; }
+      for (const c of t.clips) if (c.id === from) { c.id = to; ids[from] = to; }
+    }
+  }
+  const said = `Done by hand in the Music window, where the person watched: ${[...new Set(did)].join("; ")}.` +
+    (not.length || plan.skipped ? ` Not done by hand (in the finished song, which is in the window now): ${[...not, ...(plan.skipped ? [`${plan.skipped} more note${plan.skipped === 1 ? "" : "s"} or steps`] : [])].join("; ")}.` : "");
+  return { said, ids };
 }
 
 // ------------------------------------------------------------------ tools --
@@ -668,8 +722,13 @@ export async function runStudioTool(session: string, name: string, args: Record<
         const next = structuredClone(e.project);
         const done = edit(name, next, args, e.focus);
         setOpen(session, true);
+        const hand = await byHand(session, e, name, args, next);
+        // What the tool said names the ids the hand's window gave what it made.
+        if (hand) for (const [from, to] of Object.entries(hand.ids)) done.text = done.text.split(from).join(to);
+        // The window has the song already, by its own hand: it takes the finished one without lighting it up.
+        if (hand) e.quiet = e.rev + 1;
         commit(session, e, next, "agent");
-        return { ok: true, summary: `${done.text}\n${describeProject(e.project, { focus: e.focus })}`, preview: done.preview };
+        return { ok: true, summary: `${done.text}${hand ? ` ${hand.said}` : ""}\n${describeProject(e.project, { focus: e.focus })}`, preview: done.preview };
       }
 
       case "studio_play": {

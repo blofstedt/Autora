@@ -94,6 +94,13 @@ await test("every window's manual says where its Save is and what it keeps; the 
   }
 });
 
+await test("the Music manual says that with Visible work on the studio tools are done in the window by hand", () => {
+  const music = manualText("studio");
+  for (const needle of ["With Visible work on", "by your hand, live", "Song tray", "Add track", "piano roll", "drum grid", "finished song goes in", "With Visible work off"]) {
+    assert.ok(music.includes(needle), `the Music manual lacks "${needle}"`);
+  }
+});
+
 await test("the PDF manual says that with Visible work on pdf_edit is done in the window by hand, and what is not", () => {
   const pdf = manualText("pdf");
   for (const needle of ["With Visible work on", "by your hand, live", "Fill N fields", "Ctrl+S", "done on the file afterwards", "With Visible work off"]) {

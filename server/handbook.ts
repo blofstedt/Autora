@@ -175,6 +175,15 @@ const STUDIO = [
     "All tools, opens every tool in a window in the middle, with Ask Autora suggestions under them. Nothing is missing from a phone, " +
     "it is one tap further; point the person at a tool by its name and say \"open All tools\" if it is not on their bar. Split, " +
     "Duplicate and Delete work on the open clip. Everything the bar does you can do with the studio_* tools, whatever is shown.",
+  "  With Visible work on and the window open, your studio_song, studio_track, studio_clip, studio_notes and studio_make " +
+    "calls are done there by your hand, live, while the call waits: the name typed into the song's name field; tempo, key " +
+    "and bars set in the Song tray; Add track and the instrument, the name typed after a double-click; M and S pressed; " +
+    "levels dragged in the Mixer; a track's menu (Duplicate, Clear clips, Delete track); a clip drawn across its lane, " +
+    "dragged to its place or by its end, named in the piano roll's name field; Split, Duplicate and Delete on the bar; " +
+    "notes drawn in the piano roll (its Snap set to fit them) and hits clicked in the drum grid; the roll's own ♯ ♭ +8 −8, " +
+    "Clear, Humanize and Tidy timing. Then the finished song goes in, with what had no control (an instrument changed, " +
+    "velocities) and the notes past the hand's limit of 48 a call; your result says which was which. With Visible work off " +
+    "(or the window shut) the song simply changes, the clips you touched lit for a moment.",
   "  Saving. The song is saved as you go; the window's top bar (beside the song's name, before Export) also has Save (and Ctrl+S), which writes it now and keeps a copy in Artifacts as <song name>.song.json. Export makes the WAV.",
 ].join("\n");
 

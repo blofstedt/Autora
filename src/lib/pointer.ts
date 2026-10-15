@@ -58,6 +58,18 @@ function place(p: Point) {
   reportCursor(p.x, p.y);
 }
 
+/** Put the pointer at `p` at once, shown: for a hand that moves it itself, a frame at a time, while it drags. */
+export function pointerPlace(p: Point) {
+  const host = ensure();
+  window.clearTimeout(hideTimer);
+  host.classList.remove("is-off");
+  host.classList.add("is-on");
+  place(p);
+}
+
+/** Where the pointer is now, if it is shown. */
+export const pointerAt = (): Point | null => at;
+
 /** The centre of an element, in the page's pixels; null when it is not on screen. */
 export function centreOf(el: Element | null | undefined): Point | null {
   if (!el) return null;

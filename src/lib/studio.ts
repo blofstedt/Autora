@@ -16,6 +16,8 @@ type StudioState = {
   name?: string;
   bpm?: number;
   tracks?: number;
+  /** This revision was made by the agent's hand in the window, which has it already: take it without lighting it up. */
+  quiet?: number;
 };
 
 /** One thing the agent asked the window to do. */

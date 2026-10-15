@@ -191,7 +191,8 @@ releaseNotes: >-
   page. Artifacts are
   now in folders, one per project: a chat's files start in their own folder, and when another chat carries on with
   them both chats share one folder. Move files into a new folder, rename it or remove it from the Artifacts page.
-  Visible work now means you watch the agent really use Photo, PDF, Pages, Sheets and Slides, live: it selects the
-  words and types over them, types into cells and confirms them, and opens a slide's text box and types in it. With
-  Visible off it works at full speed. Also fixed: Save in the PDF window really saves, filling in a form works, and
+  Visible work now means you watch the agent really use Photo, PDF, Pages, Sheets, Slides and Music, live: it selects
+  the words and types over them, types into cells and confirms them, opens a slide's text box and types in it, and in
+  Music adds tracks, draws clips, sets the tempo and places notes in the piano roll and drum grid with your own
+  controls. With Visible off it works at full speed. Also fixed: Save in the PDF window really saves, filling in a form works, and
   scrolling in Photo is smooth.

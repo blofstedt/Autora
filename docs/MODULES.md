@@ -378,7 +378,15 @@ Spectra's fetched renderer is most of what is on disk.
   (`by: "agent"`, `rev++`); the person's edits are saved by `useSong.ts` (`PUT /doc` with the `rev` they last saw: **409 when the
   agent has changed the song since**, so a save never undoes the agent's work unseen; the window then loads theirs and says so).
   The window loads the agent's change, lights the clips it touched (`touched()`), and puts the old song on its own undo stack, so
-  Ctrl+Z takes any agent change back. While a note is being dragged (`hold`) an agent change waits for the pointer. `focus` (the clip
+  Ctrl+Z takes any agent change back. With Visible work on and the window up, `byHand` first sends the window a `hand`
+  command: `studioSteps` (`lib/studio/handsteps.ts`, pure, shared) turns the song before and after into steps with the window's
+  controls, and `runStudioHand` (`components/studio/hand.ts`) does them with synthetic pointer, mouse and key events into the
+  elements the window drew (`data-track`/`data-clip` on rows, clips and mixer strips; `pointerPlace` moves the agent's pointer
+  while it drags), the way a person's edits are made and saved (as `person` while it goes). It answers which steps were done and
+  the ids it gave what it made; the server keeps those ids in the finished song, commits it as `agent` with `quiet` set so the
+  window takes it without lighting anything, and tells the agent what was done by hand and what was not. Synthetic events use
+  `pointerId: 1` (the mouse), so `setPointerCapture` in the lane and the roll accepts them. While a note is being dragged
+  (`hold`) an agent change waits for the pointer. `focus` (the clip
   open in the editor) is posted to the server so "this clip" means something to the agent (`studio_look`, the turn note). The
   agent cannot hear: `studio_look` adds `review()` observations (empty clips, notes outside the key, no bass, volumes far apart).
   Per the core principle the agent writes *scaffolding* (`studio_make`: chords, a bass that follows them, drums) and fixes technique
@@ -389,7 +397,8 @@ Spectra's fetched renderer is most of what is on disk.
   until a tap, so `studio_play` reports `blocked` rather than pretending; the phone shows it as the `studio` kind in the pinned view
   (`stage.ts`), and `.stage-body[data-active="studio"]` is not height-limited. Tests: `tests/studio.test.ts` (theory, tools, wire),
   `tests/e2e-studio.test.ts` (a real turn), `tests/ui-studio.test.ts` (a real browser: draws, plays, bounces a WAV and checks it has
-  sound, an agent change lights up and undoes).
+  sound, an agent change lights up and undoes with Visible off, and with it on adds a track, draws a clip with notes, types a
+  tempo and clicks drum hits by hand), `tests/studiohand.test.ts` (the steps).
 - `spectra-editor/`: Spectra-PDF's renderer (github.com/jasonulbright/Spectra-PDF), the PDF window's
   editor, built by `spectra-editor/vite.config.ts` into `dist/spectra-editor/`. **Its source is not in
   this repository**: `scripts/prepare-spectra-editor.mjs` (run by `npm run build` and `npm run lint`)

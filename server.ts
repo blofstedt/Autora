@@ -155,7 +155,7 @@ import { cadRoutes, cadState, dropCad, onCadChange, serveCad } from "./server/ca
 import { dropGame, gameRoutes, gameState, onGameChange, serveGame } from "./server/gamedesk";
 import { dropPhoto, onPhotoChange, photoRoutes, photoState, servePhoto } from "./server/photodesk";
 import { dropTerm, onTermChange, termRoutes, termState, termUpgrade } from "./server/termdesk";
-import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote } from "./server/studio";
+import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote, studioVisible } from "./server/studio";
 import { joinProjects, windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
 import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
@@ -6294,6 +6294,7 @@ async function startServer() {
     off: () => windowOff("studio_look"),
     push: (id: string, message: Record<string, unknown>) => sendEphemeral(id, message),
   });
+  studioVisible(() => state.agentCursor);
 
   /* File -> Export PDF in the Office window: the server lays the document out (the same pages office_pdf
      makes), and the PDF opens in the PDF editor -- PDFs always go to our own. */

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useFullscreen } from "../lib/fullscreen";
-import { useAgentCursor } from "../lib/agentCursor";
-import { centreOf, pointerGo, pointerRest } from "../lib/pointer";
 import { onStudioCommand } from "../lib/studio";
 import { bounce, Transport } from "../lib/studio/engine";
 import {
@@ -13,6 +11,8 @@ import { Arrangement, headWidth, type Pick } from "./studio/Arrangement";
 import { Mixer } from "./studio/Mixer";
 import { PianoRoll } from "./studio/PianoRoll";
 import { useSong } from "./studio/useSong";
+import { runStudioHand } from "./studio/hand";
+import type { StudioStep } from "../lib/studio/handsteps";
 import { SaveButton, keptAs } from "./SaveButton";
 import {
   IconCopy, IconDownload, IconMaximize, IconMetronome, IconMinimize, IconMinus, IconMusic, IconPause, IconPlay, IconPlus, IconRepeat, IconRotateCcw,
@@ -69,24 +69,9 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
   const bw = ZOOMS[zoom]!;
   const head = headWidth(phone);
 
-  /* The agent's pointer goes to each clip it just made or changed -- the ones lit up -- one after another, and presses
-     it, the way a person would pick them. It points only at clips that are on screen. */
-  const [cursorOn] = useAgentCursor();
-  useEffect(() => {
-    if (!cursorOn || song.flash.size === 0) return;
-    let dead = false;
-    void (async () => {
-      await new Promise((r) => setTimeout(r, 140)); // the lit clips are in the page a frame after the set is
-      const els = Array.from(root.current?.querySelectorAll(".st-clip.is-flash") ?? []).slice(0, 4);
-      for (const el of els) {
-        const at = centreOf(el);
-        if (dead || !at) continue;
-        await pointerGo(at, true, el);
-      }
-      if (!dead) pointerRest();
-    })();
-    return () => { dead = true; };
-  }, [song.flash, cursorOn]);
+  /* No pointer is played over clips the server changed: that would be a recording of work already done. With Visible
+     work on, the agent's edits are done here, live, by its hand (`hand` below, src/components/studio/hand.ts); what the
+     server changes (Visible work off) simply appears, the clips it touched lit for a moment. */
 
   if (!transport.current) transport.current = new Transport(() => song.live.current, { onEnd: () => setPlaying(false) });
   const tp = transport.current;
@@ -164,6 +149,12 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
           } else if (cmd.name === "seek") {
             tp.seek(typeof cmd.args.beat === "number" ? cmd.args.beat : 0);
             await reply(true, {});
+          } else if (cmd.name === "hand") {
+            // The agent's edit, done here by its hand with this window's own controls, while the tool call waits.
+            const el = root.current;
+            if (!el) throw new Error("The music window is not on screen.");
+            const steps = Array.isArray(cmd.args.steps) ? (cmd.args.steps as StudioStep[]) : [];
+            await reply(true, await runStudioHand(steps, { root: el, live: () => song.live.current, saveNow: song.saveNow }));
           } else if (cmd.name === "export") {
             const wav = await bounce(song.live.current);
             const name = typeof cmd.args.name === "string" ? cmd.args.name : "song";
@@ -183,7 +174,7 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
       off();
       void fetch(`${base}/ready`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ready: false }), keepalive: true }).catch(() => undefined);
     };
-  }, [base, tp, song.live]);
+  }, [base, tp, song.live, song.saveNow]);
 
   // Tell the server which clip is open, so "this clip" means something to the agent.
   useEffect(() => {
