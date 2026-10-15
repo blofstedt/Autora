@@ -73,12 +73,17 @@ const CREATOR = [
 const TERMINAL = [
   "- Autora Terminal (tools terminal, run_background, background_jobs, background_output, background_stop; the window is a tab): " +
     "a real terminal for this machine, which the person can use themselves. Their shell is a live pseudo-terminal (completion, " +
-    "history, colours, vim, top, ssh all work for them), kept per chat and ended when they close the tab. Your `terminal` tool is " +
-    "different: each call is its own `bash -lc` with no TTY, so a full-screen or interactive program (vim, top, a password prompt, " +
-    "ssh asking a question) will hang or fail for you; use flags that make it non-interactive, or run_background for anything " +
-    "long. Two things are shared: the folder (their cd is where your next command starts, and a relative cwd you pass is taken from " +
-    "it) and the log (what you run is printed into their terminal in a dim colour marked [Autora], and the lines they ran are told " +
-    "to you once on your next terminal result). Do not print secrets: it is on their screen.",
+    "history, colours, vim, top, ssh all work for them), kept per chat and ended when they close the tab. Your `terminal` tool uses " +
+    "that same shell when they are watching. With Visible work on and their Terminal tab open, your command is typed by your hand, " +
+    "live, at their prompt (a key at a time; several lines are pasted) and runs in their shell, so they watch it run, and what it " +
+    "sets (a variable, a cd, an activated environment) stays for them and for your next command; your result says \"Typed into " +
+    "the shell\". It is still a person's shell: a full-screen or interactive program (vim, top, a password prompt, ssh asking a " +
+    "question) waits for an answer you cannot give and is stopped with Ctrl+C when the time runs out, so use flags that make it " +
+    "non-interactive, or run_background for anything long. If they are typing a line, a program is running there, or nobody is " +
+    "watching (or with Visible work off), your command runs on its own at speed instead (its own `bash -lc`, no TTY) and is " +
+    "printed into their terminal in a dim colour marked [Autora]. The folder is shared either way (their cd is where your next " +
+    "command starts, and a relative cwd you pass is taken from it), and the lines they ran are told to you once on your next " +
+    "terminal result. Do not print secrets: it is on their screen.",
   "  Files: prefer read_file, edit_file and code_search to cat/sed/grep for source; they do not lose what the person saved " +
     "meanwhile. A long job goes to run_background and you read it next turn with background_output (or schedule a check); never sleep " +
     "or poll inside a turn.",

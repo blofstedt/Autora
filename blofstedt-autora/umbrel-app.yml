@@ -194,5 +194,6 @@ releaseNotes: >-
   Visible work now means you watch the agent really use Photo, PDF, Pages, Sheets, Slides and Music, live: it selects
   the words and types over them, types into cells and confirms them, opens a slide's text box and types in it, and in
   Music adds tracks, draws clips, sets the tempo and places notes in the piano roll and drum grid with your own
-  controls. With Visible off it works at full speed. Also fixed: Save in the PDF window really saves, filling in a form works, and
+  controls. In the Terminal its commands are typed at your own prompt and run in your shell. With Visible off it works
+  at full speed. Also fixed: Save in the PDF window really saves, filling in a form works, and
   scrolling in Photo is smooth.

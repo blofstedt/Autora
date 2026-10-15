@@ -94,6 +94,13 @@ await test("every window's manual says where its Save is and what it keeps; the 
   }
 });
 
+await test("the Terminal manual says that with Visible work on the command is typed into the person's own shell", () => {
+  const t = manualText("terminal");
+  for (const needle of ["With Visible work on", "typed by your hand", "runs in their shell", "Typed into the shell", "Ctrl+C", "with Visible work off"]) {
+    assert.ok(t.includes(needle), `the Terminal manual lacks "${needle}"`);
+  }
+});
+
 await test("the Music manual says that with Visible work on the studio tools are done in the window by hand", () => {
   const music = manualText("studio");
   for (const needle of ["With Visible work on", "by your hand, live", "Song tray", "Add track", "piano roll", "drum grid", "finished song goes in", "With Visible work off"]) {

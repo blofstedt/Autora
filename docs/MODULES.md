@@ -346,8 +346,12 @@ Spectra's fetched renderer is most of what is on disk.
   upgrade handler in `server.ts` with `allowSocket`, so the cross-site rule holds): JSON frames `{t:"in",d}`, `{t:"size",cols,rows}` up and
   `{t:"out",d}` down, with the scrollback (400 kB, in memory, never on disk) replayed to a page that connects, so a reload gets the same shell. The
   shell is ended when the window is put away (`/close`) and with the chat (`dropTerm`). The agent shares: the shell's folder (read from `/proc`,
-  `termCwd`, used by the `terminal` tool), its commands printed in dim magenta (`termAgentBegin/Chunk/End`; the agent's tool still runs its own
-  command, it is not typed into the shell), and what the person ran, told back once on its next terminal result (`termNews`, from the lines sent with
+  `termCwd`, used by the `terminal` tool), its commands, and what the person ran. With Visible work on, a watcher connected, bash at its prompt
+  and the person not mid-line, the `terminal` tool types the command into this shell (`termAgentRun`: a key at a time, pasted with bracketed paste
+  when it has several lines, a tab or is long; a `cd` first for a `cwd` elsewhere) and reads what it printed and its exit code back between the
+  OSC 133 marks bash makes from `RC` (its startup file, written to `<state>/term/rc.bash`: the login files, then a mark in `PROMPT_COMMAND` with `$?`
+  and one in `PS0`; `set +H`); too long or Stop is Ctrl+C. The shell has the secrets, the identity env and `PAGER=cat` the tool's own processes
+  have. Otherwise the tool runs its own `bash -lc` at speed and its lines are printed in dim magenta (`termAgentBegin/Chunk/End`). And what the person ran, told back once on its next terminal result (`termNews`, from the lines sent with
   Enter: best-effort). Completion, history, colours and full-screen programs are the shell's own. A touch screen gets a key row (Esc, Tab, Ctrl+C,
   arrows, `| / ~`). The socket to the page carries only `{open, cwd, rev, running}` (`termdesk`). Class names are `tm-*` (`term-*` is the thread's cell).
 - `autora-3d/` and `server/caddesk.ts`: **Autora 3D**, the 3D modelling window (a sketch-and-extrude CAD modeller) and the agent's

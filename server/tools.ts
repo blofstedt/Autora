@@ -48,7 +48,7 @@ import path from "node:path";
 import { GoogleGenAI } from "@google/genai";
 import { MANUAL_IDS, manualText, windowsOverview, type ManualId } from "./handbook";
 import { lookColors, readLook } from "../src/lib/agentlook";
-import { termAgentBegin, termAgentChunk, termAgentEnd, termCwd, termNews } from "./termdesk";
+import { termAgentBegin, termAgentChunk, termAgentEnd, termAgentRun, termCwd, termNews, type ShellRun } from "./termdesk";
 import { mergeTools, save, state, allSecrets, keyFor, secretFor, stateDir, redactSecrets as redactStored } from "./state";
 import {
   STATUSES, checkoutFolder, findCheckout, listEntries, moveInto, recordFinding, setStatus, type Status,
@@ -972,6 +972,25 @@ function runCommand(
   };
 
   return tryShell(0);
+}
+
+/** What a command typed into the window's shell did, said the way runCommand says it: its start and end if it is long. */
+function shellOutcome(ran: ShellRun, timeoutSeconds: number): ToolOutcome {
+  const HEAD = 8_000;
+  const TAIL = 16_000;
+  const all = redactForModel(ran.output).replace(/^\n+/, "");
+  const body = (all.length > HEAD + TAIL
+    ? `${all.slice(0, HEAD)}\n\n[... ${(all.length - HEAD - TAIL).toLocaleString("en-US")} characters of output omitted here ...]\n\n${all.slice(-TAIL)}`
+    : all).trim();
+  const note = ran.timedOut
+    ? `\n\n[stopped with Ctrl+C after ${timeoutSeconds}s -- it had not finished]`
+    : ran.stopped ? "\n\n[stopped by the person watching]" : "";
+  return {
+    ok: !ran.timedOut && !ran.stopped && ran.exit === 0,
+    exitCode: ran.exit,
+    summary: `Exit code ${ran.exit}${ran.timedOut ? " (timed out)" : ""}\n\n${body || "(no output)"}${note}`,
+    preview: body.split("\n").slice(-1)[0]?.slice(0, 120) || `exit ${ran.exit}`,
+  };
 }
 
 /**
@@ -2080,7 +2099,23 @@ async function runToolUnredacted(
         const self = ctx.agents ? findAgent(ctx.agents.self.id) : null;
         const look = readLook(self?.look);
         const rgb = look ? (lookColors(look).css["--accent-rgb"].split(",").map((n) => Number(n)) as [number, number, number]) : undefined;
-        const shown = termAgentBegin(ctx.session, command, cwd, self && !self.builtin ? { name: self.name, rgb } : undefined);
+        const who = self && !self.builtin ? { name: self.name, rgb } : undefined;
+        // Visible work, someone watching: typed into the shell in the window and run there, as a person would.
+        if (state.agentCursor) {
+          const ran = await termAgentRun(ctx.session, command, {
+            cwd: asked ? cwd : undefined,
+            timeoutMs: settings.timeout * 1000,
+            who,
+            onOutput: (text) => ctx.onOutput(redactForModel(text)),
+            onCancel: (fn) => ctx.onCancel(fn),
+          });
+          if (ran) {
+            const outcome = shellOutcome(ran, settings.timeout);
+            const news = termNews(ctx.session);
+            return { ...outcome, summary: `${outcome.summary}\n\n(Typed into the shell in the Terminal window, where the person watched it run.)${news ? `\n\n${news}` : ""}` };
+          }
+        }
+        const shown = termAgentBegin(ctx.session, command, cwd, who);
         const outcome = await runCommand(command, cwd, settings.timeout, {
           ...ctx,
           onOutput: (chunk: string) => { ctx.onOutput(chunk); termAgentChunk(ctx.session, shown, chunk); },
