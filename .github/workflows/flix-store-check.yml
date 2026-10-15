@@ -1,0 +1,38 @@
+name: Flix store check
+
+# Flix is built in its own repository and offered from this one, and nothing
+# joins them up. 0.1.4 was published and then sat unshipped for days because
+# no workflow was looking at the registry. This one is: every six hours, and
+# whenever someone edits the entry by hand.
+#
+# It does not change anything. When the entry and the registry disagree it says
+# so in an issue labelled `release-gap` and closes that issue again once they
+# agree -- the bump itself is a person's call, because the release notes are.
+
+on:
+  schedule:
+    # Six hours, off the hour so it is not queued behind everything else cron
+    # in this account starts at once.
+    - cron: "17 */6 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "blofstedt-flix/**"
+      - ".github/workflows/flix-store-check.yml"
+      - ".github/scripts/check_flix_store.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  entry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The store entry matches the registry
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/check_flix_store.py --report
