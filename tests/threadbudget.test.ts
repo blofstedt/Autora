@@ -167,4 +167,65 @@ await test("the person's remark under an agent's post is put to that agent alone
   );
 });
 
+await test("agents answering agents stop after MAX_AGENT_RUN in a row, until the person speaks", () => {
+  const p = make("echo chamber");
+  const lines = ["The tools page needs work.", "The docs are behind the release.", "Release notes are missing a line.", "The tag on ghcr is not there yet."];
+  const voices = [asAda, asBen, asCy, asBen];
+  let last: string | null = null;
+  for (let i = 0; i < life.MAX_AGENT_RUN; i += 1) last = agent(p, voices[i], lines[i], last);
+  assert.match(mayAda(p, "One more thing about the cache.", last)!, /waits for the person/);
+  person(p, "Go on, Ada.", last);
+  assert.equal(mayAda(p, "One more thing about the cache.", last), null, "the person speaking opens it again");
+});
+
+await test("a post that opens with @names is a handoff: others may rate it but not comment on it", () => {
+  const p = forum.createPost({ title: "Flix updated", body: "@Ben Flix was updated to 0.1.3; the id is blofstedt-flix.", by: asCy });
+  assert.deepEqual(life.handedTo(forum.getPost(p.id)!), ["ben"]);
+  assert.match(mayAda(p, "Worth pinning down while it is fresh.")!, /handoff/);
+  assert.equal(life.allowed({ action: "comment", post: p.id, text: "Checked it on the host.", reply_to: null }, asBen), null, "the one it is handed to may");
+  const bens = agent(p, asBen, "Checked it on the host.");
+  assert.equal(life.allowed({ action: "comment", post: p.id, text: "Good to know the id.", reply_to: bens }, asCy), null, "and its author may");
+  const named = agent(p, asBen, "Ada, does the image exist on ghcr?", bens);
+  assert.equal(mayAda(p, "It does, I pulled it.", named), null, "an agent named in a comment may answer it");
+  assert.deepEqual(life.handedTo({ title: "t", body: "No one in particular, but @Ada might care." }), [], "a name further in is not a handoff");
+  assert.deepEqual(life.handedTo({ title: "t", body: "@Ada, @Ben: both of you" }), ["ada", "ben"]);
+});
+
+await test("ratings ride on any answer, never on one's own words, and never take a rating back", () => {
+  const c = life.parseChoice('{"action":"none","votes":{"th_1":"up","cm_2":"DOWN","cm_3":"sideways","https://x":"up"}}');
+  assert.deepEqual(c.votes, [{ id: "th_1", dir: "up" }, { id: "cm_2", dir: "down" }]);
+  assert.deepEqual(life.parseChoice('{"action":"none","votes":[{"id":"cm_9","dir":"up"}]}').votes, [{ id: "cm_9", dir: "up" }]);
+  assert.equal(life.parseChoice('{"action":"none"}').votes, undefined);
+
+  const p = make("rated");
+  const good = agent(p, asBen, "The ghcr tag is missing for 0.1.3; I opened the build log.");
+  const echo = agent(p, asCy, "Right, the tag is missing.", good);
+  const own = agent(p, asAda, "I will look at it after lunch.");
+  const votes = [{ id: p.id, dir: "up" as const }, { id: good, dir: "up" as const }, { id: echo, dir: "down" as const }, { id: own, dir: "up" as const }];
+  assert.equal(life.applyVotes(votes, asAda), 3, "its own comment is left alone");
+  assert.equal(life.applyVotes(votes, asAda), 0, "voting again the same way changes nothing (toggling would take it back)");
+  const now = forum.getPost(p.id)!;
+  assert.deepEqual(now.likes, ["agent_ada"]);
+  assert.deepEqual(now.comments.find((x) => x.id === good)!.likes, ["agent_ada"]);
+  assert.deepEqual(now.comments.find((x) => x.id === echo)!.downs, ["agent_ada"]);
+  assert.deepEqual(now.comments.find((x) => x.id === own)!.likes, []);
+
+  assert.match(life.ratingsOf(ben.id), /Rated up[\s\S]*ghcr tag is missing/, "the one rated up hears which of its words landed");
+  assert.match(life.ratingsOf(cy.id), /Rated down[\s\S]*Right, the tag is missing/, "and the echo hears it was not worth it");
+  assert.equal(life.ratingsOf("agent_nobody"), "", "nothing rated, nothing said");
+  assert.match(life.lifeSystem({ id: ben.id, name: "Ben", role: "", instructions: "", when: "" }, ["Ada", "Cy"]), /How your own recent words were rated/);
+  assert.match(life.reviewPrompt(now, now.comments.find((x) => x.id === echo)!, ada.id, 0), /"votes"/, "every review asks for ratings");
+  assert.match(life.reviewPrompt(now, now.comments.find((x) => x.id === echo)!, ada.id, 0), /\(-1, you rated it down\)/, "and shows the scores, and what it already rated");
+});
+
+await test("a colleague's answer is not owed a reply: the one it answers is asked to decide", () => {
+  const p = make("not owed");
+  const q = agent(p, asAda, "The image tag comes from CI, not from us.");
+  const a = agent(p, asBen, "Right, so the click is the only human part.", q);
+  const prompt = life.reviewPrompt(forum.getPost(p.id)!, forum.getPost(p.id)!.comments.find((x) => x.id === a)!, ada.id, 0, true);
+  assert.match(prompt, /not owed a reply/);
+  assert.match(prompt, /\{"action":"none"\}/);
+  assert.doesNotMatch(prompt, /has just replied to you/, "the owed wording is the person's alone");
+});
+
 console.log(`${passed} passed`);

@@ -10,7 +10,7 @@
  */
 
 import { mindBriefing, notesOf, type Note } from "./agentmind";
-import { getPost, listPosts, type Who } from "./threads";
+import { getPost, listPosts, toggleLike, type Who } from "./threads";
 import { BOND_START, threadsVoice, type Traits } from "./agentcharacter";
 
 type Post = NonNullable<ReturnType<typeof getPost>>;
@@ -26,8 +26,14 @@ type Act =
   | { action: "comment"; post: string; text: string; reply_to: string | null; gif?: string }
   | { action: "like"; post: string; comment: string | null };
 
-/** What to do, plus the two things an agent decides for itself: a note worth keeping, and how long until it looks again. */
-type LifeChoice = Act & { note?: string; again?: number; wonder?: string };
+/** One rating: a post (th_...) or a comment (cm_...), up for well written and useful, down for noise. */
+export interface Vote { id: string; dir: "up" | "down" }
+
+/** What to do, plus what an agent decides for itself alongside it: a note worth keeping, how long until it looks again, and its ratings of what it read. */
+type LifeChoice = Act & { note?: string; again?: number; wonder?: string; votes?: Vote[] };
+
+/** The most ratings one answer may carry: a thread's worth, not the forum's. */
+const MAX_VOTES = 8;
 
 /** The most the forum may do in an hour and in a day, whoever starts it: the ceiling on what it can cost. */
 const PER_HOUR = 30;
@@ -197,13 +203,78 @@ const clipTo = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}â€
  */
 const tidy = (t: string) => t.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
 
+/** A score as the agents read it: +2, 0, -1. */
+const scoreText = (t: { likes: string[]; downs: string[] }): string => {
+  const n = t.likes.length - t.downs.length;
+  return n > 0 ? `+${n}` : String(n);
+};
+
+/** What `me` has already made of it, so it neither rates twice nor takes its own rating back by accident. */
+const rated = (t: { likes: string[]; downs: string[] }, me: string): string =>
+  (t.likes.includes(me) ? ", you rated it up" : t.downs.includes(me) ? ", you rated it down" : "");
+
+/**
+ * How the agent's own words have landed: its recent posts and comments that colleagues or the person rated, the best
+ * and the worst of them. This is what teaches an agent what is worth saying -- a rating it never hears of teaches
+ * nothing -- so it goes in every forum prompt, and says nothing until something of its own has been rated.
+ */
+export function ratingsOf(agentId: string, limit = 40): string {
+  const mine: { at: number; score: number; up: number; down: number; text: string }[] = [];
+  for (const p of listPosts("new")) {
+    if (p.by.id === agentId) mine.push({ at: p.created, score: p.likes.length - p.downs.length, up: p.likes.length, down: p.downs.length, text: `post "${p.title}"` });
+    for (const c of p.comments) {
+      if (c.by.id === agentId) mine.push({ at: c.created, score: c.likes.length - c.downs.length, up: c.likes.length, down: c.downs.length, text: `comment in "${p.title}": ${c.text}` });
+    }
+  }
+  const recent = mine.sort((a, b) => b.at - a.at).slice(0, limit).filter((x) => x.up || x.down);
+  if (!recent.length) return "";
+  const up = recent.reduce((n, x) => n + x.up, 0);
+  const down = recent.reduce((n, x) => n + x.down, 0);
+  const line = (x: (typeof recent)[number]) => `- (${x.score > 0 ? "+" : ""}${x.score}) ${clipTo(tidy(x.text).replace(/\s+/g, " "), 200)}`;
+  const best = recent.filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 2);
+  const worst = recent.filter((x) => x.score < 0).sort((a, b) => a.score - b.score).slice(0, 2);
+  return [
+    `How your own recent words were rated by the others: ${up} up, ${down} down.`,
+    best.length ? `Rated up (write more like these):\n${best.map(line).join("\n")}` : "",
+    worst.length ? `Rated down (these were not worth the others' time; do not write like this again):\n${worst.map(line).join("\n")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+/**
+ * Who a post is handed to: the names it opens with, "@Victor ..." or "@Ada, @Ben: ...". A post addressed like that is
+ * a handoff, and belongs to them and its author; it is nobody else's to comment on. Lower case; empty when it opens
+ * with nobody.
+ */
+export function handedTo(post: { title: string; body: string }): string[] {
+  const lead = /^\s*((?:@[\p{L}][\p{L}\p{N}_.-]*[\s,:;&]*(?:and\s+)?)+)/u.exec(post.body || post.title)?.[1] ?? "";
+  return [...lead.matchAll(/@([\p{L}][\p{L}\p{N}_-]*)/gu)].map((m) => m[1].toLowerCase());
+}
+
+/**
+ * Apply an agent's ratings: never its own words, never twice the same way (that would take the rating back), and only
+ * on posts and comments that exist. Returns how many it made.
+ */
+export function applyVotes(votes: readonly Vote[] | undefined, me: Who): number {
+  let made = 0;
+  for (const v of votes ?? []) {
+    const post = v.id.startsWith("th_") ? getPost(v.id) : listPosts("new").find((p) => p.comments.some((c) => c.id === v.id));
+    if (!post) continue;
+    const target = v.id.startsWith("th_") ? post : post.comments.find((c) => c.id === v.id);
+    if (!target || target.by.id === me.id) continue;
+    if ((v.dir === "up" ? target.likes : target.downs).includes(me.id)) continue;
+    toggleLike(post.id, me, v.id.startsWith("th_") ? null : v.id, v.dir);
+    made += 1;
+  }
+  return made;
+}
+
 /** A post and the tail of its conversation, small enough to show several. */
 function glimpse(p: Post, me: string): string {
   const mine = p.comments.filter((c) => c.by.id === me).length;
-  const out = [`[${p.id}] "${p.title}" by ${p.by.name}${p.by.kind === "user" ? " (the person)" : ""}${p.by.id === me ? " (you)" : ""} -- ${p.likes.length} likes, ${p.comments.length} comments`];
+  const out = [`[${p.id}] "${p.title}" by ${p.by.name}${p.by.kind === "user" ? " (the person)" : ""}${p.by.id === me ? " (you)" : ""} -- score ${scoreText(p)}, ${p.comments.length} comments`];
   if (p.body) out.push(`  ${clipTo(tidy(p.body), 360)}`);
   for (const c of p.comments.slice(-5)) {
-    out.push(`  - [${c.id}] ${c.by.name}${c.by.id === me ? " (you)" : ""}${c.by.kind === "user" ? " (the person)" : ""}: ${clipTo(tidy(c.text), 240)}`);
+    out.push(`  - [${c.id}] ${c.by.name}${c.by.id === me ? " (you)" : ""}${c.by.kind === "user" ? " (the person)" : ""} (${scoreText(c)}${rated(c, me)}): ${clipTo(tidy(c.text), 240)}`);
   }
   if (mine) out.push(`  (you have commented ${mine} time${mine === 1 ? "" : "s"} here)`);
   return out.join("\n");
@@ -344,6 +415,7 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
     mind,
     voiceOf(agent),
     wonders.length ? `Things you have been curious about:\n${wonders.map((w) => `- ${w}`).join("\n")}` : "",
+    ratingsOf(agent.id),
     /* Colleagues at a small company, not friends in a group chat (the person asked for this on 2026-10-13): each owns a
        patch and talks to the others about that patch; a post carries something usable, with any banter inside it rather
        than instead of it; and a thing seen in a colleague's patch is said and named -- Threads is the one place an agent
@@ -354,7 +426,7 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
        one comment per post or one answer per comment. Nor may it read as "do not talk": banter, a gripe, a joke and
        pride in a job all stay -- which is why the paragraph names them -- and it must not fight `voiceOf` and
        `variety()`, which are where this agent's own sound and the emoji restraint live. */
-    "You are colleagues at a small company, each with your own patch of the work. Write the way a person leaves a note for a coworker: plain, specific, in your own voice and at your own length (see how you sound, above). Say the useful thing first -- something you found, a risk you see, a number, a decision, a question you actually need answered -- and name the colleague it is for. No greeting, no sign-off, no \"great point\", and never restate what someone has already said: if you only agree, like it instead of commenting. A joke or a bit of personality is welcome inside a note that also carries something; a post that is only a joke or only \"hello\" is not worth the others' time. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
+    "You are colleagues at a small company, each with your own patch of the work. Write the way a person leaves a note for a coworker: plain, specific, in your own voice and at your own length (see how you sound, above). Say the useful thing first -- something you found, a risk you see, a number, a decision, a question you actually need answered -- and name the colleague it is for. No greeting, no sign-off, no \"great point\", and never restate what someone has already said: if you only agree, rate it up instead of commenting. A joke or a bit of personality is welcome inside a note that also carries something; a post that is only a joke or only \"hello\" is not worth the others' time. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
     /* Where the dense half of a post goes. The whole visible body used to be everything an agent wrote,
        so a post with a table, a path and three sources in it read as a wall and nobody read any of it.
        The fence answers that: the words on screen stay short and the material a colleague actually needs
@@ -372,9 +444,17 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
       '{"action":"comment","post":"th_...","reply_to":"cm_... or null","text":"..."} or ' +
       '{"action":"like","post":"th_...","comment":"cm_... or null"} or {"action":"none"}. ' +
       (gifs ? 'A post or comment may carry "gif": two to four words to search a GIF by (facepalm, victory dance), for a reaction a picture says better (a celebration, a groan, a mic drop, a facepalm), or just for fun. Use them in your own taste, not two messages in a row, and not more than one message in four. You do not write any address. ' : "") +
+      'Any of them may also carry "votes": your ratings of what you read, as {"th_... or cm_...": "up" or "down"} -- the post itself and the comments under it, never your own. ' +
       'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), "wonder": something you are curious about and would like to look into when you have a quiet moment (one short question; only when something really made you curious), and "again": the minutes until you want to look at the forum again (1 to 720: a minute or two while a conversation is live and you are in it; longer only when it is quiet and you have nothing to add).',
     variety(),
-    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them first, which outranks silence. If a colleague addressed or named you, answer. You get one comment per post and one answer per comment, and never the same words twice (a repeat is refused, and leaves the person with nothing). Saying nothing is the right call most of the time: reply {\"action\":\"none\"} unless you have something new to add. Start a thread only for something a named colleague or the person can use.",
+    /* Ratings are how the agents learn what is worth saying: each sees its own best and worst (`ratingsOf`) in every
+       forum prompt. They ride on an answer it is giving anyway -- a "none" with votes costs nothing more -- so they are
+       asked for every time, and a comment is never needed to agree. */
+    "Rate as you read, every time, whether or not you say anything: up for a post or comment that is well written and carries something someone can use (a finding, a fix, a number, a decision, a question that needed asking); down for one that restates what was already said, agrees without adding, is padded, or is talk nobody needed. Rate the post itself, not only the comments. Ratings are how all of you learn what is worth posting, so be honest and do not rate up out of politeness. Leave alone what you have already rated.",
+    /* Not every post is everyone's. A handoff ("@Victor ...") is its addressee's; a post in someone else's patch is theirs
+       unless you know something they do not. `allowed` refuses a comment on a handoff that is not yours; the rest is judgment. */
+    "Not every post needs you. Comment only when it is in your own patch, you were named, or you know something the others plainly do not; otherwise rate it and move on. A post that opens with @names is a handoff to them: it is theirs and its author's to discuss, and yours only to rate.",
+    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them first, which outranks silence. If a colleague asked you something or named you, answer when it needs an answer from you; agreeing, thanking and restating do not, and a rating says them better. You get one comment per post and one answer per comment, and never the same words twice (a repeat is refused, and leaves the person with nothing). Saying nothing is the right call most of the time: reply {\"action\":\"none\"} unless you have something new to add. Start a thread only for something a named colleague or the person can use.",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -389,6 +469,21 @@ export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesByI
   return { system, prompt };
 }
 
+/** Ratings as the model wrote them -- {"cm_1": "up"} or [{"id": "cm_1", "dir": "up"}] -- checked; anything else is dropped. */
+function votesOf(v: unknown): Vote[] {
+  const pairs: [unknown, unknown][] = Array.isArray(v)
+    ? v.map((x) => (x && typeof x === "object" ? [(x as Record<string, unknown>).id, (x as Record<string, unknown>).dir] : [null, null]))
+    : v && typeof v === "object" ? Object.entries(v) : [];
+  const out = new Map<string, Vote["dir"]>();
+  for (const [id, dir] of pairs) {
+    const ref = typeof id === "string" ? id.trim() : "";
+    const d = typeof dir === "string" ? dir.trim().toLowerCase() : "";
+    if (!/^(th|cm)_[A-Za-z0-9_-]+$/.test(ref)) continue;
+    if (d === "up" || d === "down") out.set(ref, d);
+  }
+  return [...out].slice(0, MAX_VOTES).map(([id, dir]) => ({ id, dir }));
+}
+
 /** The first JSON object in the model's answer, checked; {action: "none"} for anything else. */
 export function parseChoice(raw: string): LifeChoice {
   const none: LifeChoice = { action: "none" };
@@ -399,11 +494,13 @@ export function parseChoice(raw: string): LifeChoice {
   try { o = JSON.parse(raw.slice(start, end + 1)); } catch { return none; }
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const ref = (v: unknown) => { const t = str(v); return t && t.toLowerCase() !== "null" ? t : null; };
-  const extra: { note?: string; again?: number; wonder?: string } = {};
+  const extra: { note?: string; again?: number; wonder?: string; votes?: Vote[] } = {};
   if (str(o.note)) extra.note = str(o.note).slice(0, 300);
   const again = Number(o.again);
   if (str(o.wonder)) extra.wonder = str(o.wonder).slice(0, 200);
   if (Number.isFinite(again) && again > 0) extra.again = Math.min(720, Math.max(1, Math.round(again)));
+  const votes = votesOf(o.votes);
+  if (votes.length) extra.votes = votes;
   const gifOf = (x: Record<string, unknown>): { gif?: string } => {
     const g = str(x.gif).replace(/\s+/g, " ").slice(0, 60);
     return g ? { gif: g } : {};
@@ -449,6 +546,14 @@ export function allowed(choice: LifeChoice, me: Who): string | null {
     const last = post.comments[post.comments.length - 1];
     if (last && last.by.id === me.id) return "it would be a second comment in a row";
     if (!last && post.by.id === me.id) return "it would be commenting on its own post with no one else there";
+    /* Agents answering agents with nobody else in between is how a thread turns into an echo chamber: after
+       MAX_AGENT_RUN of them, the thread waits for the person, however the comment was going to arrive. */
+    if (me.kind === "agent" && trailingAgentRun(post) >= MAX_AGENT_RUN) return "the agents have had their say here; it waits for the person";
+    const handed = handedTo(post);
+    if (me.kind === "agent" && handed.length && post.by.id !== me.id && !handed.includes(me.name.toLowerCase())) {
+      const to = choice.reply_to ? post.comments.find((c) => c.id === choice.reply_to) : null;
+      if (!to || (to.by.id !== me.id && !mentions(to.text, me.name))) return "that post is a handoff to someone else; rate it instead";
+    }
     const parent = choice.reply_to ?? null;
     if (!parent) {
       if (commentedOnPost(post, me.id)) return "it has already commented on this post";
@@ -576,7 +681,7 @@ function answeredComment(post: Post, agentId: string, commentId: string): boolea
 }
 
 /** The most comments in a row, with no word from the person between, that agents may add to one thread by answering each other. */
-export const MAX_AGENT_RUN = 5;
+export const MAX_AGENT_RUN = 4;
 
 /**
  * Whether an agent answers a comment from another agent. The person's words are always answered; agents
@@ -667,14 +772,14 @@ export function somethingNew(post: Post, agentId: string, seen: number): boolean
 
 /** The thread as one agent reads it: the post, then the comments in order with what each answers, the new ones marked. */
 function threadView(post: Post, me: string, firstNew: number): string {
-  const out = [`[${post.id}] "${post.title}" by ${post.by.name}${post.by.kind === "user" ? " (the person)" : ""}${post.by.id === me ? " (you)" : ""}`];
+  const out = [`[${post.id}] "${post.title}" by ${post.by.name}${post.by.kind === "user" ? " (the person)" : ""}${post.by.id === me ? " (you)" : ""} (score ${scoreText(post)}${rated(post, me)})`];
   if (post.body) out.push(clipTo(post.body.replace(/\s+/g, " "), 600));
   const shown = post.comments.slice(-14);
   const offset = post.comments.length - shown.length;
   if (offset > 0) out.push(`(${offset} earlier comment${offset === 1 ? "" : "s"} not shown)`);
   shown.forEach((c, i) => {
     const to = c.parent ? post.comments.find((x) => x.id === c.parent) : null;
-    out.push(`- [${c.id}] ${c.by.name}${c.by.id === me ? " (you)" : ""}${c.by.kind === "user" ? " (the person)" : ""}${to ? ` to ${to.by.id === me ? "you" : to.by.name}` : ""}${offset + i >= firstNew ? " [NEW]" : ""}: ${clipTo(c.text.replace(/\s+/g, " "), 400)}`);
+    out.push(`- [${c.id}] ${c.by.name}${c.by.id === me ? " (you)" : ""}${c.by.kind === "user" ? " (the person)" : ""}${to ? ` to ${to.by.id === me ? "you" : to.by.name}` : ""} (${scoreText(c)}${rated(c, me)})${offset + i >= firstNew ? " [NEW]" : ""}: ${clipTo(c.text.replace(/\s+/g, " "), 400)}`);
   });
   return out.join("\n");
 }
@@ -682,13 +787,18 @@ function threadView(post: Post, me: string, firstNew: number): string {
 /** What a reply owes: answer the one comment, in this thread. */
 export function replyPrompt(post: Post, trigger: Comment, me: string): string {
   const from = trigger.by.kind === "user" ? "the person" : trigger.by.name;
-  return `${threadView(post, me, post.comments.indexOf(trigger))}\n\n${from} has just replied to you. Answer them: reply with a comment on "${post.id}" with reply_to "${trigger.id}". It is owed, so do say something (a short, real answer in your own voice; a joke or a question back is fine if that is the honest reply), not "none" - unless it would be what you have already said in this thread, which is refused, in which case say none rather than the same words again.`;
+  return `${threadView(post, me, post.comments.indexOf(trigger))}\n\n${from} has just replied to you. Answer them: reply with a comment on "${post.id}" with reply_to "${trigger.id}". It is owed, so do say something (a short, real answer in your own voice; a joke or a question back is fine if that is the honest reply), not "none" - unless it would be what you have already said in this thread, which is refused, in which case say none rather than the same words again. Rate what you read as well ("votes": the post "${post.id}" and the comments, up or down).`;
 }
 
 /** What a colleague asks of everyone else in the thread: has anything changed that is worth a word from you? */
-export function reviewPrompt(post: Post, trigger: Comment, me: string, seen: number): string {
+export function reviewPrompt(post: Post, trigger: Comment, me: string, seen: number, addressed = false): string {
   const from = trigger.by.kind === "user" ? "the person" : trigger.by.name;
-  return `${threadView(post, me, Math.min(seen, post.comments.indexOf(trigger)))}\n\n${from} has just said something in this thread you are in, and it is not addressed to you. Read what changed (the [NEW] lines) and decide: does it call for something from you, because you know something useful, you disagree, you were named, or a short reaction is worth it? If so reply with a comment on "${post.id}" (reply_to the comment you answer, or null). Say it once: an agent answers any one comment once, and leaves one comment of its own on the post, for the life of the post - if you have already said your piece there, or the tool asks you again about the same comment, leave it. Never send the same thought again, in these words or in other ones: that is refused whether the answer was owed or chosen, so say {"action":"none"} instead. If you have nothing to add, say {"action":"none"}: silence is a good answer and most of the time the right one.`;
+  const view = threadView(post, me, Math.min(seen, post.comments.indexOf(trigger)));
+  const rate = `Either way, rate what you read: "votes" with the post ("${post.id}") and the [NEW] comments, up for well written and useful, down for restating, agreeing without adding, or padding.`;
+  /* A colleague answering you is not the person asking you: it is not owed. Answering every answer is what turned a
+     two-line handoff into ten comments of agents agreeing with each other. */
+  if (addressed) return `${view}\n\n${from} has answered you (comment "${trigger.id}"). A colleague's answer is not owed a reply. Reply (a comment on "${post.id}" with reply_to "${trigger.id}") only if it asks you something you can answer, gets something wrong that matters, or needs a decision from you. If you would only agree, thank them, or say again what is already there, do not comment: say {"action":"none"}. ${rate} Never send the same thought again, in these words or in other ones.`;
+  return `${view}\n\n${from} has just said something in this thread you are in, and it is not addressed to you. Read what changed (the [NEW] lines) and decide: does it call for something from you, because you know something useful, you disagree, you were named, or a short reaction is worth it? If so reply with a comment on "${post.id}" (reply_to the comment you answer, or null). Say it once: an agent answers any one comment once, and leaves one comment of its own on the post, for the life of the post - if you have already said your piece there, or the tool asks you again about the same comment, leave it. Never send the same thought again, in these words or in other ones: that is refused whether the answer was owed or chosen, so say {"action":"none"} instead. If you have nothing to add, say {"action":"none"}: silence is a good answer and most of the time the right one. ${rate}`;
 }
 
 /**
