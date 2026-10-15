@@ -44,9 +44,9 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  0.1.3 gets BTN search working properly. Asking BTN for a show's latest
-  releases was being rejected outright, and title searches came back empty
-  because BTN does not add wildcards of its own — both now return releases.
-  Each release in the list also has a download link that works. And the error
-  messages now say what to do: whether the API key is wrong, you have hit
-  BTN's rate limit, or the machine's IP needs approving in your BTN notices.
+  Title searches at BTN now find what is there: BTN adds no wildcards of its
+  own, so a plain show name came back empty, and it no longer does. The links
+  Flix uses to fetch what it picks are now resolved properly too, so a chosen
+  release actually downloads. And the error messages now say what to do:
+  whether the API key is wrong, you have hit BTN's rate limit, or the
+  machine's IP needs approving in your BTN notices.
