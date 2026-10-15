@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.1.2"
+version: "0.1.3"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
