@@ -3667,6 +3667,8 @@ async function reflect(session: Session, request: string, startSeq: number, prev
       memoryLinks.push({ src: record.id, dst: lesson.revises, rel: "revises" });
       saveMemory();
     }
+    /* Remembered at once. The thread offers Discard, which deletes it (and gives back what a rewrite replaced). */
+    if (record.status === "provisional" && action !== "reinforced") mind.confirm(record.id);
     items.push({
       id: record.id, title: record.title, kind: record.kind, action, status: record.status,
       revises: record.replaces ?? null,
@@ -5227,9 +5229,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const files: CodeChange[] = await workspace.scan();
         if (workspace.tooMany && !workspaceWarned) {
           workspaceWarned = true;
-          emitEvent(session, "system.log", "system", {
-            message: `${workspace.root} has too many files to follow, so the code the agent writes there is not shown as it is written.`,
-          });
+          /* Not said in the chat: it is a limit of the code cards, not something the person can act on, and a broad
+             folder like /host trips it every turn. */
+          log("debug", "codediff", `${workspace.root} has too many files to follow; code written there is not shown as diff cards.`);
         }
         if (files.length > 0) codeTouched.add(session.id);
         for (const f of files.slice(0, MAX_CHANGE_CARDS)) {
