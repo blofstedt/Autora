@@ -226,6 +226,9 @@ struct Rail {
     /// What a desktop's bar shows, in order (ids as `bar_id` writes them); None until the person pins or unpins.
     pins: Option<Vec<String>>,
     toast: Option<String>,
+    /// Every tool, panel and command, made once and kept (`catalogue`): asking the editor for its menus checks each of
+    /// its ~800 commands, far too much to do every frame. Made again when All tools opens and after a command ran.
+    catalogue: Option<std::rc::Rc<Catalogue>>,
 }
 
 thread_local! {
@@ -352,10 +355,6 @@ fn default_ids(phone: bool) -> Vec<String> {
     ids
 }
 
-fn resolve(id: &str, items: &[(Item, String)]) -> Option<Item> {
-    items.iter().find(|(i, _)| i.id == id).map(|(i, _)| i.clone())
-}
-
 /// Before the app runs: do what the bar asked for, and keep the chrome the bar's.
 fn rail_pump(app: &mut PhotocraftApp) {
     let (asks, ctx) = RAIL.with(|p| {
@@ -366,7 +365,11 @@ fn rail_pump(app: &mut PhotocraftApp) {
         let Some(ctx) = ctx.as_ref() else { break };
         match ask {
             Ask::Command(id, params) => {
-                RAIL.with(|p| p.borrow_mut().grid = false);
+                RAIL.with(|p| {
+                    let mut p = p.borrow_mut();
+                    p.grid = false;
+                    p.catalogue = None;
+                });
                 drop(menus::invoke(app, ctx, &id, params));
             }
             Ask::Tool(t) => {
@@ -409,7 +412,7 @@ fn rail_pump(app: &mut PhotocraftApp) {
 }
 
 fn painting(tool: Tool) -> bool {
-    matches!(tool, Tool::Brush | Tool::Pencil | Tool::Eraser | Tool::PaintBucket | Tool::MixerBrush | Tool::Pencil)
+    matches!(tool, Tool::Brush | Tool::Pencil | Tool::Eraser | Tool::PaintBucket | Tool::MixerBrush)
 }
 
 /// How many of the editor's points are one CSS pixel of the frame. Usually 1 (or the device's ratio); inside some
@@ -460,16 +463,38 @@ fn soft(ui: &mut egui::Ui, text: &str, on: bool, w: f32, k: f32) -> egui::Respon
     ui.add_sized([w, 36.0 * k], egui::Button::new(egui::RichText::new(text).size(13.0 * k).color(ink)).min_size(egui::vec2(w, 36.0 * k)).fill(fill).corner_radius(12.0 * k))
 }
 
-/// Every tool, panel and live command the editor has, with the section each is listed under.
-fn catalogue(app: &PhotocraftApp) -> Vec<(Item, String)> {
-    let mut all: Vec<(Item, String)> = Vec::new();
+/// One entry of All tools.
+struct Entry {
+    item: Item,
+    /// Which of `Catalogue::sections` it is listed under.
+    section: usize,
+    /// Whether a command could run when the list was made (tools and panels are asked each frame: that is cheap).
+    enabled: bool,
+    /// Its name and its section, lower case, for the search.
+    find: String,
+}
+
+/// Every tool, panel and live command the editor has, by section, in the order the grid shows them.
+struct Catalogue {
+    entries: Vec<Entry>,
+    sections: Vec<String>,
+}
+
+impl Catalogue {
+    fn find(&self, id: &str) -> Option<Item> {
+        self.entries.iter().find(|e| e.item.id == id).map(|e| e.item.clone())
+    }
+}
+
+fn build_catalogue(app: &PhotocraftApp) -> Catalogue {
+    let mut all: Vec<(Item, String, bool)> = Vec::new();
     for (group, tools) in TOOL_GROUPS {
         for t in tools {
-            all.push((tool_item(*t), group.to_string()));
+            all.push((tool_item(*t), group.to_string(), true));
         }
     }
     for s in [Sheet::Layers, Sheet::Brush, Sheet::Colour] {
-        all.push((sheet_item(s), "Panels".to_string()));
+        all.push((sheet_item(s), "Panels".to_string(), true));
     }
     for m in menus::menu_items(app) {
         // The panels of the Window menu are the dock's, which is away; the sheets above are what the bar has instead.
@@ -478,13 +503,31 @@ fn catalogue(app: &PhotocraftApp) -> Vec<(Item, String)> {
         }
         let top = m.path.first().cloned().unwrap_or_default();
         let section = if m.path.is_empty() { "Other".to_string() } else { m.path.join(" › ") };
-        let mut item = command_item(&m.id, &m.label, &top);
-        if !m.enabled {
-            item.label = format!("{}", item.label);
-        }
-        all.push((item, section));
+        all.push((command_item(&m.id, &m.label, &top), section, m.enabled));
     }
-    all
+    let mut sections: Vec<String> = Vec::new();
+    let entries = all
+        .into_iter()
+        .map(|(item, section, enabled)| {
+            let at = sections.iter().position(|s| *s == section).unwrap_or_else(|| {
+                sections.push(section.clone());
+                sections.len() - 1
+            });
+            let find = format!("{}\n{}", item.label.to_lowercase(), section.to_lowercase());
+            Entry { item, section: at, enabled, find }
+        })
+        .collect();
+    Catalogue { entries, sections }
+}
+
+/// The catalogue as last made, or made now when there is none.
+fn catalogue(app: &PhotocraftApp) -> std::rc::Rc<Catalogue> {
+    if let Some(c) = RAIL.with(|p| p.borrow().catalogue.clone()) {
+        return c;
+    }
+    let c = std::rc::Rc::new(build_catalogue(app));
+    RAIL.with(|p| p.borrow_mut().catalogue = Some(c.clone()));
+    c
 }
 
 /// After the app ran: the bar, the sheet and All tools over it. Drawn over the picture, never part of it.
@@ -514,7 +557,7 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
     let ids = if phone { default_ids(true) } else { pins.clone().unwrap_or_else(|| default_ids(false)) };
     let room = if phone { screen.width() } else { screen.height() - 16.0 * k };
     let slots = (((room - 2.0 * pad - 12.0 * k + gap) / (size + gap)).floor() as usize).saturating_sub(1).max(1);
-    let shown: Vec<Item> = ids.iter().filter_map(|id| resolve(id, &all)).take(slots).collect();
+    let shown: Vec<Item> = ids.iter().filter_map(|id| all.find(id)).take(slots).collect();
 
     let on_of = |item: &Item| match &item.act {
         Act::Tool(t) => tool == *t,
@@ -552,7 +595,14 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
             ui.separator();
         }
         if round(ui, "panels-top-left", SLATE, grid, true, size, "All tools").clicked() {
-            RAIL.with(|p| p.borrow_mut().grid = !grid);
+            RAIL.with(|p| {
+                let mut p = p.borrow_mut();
+                p.grid = !grid;
+                // Opened: the commands as they are now (what is enabled, Open Recent, plug-ins).
+                if !grid {
+                    p.catalogue = None;
+                }
+            });
             ctx.request_repaint();
         }
     };
@@ -683,24 +733,19 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
                 let tile_w = (width - 6.0 * k * (cols as f32 - 1.0) - 14.0 * k) / cols as f32;
                 egui::ScrollArea::vertical().max_height(screen.height() * 0.7).max_width(width).auto_shrink([false, true]).show(ui, |ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(6.0 * k, 6.0 * k);
-                    let mut sections: Vec<String> = Vec::new();
-                    for (_, s) in &all {
-                        if !sections.contains(s) {
-                            sections.push(s.clone());
-                        }
-                    }
-                    for section in sections {
-                        let items: Vec<&Item> = all.iter().filter(|(i, s)| *s == section && (needle.is_empty() || i.label.to_lowercase().contains(&needle) || s.to_lowercase().contains(&needle))).map(|(i, _)| i).collect();
+                    for (at, section) in all.sections.iter().enumerate() {
+                        let items: Vec<&Entry> = all.entries.iter().filter(|e| e.section == at && (needle.is_empty() || e.find.contains(&needle))).collect();
                         if items.is_empty() {
                             continue;
                         }
-                        let commands = items.first().is_some_and(|i| matches!(i.act, Act::Command(_)));
+                        let commands = items.first().is_some_and(|e| matches!(e.item.act, Act::Command(_)));
                         let body = |ui: &mut egui::Ui, asks: &mut Vec<Ask>| {
                             for row in items.chunks(cols) {
                                 ui.horizontal(|ui| {
-                                for item in row {
+                                for entry in row {
+                                    let item = &entry.item;
                                     let on = on_of(item);
-                                    let enabled = enabled_of(item);
+                                    let enabled = if matches!(item.act, Act::Command(_)) { entry.enabled } else { enabled_of(item) };
                                     let pinned = ids.contains(&item.id);
                                     ui.vertical(|ui| {
                                         ui.set_width(tile_w);
@@ -733,7 +778,7 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
                             }
                         };
                         if commands && needle.is_empty() {
-                            egui::CollapsingHeader::new(egui::RichText::new(&section).size(11.5 * k).color(egui::Color32::from_rgb(152, 161, 182))).id_salt(&section).default_open(false).show(ui, |ui| body(ui, &mut asks));
+                            egui::CollapsingHeader::new(egui::RichText::new(section).size(11.5 * k).color(egui::Color32::from_rgb(152, 161, 182))).id_salt(section).default_open(false).show(ui, |ui| body(ui, &mut asks));
                         } else {
                             ui.label(egui::RichText::new(section.to_uppercase()).size(10.5 * k).color(egui::Color32::from_rgb(122, 130, 151)));
                             body(ui, &mut asks);

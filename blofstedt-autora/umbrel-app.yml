@@ -186,9 +186,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A tidier desktop. The tool bar on the right of every app (PDF, Pages, Sheets, Slides, Video, Music, 3D, Photo) is
-  smaller and matches the rest of the interface. The menu on the left is always there, whole or as icons: the hamburger
-  and "fold away" are gone, and when it is icons, expand and New session sit in the top bar beside the chat's name. Also
-  fixed: 3D's view-cube buttons were hidden under the tool bar, 3D now has the same top bar as the other apps, Music's
-  bars reach the edge, Video no longer shows the project name twice, Sheets no longer shows a "Streaming ... rows
-  available" message, and the duplicate "Agent cursor" buttons are gone (the Visible switch does that).
+  Smoother scrolling in Photo. Scrolling or panning the picture, and scrolling the All tools list, no longer stutters:
+  the tool bar used to rebuild the editor's whole list of commands on every frame, and now builds it once and again
+  only when All tools opens or after a command runs.
