@@ -29,7 +29,8 @@ import crypto from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
-import { saveArtifact } from "./artifacts";
+import { keepCopy, saveArtifact } from "./artifacts";
+import { chatTitle } from "./folders";
 import { readFileRef, FileRefError } from "./fileref";
 import type { ChatImage } from "./llm";
 import { stateDir } from "./state";
@@ -675,6 +676,31 @@ export function photoRoutes(app: Express, opts: {
       res.json({ rev: entryFor(id).rev });
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  /* The person pressed Save: the picture as it is now, kept in Artifacts as a PNG (the layered file stays the
+     window's). The agent is not asked and not woken. */
+  app.post("/api/photo/:session/keep", async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    if (opts.off()) return res.status(403).json({ error: "Autora Photo is switched off on the Tools page." });
+    if (!fs.existsSync(workFile(id))) return res.status(404).json({ error: "There is no picture yet." });
+    if (!cliFile()) return res.status(503).json({ error: "Autora Photo's command line is not built into this server." });
+    const out = `keep-${crypto.randomBytes(4).toString("hex")}.png`;
+    try {
+      const data = await inLine(id, async () => {
+        const r = await serve(id, [{ method: "doc.open", params: { path: WORK } }, { method: "doc.save", params: { path: out } }], { timeoutMs: 60_000 });
+        first(r, "Could not open the picture");
+        first(r.slice(1), "Could not save it as a PNG");
+        return fs.readFileSync(path.join(folder(id), out));
+      });
+      const art = keepCopy({ session: id, title: chatTitle(id), fallback: "Picture", ext: "png", data, mime: "image/png", note: "Saved from Autora Photo" });
+      res.json({ artifact: art.id, name: art.name });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      fs.rmSync(path.join(folder(id), out), { force: true });
     }
   });
 

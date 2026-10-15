@@ -473,6 +473,12 @@
   window.addEventListener("message", (event) => {
     if (event.source !== window.parent) return;
     const m = event.data;
+    if (m && typeof m === "object" && m.type === "autora:office-save") {
+      // The window's Save: the editor's own Ctrl+S, as if pressed where the person is typing.
+      const at = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
+      at.dispatchEvent(new KeyboardEvent("keydown", { key: "s", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true }));
+      return;
+    }
     if (!m || typeof m !== "object" || m.type !== "autora:office-hand" || typeof m.id !== "string" || !Array.isArray(m.steps)) return;
     void run(m.id, m.steps, m.who || {});
   });

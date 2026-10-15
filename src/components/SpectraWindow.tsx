@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SaveButton, settle } from "./SaveButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { useCollab } from "../lib/collab";
 import { TakeControl } from "./TakeControl";
@@ -113,6 +114,20 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
     [post, sessionId],
   );
 
+  /** Save: the editor's own Save, pressed now; the file in Artifacts follows it a moment later (server/pdfdesk.ts). */
+  const savedNow = useRef<((ok: boolean) => void) | null>(null);
+  const keep = useCallback(async () => {
+    const ok = await new Promise<boolean>((resolve) => {
+      const t = setTimeout(() => done(false), 12_000);
+      function done(v: boolean) { clearTimeout(t); savedNow.current = null; resolve(v); }
+      savedNow.current = done;
+      post({ type: "autora:spectra:save" });
+    });
+    if (!ok) throw new Error("The editor did not finish saving");
+    await settle(800);
+    return desk.name ? `Kept in Artifacts as ${desk.name}` : "Saved";
+  }, [desk.name, post]);
+
   // What the frame says: it is up, it wants an event, or it is closing.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -121,6 +136,8 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
       if (!msg || typeof msg !== "object") return;
       if (msg.type === "autora:spectra:invoke") {
         void invoke(msg);
+      } else if (msg.type === "autora:spectra:saved") {
+        savedNow.current?.(msg.ok !== false);
       } else if (msg.type === "autora:spectra:asset" && typeof msg.id === "number" && typeof msg.path === "string") {
         // pdf.js's data files for the frame, fetched here, where the request carries what a login proxy wants.
         const id = msg.id;
@@ -183,6 +200,7 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
         <span className="pdf-bar-name" title={desk.name ?? undefined}>{desk.name ?? "PDF"}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
+        <SaveButton onSave={keep} phone={phone} disabled={!desk.name} />
         <TakeControl sessionId={sessionId} surface="pdf" mine={mine} phone={phone} thing="PDF" />
         {desk.working && (
           <a

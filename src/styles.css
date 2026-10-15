@@ -230,6 +230,7 @@ body::before {
 .nb-new input:focus-visible,
 .nb-new textarea:focus-visible,
 .lib-new input:focus-visible,
+.art-rename input:focus-visible,
 .ask-when-text:focus-visible,
 .trig-input:focus-visible,
 .trig-prompt:focus-visible,
@@ -8118,3 +8119,23 @@ body.is-resizing iframe { pointer-events: none; }
 .agent-thought.is-below > span { bottom: auto; top: 26px; }
 @keyframes thoughtPop { from { opacity: 0; transform: translateY(3px) scale(0.96); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .agent-thought { transition: none; } .agent-thought > span { animation: none; } }
+
+/* Artifacts: a folder's head carries its rename and remove beside the fold. */
+.art-head-row { display: flex; align-items: center; gap: 4px; }
+.art-head-row .art-toggle { flex: 1 1 auto; min-width: 0; }
+.art-rename input {
+  flex: 1 1 auto; min-width: 0; height: 32px; padding: 0 10px;
+  border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--s2);
+  color: var(--text); font: inherit; font-size: var(--fs-md); font-weight: 600;
+}
+.folder-chats {
+  display: flex; align-items: flex-start; gap: 8px; margin-top: 6px;
+  font-size: var(--fs-sm); color: var(--text-2); cursor: pointer;
+}
+.folder-chats input { margin-top: 3px; }
+
+/* Save, in every tool window's bar (components/SaveButton.tsx). */
+.win-save { gap: 5px; }
+.win-save.is-saved { color: var(--live); border-color: rgba(var(--live-rgb), 0.5); }
+.win-save.is-failed { color: var(--danger); border-color: rgba(var(--danger-rgb), 0.45); }
+.st-save-btn { display: contents; }

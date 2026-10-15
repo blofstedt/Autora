@@ -31,7 +31,7 @@ import {
 } from "@cantoo/pdf-lib";
 import type { ChatImage } from "./llm";
 import {
-  artifactPath, cleanName, formatSize, getArtifact, listArtifacts, mimeFor, readArtifact, saveArtifact,
+  artifactPath, cleanName, formatSize, getArtifact, mimeFor, readArtifact, sameArtifact, saveArtifact,
   MAX_ARTIFACT_BYTES, type Artifact,
 } from "./artifacts";
 import { readFileRef as sharedFileRef, FileRefError, type FileInput } from "./fileref";
@@ -327,7 +327,7 @@ function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, inpu
   if (data.byteLength > MAX_ARTIFACT_BYTES) {
     throw new Problem(`The result is ${formatSize(data.byteLength)}, over the ${formatSize(MAX_ARTIFACT_BYTES)} an artifact may be. Nothing was saved.`);
   }
-  const replaced = listArtifacts().some((a) => a.origin === "agent" && a.name === name);
+  const replaced = Boolean(sameArtifact(name, ctx.session));
   const art = saveArtifact({ origin: "agent", name, data, mime: "application/pdf", session: ctx.session, note });
   ctx.showFile?.({ id: art.id, name: art.name, mime: art.mime, size: art.size });
   // A file the agent made is the file it is working on: open it in the window.

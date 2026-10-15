@@ -192,6 +192,7 @@ studio.studioRoutes(app, {
 });
 const server = app.listen(0);
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+const getArtifactBytes = (id: string) => fs.readFileSync(path.join(process.env.AUTORA_STATE_DIR!, "artifacts", id), "utf8");
 const call = async (method: string, url: string, body?: unknown, raw?: Buffer): Promise<{ status: number; body: any }> => {
   const res = await fetch(base + url, {
     method,
@@ -212,6 +213,17 @@ await test("a tool call opens the window and starts a song", async () => {
   assert.equal(state.open, true);
   assert.equal(state.by, "agent");
   assert.ok(states.length > 0, "the page is told");
+});
+
+await test("Save keeps the song in Artifacts, named after it, and the next Save replaces that copy", async () => {
+  const { getArtifact } = await import("../server/artifacts");
+  const first = await call("POST", `/api/studio/${S}/keep`);
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.name, "Night drive.song.json");
+  assert.equal(JSON.parse(String(getArtifactBytes(first.body.artifact))).name, "Night drive");
+  assert.equal(getArtifact(first.body.artifact)!.origin, "user");
+  const again = await call("POST", `/api/studio/${S}/keep`);
+  assert.equal(again.body.artifact, first.body.artifact);
 });
 
 await test("chords, a bass that follows them and a beat: one call each", async () => {

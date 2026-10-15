@@ -5,8 +5,9 @@
  *   editor -> window   {ready}            a game is open in the editor
  *   window -> editor   {reload}           the agent changed the game on the server: take it
  *   window -> editor   {theme}            Autora's colours changed: start again with them
+ *   window -> editor   {save}             the person pressed Save: save now, then {saved}
  *
- * and, on its own, the saving: the person never presses Save. A change is saved a moment after
+ * and, on its own, the saving: the person never has to press Save. A change is saved a moment after
  * it is made, to the same place the agent's tools work on.
  *
  * MainFrame hands the editor's hands over as window.__autoraEditor (patches.mjs): open a game,
@@ -114,6 +115,15 @@ export const startAutoraBridge = () => {
     const msg = event.data;
     if (!msg || typeof msg !== 'object' || !msg.autoraGameCmd) return;
     if (msg.autoraGameCmd === 'reload') reload();
+    else if (msg.autoraGameCmd === 'save') {
+      // The window's Save: what is here now, saved now, then said so.
+      const e = editor();
+      const said = () => tellAutora({ saved: true });
+      if (e && e.project && !e.saving && snapshot(e.project) !== baseline) {
+        const now = snapshot(e.project);
+        e.save().then((ok) => { if (ok) baseline = now; said(); }, said);
+      } else said();
+    }
     else if (msg.autoraGameCmd === 'theme' && typeof msg.query === 'string') {
       const e = editor();
       const go = () => window.location.replace(`${window.location.pathname}?${msg.query}`);

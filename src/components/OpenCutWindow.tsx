@@ -3,6 +3,7 @@ import { useAgentCursor } from "../lib/agentCursor";
 import { useBootWatch } from "../lib/bootWatch";
 import { useCollab } from "../lib/collab";
 import { TakeControl } from "./TakeControl";
+import { SaveButton } from "./SaveButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "../lib/humanPath";
 import { clearCursor, reportCursor } from "../lib/cursorPos";
@@ -381,6 +382,13 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
   }, [cursor]);
   useEffect(() => clearCursor, []);
 
+  /** Save: the editor writes the project now. A video project is yours across chats, so it stays here (Export makes the
+      video file, which goes to Artifacts). */
+  const keep = useCallback(async () => {
+    await toFrame("save", {});
+    return "Saved the project";
+  }, [toFrame]);
+
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
       <div className="pdf-bar">
@@ -389,6 +397,7 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
         <span className="pdf-bar-name" title={desk.name ?? undefined}>{desk.name ?? "Video"}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
+        <SaveButton onSave={keep} phone={phone} disabled={!desk.name} />
         <TakeControl sessionId={sessionId} surface="video" mine={mine} phone={phone} thing="video" />
         {phone && (
           <button

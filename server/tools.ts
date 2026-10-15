@@ -66,8 +66,9 @@ import { relayAction, relayConnected, relayStatus } from "./desktop";
 import { CONTEXT_CONFIG, readVault } from "./context";
 import {
   artifactPath, cleanName, deleteArtifact, formatSize, getArtifact, isText, listArtifacts,
-  readArtifact, saveArtifact, MAX_ARTIFACT_BYTES,
+  readArtifact, sameArtifact, saveArtifact, claimArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
+import { folderOfFile, getFolder, joinWork } from "./folders";
 import { checkWidget } from "./widgets";
 import { deskHooks } from "./pdfdesk";
 import { handToWindow } from "./pdfhand";
@@ -1243,10 +1244,12 @@ function slug(text: string): string {
   return words.join("-").slice(0, 60) || "image";
 }
 
-function artifactLine(a: { id: string; origin: string; name: string; mime: string; size: number; ts: number; note?: string }) {
+function artifactLine(a: { id: string; origin: string; name: string; mime: string; size: number; ts: number; note?: string; session?: string; folder?: string }) {
   const who = a.origin === "user" ? "uploaded by the person" : "made by you";
   const when = new Date(a.ts).toISOString().slice(0, 16).replace("T", " ");
-  return `- ${a.id}  ${a.name}  (${a.mime}, ${formatSize(a.size)}, ${who}, ${when})${
+  const folder = folderOfFile(a);
+  const where = folder ? `, in the folder "${getFolder(folder)?.name ?? folder}"` : "";
+  return `- ${a.id}  ${a.name}  (${a.mime}, ${formatSize(a.size)}, ${who}, ${when}${where})${
     a.note ? ` -- ${a.note.replace(/\s+/g, " ").slice(0, 120)}` : ""}`;
 }
 
@@ -1976,6 +1979,7 @@ export async function runTool(
   let outcome = first.outcome;
 
   if (first.gaveUp) outcome = await afterGivingUp(spec, args, ctx, cap, attemptTool);
+  if (outcome.ok && !ctx.memory?.incognito) joinProjects(ctx.session, args);
 
   /* Whatever the tool read -- a page that now shows the address it was
      given, a form echoing a username -- goes back to the model with the
@@ -1985,6 +1989,30 @@ export async function runTool(
     summary: redactForModel(outcome.summary),
     ...(outcome.preview !== undefined ? { preview: redactForModel(outcome.preview) } : {}),
   };
+}
+
+/**
+ * A tool worked on files the arguments name by id: this chat is part of
+ * those files' project from now on (./folders.ts), and an upload it worked
+ * on is this chat's. Only ids, because a name can be anyone's file.
+ */
+export function joinProjects(session: string, args: unknown) {
+  let text: string;
+  try {
+    text = JSON.stringify(args ?? null);
+  } catch {
+    return;
+  }
+  const ids = new Set(text.match(/file_[0-9a-f]{16}/g) ?? []);
+  for (const id of ids) {
+    const art = getArtifact(id);
+    if (!art) continue;
+    if (!art.session) {
+      claimArtifact(id, session);
+      continue;
+    }
+    joinWork(session, art);
+  }
 }
 
 /**
@@ -3138,7 +3166,7 @@ async function runToolUnredacted(
         }
         // Saving a name that is already up there rewrites that artifact, so
         // say which happened: "saved" reads as a new card beside the old one.
-        const had = listArtifacts().find((a) => a.origin === "agent" && a.name === cleanName(name));
+        const had = sameArtifact(name, ctx.session);
         const art = saveArtifact({
           origin: "agent", name, data, session: ctx.session,
           note: String(args.note ?? "").trim() || undefined,

@@ -107,7 +107,17 @@ Spectra's fetched renderer is most of what is on disk.
   pictures and `office_pdf`; PDFs always go to Autora's own PDF window),
   `notebooks.ts` (artifacts grouped by purpose with notes between them,
   stored as `notebooks.json`; retention keeps whatever a notebook holds or
-  cites), `agents.ts` (the Organization page's roster: each agent's task, when to call it,
+  cites), `folders.ts` (the Artifacts page's folders, one per project, in
+  `artifacts/folders.json`: a chat's files are in its own folder with nothing written; when a tool call names
+  another chat's file by id (`joinProjects` in `tools.ts`, also for a message's attachments) `joinWork` makes one
+  folder, named after the first chat, for both chats; a chat already in a folder stays; an upload a chat works on
+  becomes that chat's (`claimArtifact`); the agent's same-name rewrite in `saveArtifact` is per folder (`placeKey`),
+  so two projects keep two report.pdf; the person moves files and chats and renames or removes folders,
+  `/api/folders*` in `routes/artifacts.ts`), every window's Save (`SaveButton.tsx` in the window's bar; Photo, 3D,
+  Games and Music `POST /api/<window>/:session/keep` keep a copy in Artifacts with `keepCopy`, named after the chat
+  and replaced by the next Save; Pages/Sheets/Slides send the editor its own Ctrl+S, then `/api/officedesk/:session/keep`
+  writes the artifact now and keeps a "Saved by you" version; PDF presses Spectra's Save (`autora:spectra:save` in
+  `spectra-editor/src/autora/host.ts`); Video runs the editor's `save` command; none of them starts a turn), `agents.ts` (the Organization page's roster: each agent's task, when to call it,
   who it reports to and which agents follow it, stored as `agents.json`; the lead,
   `agent_autora`, is always there; `orgBriefing` is what the lead is told, `agentBrief` what
   a started agent is told), `threads.ts` (Threads, the agents' forum: posts, nested

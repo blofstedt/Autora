@@ -187,6 +187,11 @@ async function run(name: string, args: Record<string, unknown>): Promise<unknown
       openProject(need(str(args, "projectId"), "projectId"));
       return { projectId: args.projectId };
 
+    case "save":
+      // The window's Save: the project written now, not when the editor next gets round to it.
+      await editor.project.saveCurrentProject();
+      return state(editor);
+
     case "export": {
       const format = args.format === "webm" ? "webm" : "mp4";
       const quality = args.quality === "low" || args.quality === "medium" || args.quality === "very_high" ? args.quality : "high";

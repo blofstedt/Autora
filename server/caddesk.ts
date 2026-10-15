@@ -20,7 +20,8 @@ import express, { type Express, type Request, type Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { saveArtifact } from "./artifacts";
+import { keepCopy, saveArtifact } from "./artifacts";
+import { chatTitle } from "./folders";
 import { stateDir } from "./state";
 import { readDoc, saveDoc } from "./store";
 import { staticDir } from "./staticfiles";
@@ -372,6 +373,27 @@ export function cadRoutes(app: Express, opts: { exists: (session: string) => boo
       entry.by = "person";
       engine.setDoc(doc);
       res.json({ rev: entry.rev });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  /* The person pressed Save: the model as it is now, kept in Artifacts as a GLB (colours and groups kept; it opens in
+     most 3D viewers). The agent is not asked and not woken. */
+  app.post("/api/cad/:session/keep", async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    if (opts.off()) return res.status(403).json({ error: "Autora 3D is switched off on the Tools page." });
+    try {
+      const engine = await engineOf(id);
+      const out = await engine.execute("export", { format: "glb" });
+      if (!out.ok) return res.status(400).json({ error: asAgentSees(out.error ?? "There is nothing to save.") });
+      const r = out.result as { data?: string };
+      const art = keepCopy({
+        session: id, title: chatTitle(id), fallback: "Model", ext: "glb",
+        data: Buffer.from(r.data ?? "", "base64"), mime: EXPORT_MIME.glb, note: "Saved from Autora 3D",
+      });
+      res.json({ artifact: art.id, name: art.name });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }

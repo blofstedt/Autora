@@ -28,7 +28,8 @@ import {
   parsePitch, parseProgression, quantize, review, songBeats, tidy, uid,
   type BassStyle, type Chord, type ChordStyle, type Clip, type DrumStyle, type InstrumentId, type Note, type Project, type Track,
 } from "../src/lib/studio/model";
-import { MAX_ARTIFACT_BYTES, saveArtifact } from "./artifacts";
+import { MAX_ARTIFACT_BYTES, keepCopy, saveArtifact } from "./artifacts";
+import { chatTitle } from "./folders";
 import { stateDir } from "./state";
 import { readDoc, saveDoc } from "./store";
 
@@ -748,6 +749,26 @@ export function studioRoutes(app: Express, opts: {
     if (!next) return res.status(400).json({ error: "That is not an Autora Music song." });
     commit(id, e, next, "person");
     res.json({ rev: e.rev });
+  });
+
+  /* The person pressed Save: the song as it is now, kept in Artifacts as an Autora Music song file, named after the song.
+     (Export makes the WAV.) The agent is not asked and not woken. */
+  app.post("/api/studio/:session/keep", (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    if (opts.off()) return res.status(403).json({ error: "Autora Music is switched off on the Tools page." });
+    const e = entryFor(id);
+    if (!e.project) return res.status(404).json({ error: "There is no song yet." });
+    try {
+      const named = typeof (e.project as { name?: unknown }).name === "string" ? String((e.project as { name?: unknown }).name).trim() : "";
+      const art = keepCopy({
+        session: id, title: named || chatTitle(id), fallback: "Song", ext: "song.json",
+        data: Buffer.from(JSON.stringify(e.project, null, 2), "utf8"), mime: "application/json", note: "Saved from Autora Music",
+      });
+      res.json({ artifact: art.id, name: art.name });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   /* Which clip the person has open, so the agent can be told "this clip". Not a change to the song. */

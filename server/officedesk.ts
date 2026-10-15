@@ -1178,6 +1178,29 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
     res.json({ ok: true, rev: load(key)?.rev ?? 0 });
   });
 
+  /* The person pressed Save (the window had the editor save first): the file in Artifacts is written now rather than in
+     a moment, and kept as a version to go back to. The agent is not asked and not woken. */
+  app.post("/api/officedesk/:session/keep", async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const key = deskAt(req, res, id);
+    if (!key) return;
+    if (engines.has(key)) {
+      await settleEngine(key).catch(() => undefined);
+      checkEngineFile(key);
+    }
+    const desk = load(key);
+    if (!desk) return res.status(404).json({ error: "There is no document open." });
+    const pending = rewriting.get(key);
+    if (pending) clearTimeout(pending);
+    rewriting.delete(key);
+    snapshot(key, desk, "Saved by you", "person");
+    writeArtifact(key);
+    const art = desk.working ? getArtifact(desk.working) : null;
+    if (!art) return res.status(500).json({ error: desk.problem ?? "The file could not be saved." });
+    res.json({ artifact: art.id, name: art.name });
+  });
+
   /* The person is in the editor right now. Nothing changes in the file; the
      agent is simply asked to leave the document alone and work on something
      else. Sent every few seconds while they keep at it. */

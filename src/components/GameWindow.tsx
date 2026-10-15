@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SaveButton, keptAs } from "./SaveButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { gameStateNow, onGameState, useGameState, type GameCue } from "../lib/gamedesk";
 import { useAgentCursor } from "../lib/agentCursor";
@@ -59,9 +60,11 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow || e.origin !== window.location.origin) return;
-      const msg = e.data as { autoraGame?: boolean; ready?: boolean; problem?: string } | null;
+      const msg = e.data as { autoraGame?: boolean; ready?: boolean; problem?: string; saved?: boolean } | null;
       if (!msg || typeof msg !== "object" || !msg.autoraGame) return;
-      if (msg.ready) {
+      if (msg.saved) {
+        savedNow.current?.();
+      } else if (msg.ready) {
         ready.current = true;
         known.current = Math.max(known.current, gameStateNow().rev ?? 0);
         setUp(true);
@@ -103,15 +106,28 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
     return () => watch.disconnect();
   }, [post, sessionId, phone]);
 
+  /** Save: the editor saves what it has (it would a moment later anyway), then the game is kept in Artifacts. */
+  const savedNow = useRef<(() => void) | null>(null);
+  const keep = useCallback(async () => {
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(done, 2500);
+      function done() { clearTimeout(t); savedNow.current = null; resolve(); }
+      savedNow.current = done;
+      post({ autoraGameCmd: "save" });
+    });
+    return keptAs(await fetch(`/api/game/${encodeURIComponent(sessionId)}/keep`, { method: "POST" }));
+  }, [post, sessionId]);
+
   const scenes = game.scenes ?? 0;
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
-      {phone && <div className="pdf-bar">
+      <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconGame size={14} /></span>
         <span className="pdf-bar-app">Autora Games</span>
         <span className="pdf-bar-name">{game.name ?? "Your game"}{scenes ? ` · ${scenes === 1 ? "1 scene" : `${scenes} scenes`}` : ""}</span>
         <span className="pdf-bar-note">{up ? "Saved as you go" : "Starting the engine…"}</span>
         <div className="spacer" />
+        <SaveButton onSave={keep} phone={phone} disabled={!up} />
         {phone && (
           <button
             className="btn icon ghost pdf-full-btn"
@@ -123,7 +139,7 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
           </button>
         )}
-      </div>}
+      </div>
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
       <div className="game-stage">
       <iframe

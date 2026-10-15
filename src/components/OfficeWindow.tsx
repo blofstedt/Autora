@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SaveButton, keptAs, settle } from "./SaveButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { useCollab } from "../lib/collab";
 import { TakeControl } from "./TakeControl";
@@ -271,6 +272,16 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
   const versions = word.versions ?? [];
   const problem = trouble ?? word.problem ?? null;
 
+  /** Save: the editor's own Ctrl+S (the picture of the pages on a phone has nothing unsaved), a moment for it to land,
+      then the file in Artifacts written now and kept as a version. */
+  const keep = useCallback(async () => {
+    if (!pages) {
+      post({ type: "autora:office-save" });
+      await settle(1500);
+    }
+    return keptAs(await fetch(`/api/officedesk/${encodeURIComponent(sessionId)}/keep?kind=${kind}`, { method: "POST" }));
+  }, [kind, pages, post, sessionId]);
+
   return (
     <div ref={pane} className={`pdf-window office-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}${pages ? " is-pages" : ""}`}>
       <div className="pdf-bar">
@@ -289,6 +300,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             Versions · {versions.length}
           </button>
         )}
+        <SaveButton onSave={keep} phone={phone} disabled={!word.name} />
         <TakeControl sessionId={sessionId} surface="office" mine={mine} phone={phone} thing="document" />
         {/* Whether the agent's cursor shows is Visible work, the eye beside Follow: not a switch of this window's own. */}
         {word.working && (

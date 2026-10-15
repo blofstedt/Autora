@@ -81,6 +81,7 @@ import { lookColors, readLook } from "./src/lib/agentlook";
 import { readActivity } from "./src/lib/activity";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
+import { chatTitles } from "./server/folders";
 import { systemRoutes } from "./server/routes/system";
 import {
   attachmentNote, attachmentRefs, notebookNote, notebookRefs, picturesFor, type AttachmentRef, type NotebookRef,
@@ -155,7 +156,7 @@ import { dropGame, gameRoutes, gameState, onGameChange, serveGame } from "./serv
 import { dropPhoto, onPhotoChange, photoRoutes, photoState, servePhoto } from "./server/photodesk";
 import { dropTerm, onTermChange, termRoutes, termState, termUpgrade } from "./server/termdesk";
 import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote } from "./server/studio";
-import { windowOff } from "./server/tools";
+import { joinProjects, windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
 import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
 import {
@@ -6458,6 +6459,7 @@ async function startServer() {
 
   // 3b'. Artifacts: what the agent made and what you uploaded, kept on disk.
 
+  chatTitles((id) => sessions.get(id)?.title?.trim() || null);
   artifactRoutes(app, {
     rawBody: express.raw({ type: () => true, limit: MAX_ARTIFACT_BYTES }),
     log,
@@ -6596,6 +6598,9 @@ async function startServer() {
     if (!text && attachments.length === 0 && notebooks.length === 0) {
       return res.status(400).json({ error: "Empty message" });
     }
+    // A file given to this chat is this chat's work: an upload becomes its,
+    // and one from another project brings this chat into that project's folder.
+    if (!session.incognito && attachments.length) joinProjects(session.id, attachments.map((a) => a.id));
 
     /* Sent while the agent is working: unless the person asked to interrupt
        (or it carries files, is dictated, or is a command), it is added to the

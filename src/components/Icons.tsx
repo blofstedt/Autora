@@ -512,6 +512,12 @@ export const IconDownload = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconSave = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6" />
+  </svg>
+);
+
 export const IconEdit = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="M14.5 5.5l4 4L9 19H5v-4z" />

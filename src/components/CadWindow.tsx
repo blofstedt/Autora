@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
+import { SaveButton, keptAs, settle } from "./SaveButton";
 import { cadStateNow, onCadState, useCadState } from "../lib/caddesk";
 import { useAgentCursor } from "../lib/agentCursor";
 import { useCursorWho, whoColors, getCursorWho } from "../lib/cursorWho";
@@ -139,6 +140,13 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
     return () => watch.disconnect();
   }, [post]);
 
+  /** Save: the last edit (sent a quarter second after it) is in, then the model is kept in Artifacts. */
+  const keep = useCallback(async () => {
+    await settle(400);
+    for (let waited = 0; (saving.current || waiting.current) && waited < 30_000; waited += 100) await settle(100);
+    return keptAs(await fetch(`/api/cad/${encodeURIComponent(sessionId)}/keep`, { method: "POST" }));
+  }, [sessionId]);
+
   const shapes = cad.shapes ?? 0;
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
@@ -149,6 +157,7 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
         <span className="pdf-bar-name">{shapes === 1 ? "1 shape" : `${shapes} shapes`}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
+        <SaveButton onSave={keep} phone={phone} disabled={shapes === 0} />
         {phone && (
           <button
             className="btn icon ghost pdf-full-btn"

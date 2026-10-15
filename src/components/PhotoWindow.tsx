@@ -4,6 +4,7 @@ import { onPhotoHand, onPhotoState, photoStateNow, usePhotoState, type PhotoHand
 import { clearCursor, reportCursor } from "../lib/cursorPos";
 import { getCursorWho, whoColors } from "../lib/cursorWho";
 import { IconImage, IconMaximize, IconMinimize } from "./Icons";
+import { SaveButton, keptAs, settle } from "./SaveButton";
 
 /**
  * Autora Photo: the photo editing window, beside the conversation.
@@ -186,17 +187,25 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
     [load],
   );
 
+  /** Save: the editor's last edit (it is sent a short pause after it) is in, then a PNG is kept in Artifacts. */
+  const keep = useCallback(async () => {
+    await settle(1000);
+    for (let waited = 0; (saving.current || waiting.current) && waited < 30_000; waited += 100) await settle(100);
+    return keptAs(await fetch(`/api/photo/${encodeURIComponent(sessionId)}/keep`, { method: "POST" }));
+  }, [sessionId]);
+
   const size = photo.size;
   const layers = photo.layers ?? 0;
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
-      {phone && <div className="pdf-bar">
+      <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconImage size={14} /></span>
         <span className="pdf-bar-app">Autora Photo</span>
         <span className="pdf-bar-name">{size ? `${size.w} × ${size.h}, ${layers === 1 ? "1 layer" : `${layers} layers`}` : "No picture yet"}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
-        <button
+        <SaveButton onSave={keep} phone={phone} disabled={!size} />
+        {phone && <button
           className="btn icon ghost pdf-full-btn"
           onClick={() => setFull(!full)}
           title={full ? "Back to the conversation" : "Full screen"}
@@ -204,8 +213,8 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
           aria-pressed={full}
         >
           {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
-        </button>
-      </div>}
+        </button>}
+      </div>
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
       <iframe
         ref={frame}

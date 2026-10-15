@@ -13,6 +13,7 @@ import { Arrangement, headWidth, type Pick } from "./studio/Arrangement";
 import { Mixer } from "./studio/Mixer";
 import { PianoRoll } from "./studio/PianoRoll";
 import { useSong } from "./studio/useSong";
+import { SaveButton, keptAs } from "./SaveButton";
 import {
   IconCopy, IconDownload, IconMaximize, IconMetronome, IconMinimize, IconMinus, IconMusic, IconPause, IconPlay, IconPlus, IconRepeat, IconRotateCcw,
   IconRotateCw, IconScissors, IconSearch, IconSkipBack, IconSliders, IconTable, IconTrash, IconX,
@@ -42,6 +43,13 @@ const timeText = (project: Project, beat: number): string => {
  */
 export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: boolean }) {
   const song = useSong(sessionId);
+  /** Save (and Ctrl+S): the song written now, and kept in Artifacts. */
+  const saveRef = useRef<HTMLSpanElement>(null);
+  const { saveNow } = song;
+  const keep = useCallback(async () => {
+    await saveNow();
+    return keptAs(await fetch(`/api/studio/${encodeURIComponent(sessionId)}/keep`, { method: "POST" }));
+  }, [saveNow, sessionId]);
   const { project } = song;
   const [pick, setPick] = useState<Pick>({ trackId: null, clipId: null });
   const [zoom, setZoom] = useState(3);
@@ -235,9 +243,11 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
 
   const onKey = (e: ReactKeyboardEvent) => {
     const target = e.target as HTMLElement;
+    const mod = e.metaKey || e.ctrlKey;
+    // Ctrl+S saves wherever the focus is, the song's name field included, as it does everywhere else.
+    if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveRef.current?.querySelector("button")?.click(); return; }
     const typing = target.closest("input, textarea, select") !== null && !(target instanceof HTMLInputElement && target.type === "range");
     if (typing) return;
-    const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) song.redo(); else song.undo(); }
     else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); song.redo(); }
     // On a focused button Space already means "press it".
@@ -346,6 +356,9 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
         />
         <span className={`pdf-bar-note st-save is-${song.save}`}>{song.save === "saving" ? "Saving…" : song.save === "error" ? "Not saved" : "Saved as you go"}</span>
         <div className="spacer" />
+        <span ref={saveRef} className="st-save-btn">
+          <SaveButton onSave={keep} phone={phone} />
+        </span>
         <button className="st-tool st-export" onClick={() => void exportWav()} disabled={rendering || empty} title="Save the song as a WAV file" aria-label="Export as WAV"><IconDownload size={13} /><span className="st-export-text">{rendering ? "Rendering…" : "Export"}</span></button>
         {phone && (
           <button className="btn icon ghost pdf-full-btn" onClick={() => setFull(!full)} title={full ? "Back to the conversation" : "Full screen"} aria-label={full ? "Back to the conversation" : "Full screen"} aria-pressed={full}>

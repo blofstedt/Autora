@@ -199,6 +199,16 @@ async function main() {
       assert.ok(await waitDrawn(again), "and draws it");
     });
 
+    await test("Save in the bar presses the editor's own Save and says where the file is, waking no agent", async () => {
+      const asked = app.seen.length;
+      const save = page.locator(".pdf-window .win-save");
+      await save.click();
+      for (let i = 0; i < 100 && !/Saved/.test((await save.textContent()) ?? ""); i++) await sleep(200);
+      assert.match((await save.textContent()) ?? "", /Saved/);
+      assert.match((await save.getAttribute("aria-label")) ?? "", /Kept in Artifacts as/);
+      assert.equal(app.seen.length, asked, "saving asked the model nothing");
+    });
+
     await test("by hand: a note, highlighted words, a stamp, a tick, an arrow and a drawn path; what has no tool is done on the file after", async () => {
       let k = 0;
       app.decide = (req) => /You check one action/.test(req.system) ? { text: '{"destructive": false, "requested": true}' } : k++ === 0

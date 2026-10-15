@@ -186,8 +186,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Visible work now means you watch the agent really use the app, live: in Photo, PDF, and now Pages, Sheets and
-  Slides. With Visible on, the agent's cursor selects the words and types over them, types into cells through the
-  name box and confirms them, and opens a slide's text box and types in it, at a person's pace, before the finished
-  file (with its formatting) is put in. With Visible off it works at full speed and the document just changes. Also
-  fixed in the PDF window: Save now really saves, and filling in a form works. And smoother scrolling in Photo.
+  Every app now has a Save button in its top bar (Photo, PDF, Pages, Sheets, Slides, Video, Music, 3D and Games):
+  press it to keep your work right now, without asking the agent; all but Video also put a copy on the Artifacts
+  page. Artifacts are
+  now in folders, one per project: a chat's files start in their own folder, and when another chat carries on with
+  them both chats share one folder. Move files into a new folder, rename it or remove it from the Artifacts page.
+  Visible work now means you watch the agent really use Photo, PDF, Pages, Sheets and Slides, live: it selects the
+  words and types over them, types into cells and confirms them, and opens a slide's text box and types in it. With
+  Visible off it works at full speed. Also fixed: Save in the PDF window really saves, filling in a form works, and
+  scrolling in Photo is smooth.

@@ -119,6 +119,18 @@ export function installHost(): void {
       });
       return;
     }
+    if (msg.type === "autora:spectra:save") {
+      // The window's Save: the editor's own Ctrl+S, then said once its Save button has gone grey (nothing left unsaved).
+      const unsaved = () => { const b = document.querySelector('[data-file="save"]'); return !!b && !b.hasAttribute("disabled"); };
+      if (unsaved()) document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "s", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true }));
+      const began = Date.now();
+      const check = () => {
+        if (!unsaved() || Date.now() - began > 10_000) window.parent.postMessage({ type: "autora:spectra:saved", ok: !unsaved() }, "*");
+        else setTimeout(check, 150);
+      };
+      setTimeout(check, 150);
+      return;
+    }
     if (msg.type === "autora:spectra:hand" && typeof (msg as { id?: unknown }).id === "string") {
       // The agent's edit, to be done here by its hand with the editor's own tools (Visible work; see hand.ts).
       const m = msg as unknown as { id: string; job?: unknown; who?: unknown };

@@ -10,6 +10,8 @@ export type Artifact = {
   size: number;
   ts: number;
   session?: string;
+  /** The folder it was moved to by hand; absent, it is in its chat's. */
+  folder?: string;
   note?: string;
 };
 

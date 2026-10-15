@@ -79,6 +79,21 @@ await test("the Office manual says that with Visible work on office_edit's words
   }
 });
 
+await test("every window's manual says where its Save is and what it keeps; the overview says how folders work", () => {
+  const kept: Record<string, string> = {
+    pdf: "kept in Artifacts", office: "Saved by you", studio: ".song.json", cad: "GLB", game: "GDevelop project", photo: "PNG", video: "writes the project now",
+  };
+  for (const [id, needle] of Object.entries(kept)) {
+    const text = manualText(id as Parameters<typeof manualText>[0]);
+    assert.ok(text.includes("has Save") || text.includes("also has Save"), `the ${id} manual does not say it has Save`);
+    assert.ok(text.includes(needle), `the ${id} manual lacks "${needle}"`);
+  }
+  const overview = windowsOverview();
+  for (const needle of ["its top bar has Save", "without waking you", "folders, one per project", "share one folder"]) {
+    assert.ok(overview.includes(needle), `the overview lacks "${needle}"`);
+  }
+});
+
 await test("the PDF manual says that with Visible work on pdf_edit is done in the window by hand, and what is not", () => {
   const pdf = manualText("pdf");
   for (const needle of ["With Visible work on", "by your hand, live", "Fill N fields", "Ctrl+S", "done on the file afterwards", "With Visible work off"]) {
