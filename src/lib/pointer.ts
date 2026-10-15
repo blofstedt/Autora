@@ -26,9 +26,10 @@ function ensure(): HTMLDivElement {
   layer.className = "agent-pointer-layer";
   arrow = document.createElement("div");
   arrow.className = "agent-pointer";
+  // Wrapped, so it can pop in and dissolve out (.cursor-pop) while the arrow itself carries where it is.
   arrow.innerHTML =
-    '<svg width="16" height="20" viewBox="0 0 16 20"><path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>' +
-    '<span class="agent-pointer-name"><svg class="cursor-glyph" viewBox="0 0 10 10"><polygon/></svg><b></b></span><span class="agent-pointer-typed"></span>';
+    '<span class="cursor-pop"><svg width="16" height="20" viewBox="0 0 16 20"><path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>' +
+    '<span class="agent-pointer-name"><svg class="cursor-glyph" viewBox="0 0 10 10"><polygon/></svg><b></b></span><span class="agent-pointer-typed"></span></span>';
   layer.appendChild(arrow);
   signed();
   document.body.appendChild(layer);
@@ -83,9 +84,14 @@ export async function pointerGo(to: Point, press = true, control?: Element | nul
   const mine = ++token;
   const host = ensure();
   window.clearTimeout(hideTimer);
+  const appearing = !host.classList.contains("is-on");
+  host.classList.remove("is-off");
   host.classList.add("is-on");
   const from = at ?? { x: Math.min(innerWidth - 12, Math.max(12, to.x + 90)), y: Math.max(12, to.y - 60) };
   place(from);
+  // Coming into being: a beat to pop in where it starts before it sets off.
+  if (appearing) await sleep(160);
+  if (mine !== token) return false;
   const route = humanRoute(from, to);
   const ms = routeMs(Math.hypot(to.x - from.x, to.y - from.y));
   const started = performance.now();
@@ -130,7 +136,11 @@ export async function pointerType(text: string): Promise<void> {
 export function pointerRest(after = 2200) {
   window.clearTimeout(hideTimer);
   hideTimer = window.setTimeout(() => {
-    layer?.classList.remove("is-on");
+    // Dissolves rather than vanishing (.is-off plays cursorOut), then the next pointerGo pops it back in.
+    if (layer?.classList.contains("is-on")) {
+      layer.classList.remove("is-on");
+      layer.classList.add("is-off");
+    }
     at = null;
     clearCursor();
   }, after);

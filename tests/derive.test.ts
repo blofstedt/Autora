@@ -216,7 +216,7 @@ test("files a tool made share one card, and a file saved again is shown once, up
   assert.deepEqual(files.map((f) => [f.name, f.size]), [["a-page-1.pdf", 250], ["a-page-2.pdf", 100]]);
 });
 
-test("a message added while the agent works joins its turn as a note, not a new turn", () => {
+test("a message added while the agent works joins its turn as the person's own message, read once the agent takes it in", () => {
   const events: AutoraEvent[] = [];
   const add = (seq: number, kind: string, payload: Record<string, any>) =>
     events.push({ seq, ts: 1_700_000_000 + seq, kind, actor: "user", span: null, payload, blob: null });
@@ -224,7 +224,12 @@ test("a message added while the agent works joins its turn as a note, not a new 
   add(2, Kind.Amend, { text: "and make it dark" });
   const d = derive(events);
   assert.equal(d.buckets.length, 1, "still one turn");
-  assert.ok(d.buckets[0].cells.some((c) => c.kind === "note" && /You added: and make it dark/.test(c.text)));
+  const said = () => d2.buckets[0].cells.find((c) => c.kind === "said");
+  let d2 = d;
+  assert.deepEqual(said(), { kind: "said", seq: 2, text: "and make it dark", read: false }, "delivered, not yet read");
+  add(3, Kind.AmendRead, { count: 1 });
+  d2 = derive(events);
+  assert.equal(said()?.kind === "said" && said()?.read, true, "read once the agent has taken it in");
 });
 
 test("an agent called from the chat joins it by name and, when done, says its own report there", () => {

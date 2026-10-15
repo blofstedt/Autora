@@ -9,25 +9,6 @@ import { Kind, type AutoraEvent } from "./types";
  */
 export type MarkPhase = "thinking" | "building";
 
-/**
- * How long a turn may be silent before the line says what the silence probably
- * means. A minute of it is worth mentioning; three is worth acting on: with the
- * per-call cap in place a tool that never comes back is given up on within a
- * minute or two, so a silence past that is something else -- a model stream
- * that has stopped, an agent whose report is not coming -- and the only honest
- * thing left to say is that it may be stuck.
- */
-export const STUCK_MS = 180_000;
-
-/**
- * The tail the quiet line carries once the silence has gone on too long, or
- * nothing while it is only worth mentioning. Worded as the person's next move
- * (Stop is the send button of the turn in flight), because by then it is one.
- */
-export function stuckNote(quietMs: number): string {
-  return quietMs >= STUCK_MS ? " \u2014 may be stuck; Stop ends it" : "";
-}
-
 type Reading = {
   /** What it is doing, in a few words. */
   text: string | null;

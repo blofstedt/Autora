@@ -8,6 +8,7 @@
  */
 import type { ReactNode } from "react";
 import { APP_NAME } from "../lib/officedesk";
+import { VisibleWork } from "./VisibleWork";
 import type { Surface, SurfaceKind } from "../lib/stage";
 import { IconChevron, IconCube, IconGame, IconImage, IconMaximize, IconMinimize, IconTerminal, IconFile, IconGlobe, IconList, IconMark, IconMonitor, IconMusic, IconVideo } from "./Icons";
 
@@ -79,6 +80,7 @@ export function Stage({
             </button>
           );
         })}
+        <VisibleWork className="stage-follow" compact />
         {surfaces.length > 1 && (
           <button
             type="button"

@@ -25,7 +25,8 @@ import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
 import { lastWorkedPane } from "./lib/followPane";
 import { setFollowing, useFollowing } from "./lib/follow";
-import { Thread, WorkFeed, hasWork } from "./components/Thread";
+import { Thread, WorkFeed, hasWork, type Outgoing } from "./components/Thread";
+import { VisibleWork } from "./components/VisibleWork";
 import { Dock } from "./components/Dock";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
 import { isSystemTab, type SystemTab } from "./lib/systemTabs";
@@ -553,17 +554,13 @@ export function App() {
      up without needing a new event to arrive. Nothing to show once the turn
      is over. */
   const [elapsed, setElapsed] = useState(0);
-  const [quiet, setQuiet] = useState(0);
   useEffect(() => {
-    if (!reading.since) { setElapsed(0); setQuiet(0); return; }
-    const tick = () => {
-      setElapsed(Date.now() - reading.since!);
-      setQuiet(reading.lastAt ? Date.now() - reading.lastAt : 0);
-    };
+    if (!reading.since) { setElapsed(0); return; }
+    const tick = () => setElapsed(Date.now() - reading.since!);
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [reading.since, reading.lastAt]);
+  }, [reading.since]);
 
   // A page that has been closed has no more frames coming, and the last one
   // to arrive would otherwise sit on the card claiming to be live forever.
@@ -633,6 +630,26 @@ export function App() {
     return () => { ro?.disconnect(); window.removeEventListener("resize", measure); };
   }, []);
 
+  /* Sent from this page and not yet in the log: drawn with one tick until the server's copy arrives (two ticks). */
+  const [outbox, setOutbox] = useState<Outgoing[]>([]);
+  const lastSeq = useRef(0);
+  lastSeq.current = events.length > 0 ? events[events.length - 1].seq : 0;
+  const sentAfter = useRef(new Map<number, number>());
+  useEffect(() => {
+    if (outbox.length === 0) return;
+    const arrived = (m: Outgoing) => events.some((e) => e.seq > (sentAfter.current.get(m.id) ?? 0)
+      && (e.kind === Kind.UserMessage || e.kind === Kind.Amend)
+      && (e.payload?.text === m.text || e.payload?.shown === m.text));
+    if (outbox.some(arrived)) setOutbox((list) => list.filter((m) => !arrived(m)));
+  }, [events, outbox]);
+  // A message that never shows up in the log (a command, an edited prompt) does not keep its tick for ever.
+  useEffect(() => {
+    if (outbox.length === 0) return;
+    const id = window.setTimeout(() => setOutbox((list) => list.slice(1)), 20_000);
+    return () => window.clearTimeout(id);
+  }, [outbox]);
+  useEffect(() => { setOutbox([]); }, [sessionId]);
+
   const send = useCallback(async (spoken?: string, interrupt?: boolean) => {
     const typed = (spoken ?? draft).trim();
     /* What they pointed at in a document's pages goes in front of what they say about it. */
@@ -656,6 +673,11 @@ export function App() {
     // Unlock audio inside this tap, so anything the reply says aloud can play
     // on a phone that only allows sound a gesture started.
     if (!speaking) prime();
+    const outgoing: Outgoing = { id: Date.now() + Math.random(), text };
+    if (text) {
+      sentAfter.current.set(outgoing.id, lastSeq.current);
+      setOutbox((list) => [...list, outgoing]);
+    }
     const res = await fetch(`/api/sessions/${sessionId}/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -674,6 +696,7 @@ export function App() {
     // Now that the box stays open while the connection comes back, a send
     // can fail: put what was typed back rather than losing it.
     if (!res?.ok) {
+      setOutbox((list) => list.filter((m) => m.id !== outgoing.id));
       if (spoken === undefined) {
         setDraft((now) => now || text);
         // The files are not lost either: the artifacts are still there, so
@@ -1982,7 +2005,6 @@ export function App() {
             busy={view.busy && !view.asking}
             doing={doing}
             elapsedMs={elapsed}
-            quietMs={quiet}
             steps={reading.steps}
             phase={reading.phase}
             sessionId={sessionId ?? ""}
@@ -2000,6 +2022,7 @@ export function App() {
             onOpenSettings={openModelSettings}
             placeholder={placeholder}
             dockedPlanKey={dockPlan ? cellKey(dockPlan) : ""}
+            outbox={outbox}
             // The thread stays mounted under the other pages: told which of them is
             // on screen, so a row that was answered elsewhere catches up.
             showing={page === "chat"}
@@ -2501,18 +2524,21 @@ export function App() {
                     </div>
                   );
                 })}
-                {sideWindows.length > 1 && (
-                  <button
-                    type="button"
-                    className={`pane-follow${followAgent ? " is-on" : ""}`}
-                    onClick={() => setFollow(!followAgent)}
-                    aria-pressed={followAgent}
-                    title={followAgent ? "Following the agent between tools: click to stop" : "Switch to whatever the agent is working on"}
-                  >
-                    <span className="watch-dot" aria-hidden="true" />
-                    Follow
-                  </button>
-                )}
+                <div className="pane-acts">
+                  <VisibleWork className="pane-follow" />
+                  {sideWindows.length > 1 && (
+                    <button
+                      type="button"
+                      className={`pane-follow${followAgent ? " is-on" : ""}`}
+                      onClick={() => setFollow(!followAgent)}
+                      aria-pressed={followAgent}
+                      title={followAgent ? "Following the agent between tools: click to stop" : "Switch to whatever the agent is working on"}
+                    >
+                      <span className="watch-dot" aria-hidden="true" />
+                      Follow
+                    </button>
+                  )}
+                </div>
               </div>
             )}
             {/* Every window that is open stays mounted, and only the chosen one is shown: switching tabs neither

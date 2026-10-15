@@ -466,6 +466,9 @@ interface BrowserHooks {
   onAction: (action: string, at: { x: number; y: number } | null, url: string) => void;
   /** Whose pointer to draw: the agent of the Organization working in this chat, or null for Autora itself. */
   who?: () => { name: string; color: string; rgb: string; sides: number } | null;
+  /** Visible work (Settings, and the switch beside Follow): false, the agent works at speed with no pointer drawn,
+      no words beside it and no typing rhythm. Missing means on. */
+  visible?: () => boolean;
   /** The typeable fields on the page moved, appeared or went. */
   onFields: () => void;
   /** The page wrote an error or a warning to its console. */
@@ -763,11 +766,18 @@ export const CURSOR_SCRIPT = `
     const root = host.attachShadow({ mode: "closed" });
     root.innerHTML =
       '<style>' +
-      '.cur{position:fixed;left:0;top:0;opacity:0;will-change:transform;transition:transform .07s linear,opacity .25s}' +
-      '.cur>svg{display:block;transform-origin:1px 1px;transition:transform .09s ease-out;' +
+      '.cur{position:fixed;left:0;top:0;will-change:transform;transition:transform .07s linear}' +
+      /* It pops into being where it starts work (out of a blur, a little past full size) and, once it has been idle a
+         moment or the person has the page, swells a touch and dissolves: never a cut. */
+      '.pop{position:relative;transform-origin:1px 1px;opacity:0}' +
+      '.cur.on .pop{animation:pin .4s cubic-bezier(.34,1.56,.64,1) both}' +
+      '.cur.out .pop{animation:pout .4s cubic-bezier(.32,.72,0,1) both}' +
+      '@keyframes pin{0%{opacity:0;transform:scale(.25);filter:blur(4px)}55%{opacity:1;filter:none}100%{opacity:1;transform:none;filter:none}}' +
+      '@keyframes pout{0%{opacity:1;transform:none}35%{opacity:1;transform:scale(1.18)}100%{opacity:0;transform:scale(.2);filter:blur(5px)}}' +
+      '.pop>svg{display:block;transform-origin:1px 1px;transition:transform .09s ease-out;' +
       'filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}' +
-      '.cur>svg path{fill:var(--a,#7c5cff)}' +
-      '.cur.down>svg{transform:scale(.82)}' +
+      '.pop>svg path{fill:var(--a,#7c5cff)}' +
+      '.cur.down .pop>svg{transform:scale(.82)}' +
       '.tag{position:absolute;left:14px;top:14px;display:inline-flex;align-items:center;gap:4px;padding:1px 8px 1px 6px;' +
       'border-radius:999px;background:var(--a,#7c5cff);color:#fff;font:600 10.5px/15px Inter,system-ui,sans-serif;' +
       'white-space:nowrap;transition:background .15s}' +
@@ -784,6 +794,8 @@ export const CURSOR_SCRIPT = `
       'border:2px solid var(--a,#7c5cff);opacity:0}' +
       '@keyframes tap{from{transform:scale(.4);opacity:1}to{transform:scale(1.8);opacity:0}}' +
       '.ring.go{animation:tap .42s ease-out forwards}' +
+      // The person's own tap: a quiet neutral ring, never the agent's colour.
+      '.ring.you{border-color:rgba(255,255,255,.9);box-shadow:0 0 0 1px rgba(0,0,0,.35)}' +
       '.mark{position:fixed;box-sizing:border-box;border:2px solid rgba(139,124,246,.95);border-radius:4px;' +
       'background:rgba(139,124,246,.14);box-shadow:0 0 0 4px rgba(139,124,246,.28);' +
       'animation:markin .22s ease-out,markout .4s ease-in 1.2s forwards}' +
@@ -794,9 +806,9 @@ export const CURSOR_SCRIPT = `
       '@keyframes markout{to{opacity:0}}' +
       '</style>' +
       '<div class="ring"></div>' +
-      '<div class="cur"><svg width="16" height="20" viewBox="0 0 16 20">' +
+      '<div class="cur"><span class="pop"><svg width="16" height="20" viewBox="0 0 16 20">' +
       '<path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" ' +
-      'stroke-width="1.2" stroke-linejoin="round"/></svg><span class="tag"><svg class="g" viewBox="0 0 10 10"><polygon points="5,0 10,10 0,10"/></svg><b>Autora</b><i></i></span><span class="thought"></span></div>';
+      'stroke-width="1.2" stroke-linejoin="round"/></svg><span class="tag"><svg class="g" viewBox="0 0 10 10"><polygon points="5,0 10,10 0,10"/></svg><b>Autora</b><i></i></span></span><span class="thought"></span></div>';
     const cur = root.querySelector(".cur");
     const tag = root.querySelector(".tag i");
     const nameEl = root.querySelector(".tag b");
@@ -809,25 +821,53 @@ export const CURSOR_SCRIPT = `
     document.body.appendChild(host);
     let ringAt = 0;
     let doing = null;
+    /* Whose hand is on the page. "agent": the input is Autora's, and its pointer shows it. "you": the person is using
+       the page (the server says so before it passes on their tap, key or scroll), so their input is never drawn as
+       Autora's pointer; it lapses on its own a moment after their last input. "off": the agent is working at speed
+       with nothing shown (Visible work is off), until it is told "agent" again. */
+    let hand = "agent";
+    let handUntil = 0;
+    const agents = () => hand === "agent" || (hand === "you" && Date.now() > handUntil);
+    let idle = null;
+    const show = () => {
+      cur.classList.remove("out");
+      cur.classList.add("on");
+      clearTimeout(idle);
+      idle = setTimeout(hide, 2600);
+    };
+    const hide = () => {
+      clearTimeout(idle);
+      if (!cur.classList.contains("on")) return;
+      cur.classList.remove("on");
+      cur.classList.add("out");
+      thought.classList.remove("on");
+    };
+    window.__autoraHand = (h) => {
+      hand = h === "you" || h === "off" ? h : "agent";
+      handUntil = hand === "you" ? Date.now() + 2500 : 0;
+      if (hand !== "agent") hide();
+    };
     const say = (cls, text, ms) => {
       tag.textContent = text;
       cur.classList.toggle("typing", cls === "typing");
       clearTimeout(doing);
       doing = setTimeout(() => { tag.textContent = ""; cur.classList.remove("typing"); }, ms);
     };
-    const ripple = (x, y) => {
+    const ripple = (x, y, you) => {
       // A press and the tap that announces it are one click: once.
       if (Date.now() - ringAt < 220) return;
       ringAt = Date.now();
       ring.style.left = x + "px";
       ring.style.top = y + "px";
       ring.classList.remove("go");
+      ring.classList.toggle("you", !!you);
       void ring.offsetWidth;
       ring.classList.add("go");
     };
     /* A few words about what it is doing, beside the pointer, for a moment: said by the server from the action it is
        about to take, so it is only ever what the pointer is really doing. */
     window.__autoraThought = (text) => {
+      if (!agents()) return;
       thought.textContent = String(text || "");
       thought.classList.toggle("low", atY < 40);
       thought.classList.toggle("flip", atX > innerWidth - 230);
@@ -848,9 +888,14 @@ export const CURSOR_SCRIPT = `
       }).join(" "));
     };
     window.__autoraCursor = (x, y, tap) => {
+      if (!agents()) {
+        // The person's tap shows as theirs: a neutral ring where they touched, and no Autora pointer.
+        if (tap && hand === "you") ripple(x, y, true);
+        return;
+      }
       atX = x; atY = y;
       cur.style.transform = "translate(" + x + "px," + y + "px)";
-      cur.style.opacity = "1";
+      show();
       if (tap) ripple(x, y);
     };
     // An outline round something that just changed, named, gone after a moment.
@@ -876,6 +921,7 @@ export const CURSOR_SCRIPT = `
     }, opt);
     window.addEventListener("mousedown", (e) => {
       if (!e.isTrusted) return;
+      if (!agents()) { if (hand === "you") ripple(e.clientX, e.clientY, true); return; }
       window.__autoraCursor(e.clientX, e.clientY, false);
       cur.classList.add("down");
       ripple(e.clientX, e.clientY);
@@ -884,10 +930,10 @@ export const CURSOR_SCRIPT = `
       if (e.isTrusted) cur.classList.remove("down");
     }, opt);
     window.addEventListener("keydown", (e) => {
-      if (e.isTrusted && !e.metaKey && !e.ctrlKey) say("typing", "", 900);
+      if (e.isTrusted && !e.metaKey && !e.ctrlKey && agents()) { show(); say("typing", "", 900); }
     }, opt);
     window.addEventListener("wheel", (e) => {
-      if (e.isTrusted) say("scroll", " · scrolling", 700);
+      if (e.isTrusted && agents()) { show(); say("scroll", " · scrolling", 700); }
     }, opt);
   };
   if (document.readyState === "loading") {
@@ -1984,11 +2030,29 @@ export class LiveBrowser {
   }
 
   private async think(action: string): Promise<void> {
+    // The person's own act ("you clicked ...") is theirs, and is never said beside Autora's pointer.
+    if (action.startsWith("you ") || !this.visible()) return;
     const words = thoughtFromAction(action);
     if (!words) return;
     await this.page?.evaluate(
-      `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount(); ${this.signature()} if (window.__autoraThought) window.__autoraThought(${JSON.stringify(words)}); })()`,
+      `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount(); ${this.signature()} if (window.__autoraHand) window.__autoraHand("agent"); if (window.__autoraThought) window.__autoraThought(${JSON.stringify(words)}); })()`,
     ).catch(() => undefined);
+  }
+
+  /** Whether the agent's work is shown as it is done (see LiveBrowserHooks.visible). */
+  private visible(): boolean {
+    return this.hooks.visible?.() ?? true;
+  }
+
+  /** When the page was last told the person's hand is on it. */
+  private youAt = 0;
+
+  /** The person is using the page: their input is drawn as theirs, not as Autora's pointer (see __autoraHand in
+      CURSOR_SCRIPT). Said at most once a second, since it lapses on its own. */
+  private async personHand(): Promise<void> {
+    if (Date.now() - this.youAt < 1000) return;
+    this.youAt = Date.now();
+    await this.page?.evaluate(`(() => { if (window.__autoraHand) window.__autoraHand("you"); })()`).catch(() => undefined);
   }
 
   // ------------------------------------------------------------- lifecycle --
@@ -3095,7 +3159,7 @@ export class LiveBrowser {
         await page.evaluate(SELECT_FIELD_SCRIPT(ref)).catch(() => undefined);
         // A person's typing rhythm for whoever is watching; nobody watching,
         // it is typed straight in.
-        if (this.hooks.watchers() > 0) await humanType(page, text, () => this.touched());
+        if (this.hooks.watchers() > 0 && this.visible()) await humanType(page, text, () => this.touched());
         else await page.keyboard.type(text);
         let held = await this.valueOf(ref);
         /* A field that swallowed the typing (a script that rebuilds it on
@@ -3512,7 +3576,7 @@ export class LiveBrowser {
       const cx = Math.max(0, Math.min(this.vp.width, Math.round(x)));
       const cy = Math.max(0, Math.min(this.vp.height, Math.round(y)));
       this.pointer = { x: cx, y: cy };
-      await this.showCursor(cx, cy, true);
+      await this.showCursor(cx, cy, true, true);
       // A native <select> opens a popup the browser draws outside the page,
       // and a screencast never paints it: the tap would look like a tap on
       // nothing. So a dropdown is not clicked at all -- its choices go back
@@ -3628,7 +3692,7 @@ export class LiveBrowser {
       const cy = Math.max(0, Math.min(this.vp.height, Math.round(y)));
       if (phase === "start") {
         this.pointer = { x: cx, y: cy };
-        await this.showCursor(cx, cy, true);
+        await this.showCursor(cx, cy, true, true);
         this.hooks.onAction(`you dragged from ${cx},${cy}`, { x: cx, y: cy }, this.currentUrl ?? "");
         await page.mouse.move(cx, cy);
         await page.mouse.down();
@@ -3636,7 +3700,7 @@ export class LiveBrowser {
       }
       if (phase === "move") {
         this.pointer = { x: cx, y: cy };
-        await this.showCursor(cx, cy, true);
+        await this.showCursor(cx, cy, true, true);
         await page.mouse.move(cx, cy);
         return { ok: true };
       }
@@ -3658,6 +3722,7 @@ export class LiveBrowser {
   keyboardType(text: string): Promise<void> {
     return this.run(async () => {
       const page = await this.ensure();
+      await this.personHand();
       await page.keyboard.type(text);
       this.noteTyping(text.length, null);
     });
@@ -3667,6 +3732,7 @@ export class LiveBrowser {
   keyboardPress(key: string): Promise<void> {
     return this.run(async () => {
       const page = await this.ensure();
+      await this.personHand();
       await page.keyboard.press(key);
       this.noteTyping(0, key);
     });
@@ -3697,9 +3763,10 @@ export class LiveBrowser {
   }
 
   /** Direct mouse wheel scrolling from user */
-  mouseWheel(deltaX: number, deltaY: number): Promise<void> {
+  mouseWheel(deltaX: number, deltaY: number, person = true): Promise<void> {
     return this.run(async () => {
       const page = await this.ensure();
+      if (person) await this.personHand();
       await page.mouse.wheel(deltaX, deltaY);
       await this.settle(150);
       await this.keyframe();
@@ -3775,7 +3842,8 @@ export class LiveBrowser {
     const page = this.page;
     if (!page) return;
     try {
-      if (!always && this.hooks.watchers() === 0) {
+      // Nobody watching, or Visible work off: straight there and click, at speed.
+      if (!always && (this.hooks.watchers() === 0 || !this.visible())) {
         await page.mouse.click(to.x, to.y);
         this.pointer = to;
         return;
@@ -4226,18 +4294,23 @@ export class LiveBrowser {
     });
   }
 
-  private async showCursor(x: number, y: number, tap: boolean) {
+  /** Draw the pointer at a place. `you`: the person's own tap, drawn as theirs (a neutral ring), never as Autora's
+      pointer. With Visible work off the agent's pointer is not drawn at all. */
+  private async showCursor(x: number, y: number, tap: boolean, you = false) {
     // The pointer is on screen: frames come at the faster rate so it is seen travelling, not arriving.
     this.touched();
+    const hand = you ? "you" : this.visible() ? "agent" : "off";
+    if (you) this.youAt = Date.now();
     await this.page
       ?.evaluate(
         `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount(); ${this.signature()}
+           if (window.__autoraHand) window.__autoraHand(${JSON.stringify(hand)});
            if (window.__autoraCursor) window.__autoraCursor(${x}, ${y}, ${tap ? "true" : "false"}); })()`,
       )
       .catch(() => undefined);
     // Long enough for the dot's own transition to play, so the pointer is seen
     // arriving rather than teleporting.
-    if (!tap) await this.page?.waitForTimeout?.(200).catch(() => undefined);
+    if (!tap && hand === "agent") await this.page?.waitForTimeout?.(200).catch(() => undefined);
   }
 
   /** The scan, folded into the shape the model is given. */

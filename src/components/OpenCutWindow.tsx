@@ -415,11 +415,14 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
         {cursor && (
           <div ref={layer} className="office-cursor-layer" aria-hidden="true" data-office-cursor={gone ? "gone" : "on"}>
             {ring && <span className="office-click" style={{ left: ring.x - 14, top: ring.y - 14 }} />}
-            <div className={`office-cursor${doing ? ` is-${doing}` : ""}`} style={{ transform: `translate(${cursor.x}px, ${cursor.y}px)`, opacity: gone ? 0 : 1 }}>
-              <svg width="16" height="20" viewBox="0 0 16 20" className="office-cursor-arrow" style={{ display: "block", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.35))" }}>
-                <path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
-              </svg>
-              <CursorTag />
+            {/* Pops in where it starts and dissolves when it is done (.cursor-pop in styles.css), never a cut. */}
+            <div className={`office-cursor${doing ? ` is-${doing}` : ""}${gone ? " is-gone" : ""}`} style={{ transform: `translate(${cursor.x}px, ${cursor.y}px)` }}>
+              <span className="cursor-pop">
+                <svg width="16" height="20" viewBox="0 0 16 20" className="office-cursor-arrow" style={{ display: "block", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.35))" }}>
+                  <path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
+                </svg>
+                <CursorTag />
+              </span>
             </div>
           </div>
         )}

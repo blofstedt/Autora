@@ -21,7 +21,7 @@ import type { ToolContext } from "../server/tools";
 process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-hang-qa-"));
 
 const { AGENT_RUN_CAP_MS, canRepeat, capFor, findTool, runTool } = await import("../server/tools");
-const { activity, readActivity, stuckNote, STUCK_MS } = await import("../src/lib/activity");
+const { activity, readActivity } = await import("../src/lib/activity");
 const { Kind } = await import("../src/lib/types");
 
 let passed = 0;
@@ -224,19 +224,6 @@ await test("the line says whose report the turn is waiting on", () => {
   /* Nothing running: no line at all, so no clock under it either. */
   assert.equal(activity([]), null);
   assert.equal(readActivity([]).lastAt, null);
-});
-
-await test("a quiet minute is mentioned, and three is worth acting on", () => {
-  /* The number the line compares is readActivity's lastAt; the threshold and
-     the tail are stuckNote's and Thread.tsx:498's. Checked here at the exact
-     boundaries (59999/60000, and the three-minute mark). */
-  const saysQuiet = (quietMs: number) => quietMs >= 60_000; // Thread.tsx:498
-  assert.equal(saysQuiet(59_999), false, "under a minute, the line says nothing about it");
-  assert.equal(saysQuiet(60_000), true, "at a minute it does");
-  assert.equal(stuckNote(60_000), "", "and it is not yet called stuck");
-  assert.equal(stuckNote(STUCK_MS - 1), "");
-  assert.match(stuckNote(STUCK_MS), /may be stuck; Stop ends it/);
-  assert.equal(STUCK_MS, 180_000, "three minutes");
 });
 
 console.log("\nthe cap table, reaching a call that was given none");

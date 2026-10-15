@@ -62,7 +62,7 @@ async function main() {
       await remarks.uncheck();
       for (let i = 0; i < 30 && (await app.api("GET", "/api/collaboration")).body.remarks; i++) await sleep(100);
       assert.equal((await app.api("GET", "/api/collaboration")).body.remarks, false);
-      const cursor = page.getByLabel(/Show the agent's cursor and typing/);
+      const cursor = page.getByLabel(/See the agent's cursor click and type/);
       assert.equal(await cursor.isChecked(), true);
       await cursor.uncheck();
       for (let i = 0; i < 30 && (await app.api("GET", "/api/agent-cursor")).body.on; i++) await sleep(100);

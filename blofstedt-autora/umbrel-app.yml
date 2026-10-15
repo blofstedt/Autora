@@ -186,5 +186,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Agents start faster. An agent Autora calls from the Organization page now gets straight to work instead of
-  planning first, which saved it two model rounds (one on the Planner model, if you have set one) before its first step.
+  Watching the agent work, polished. A message you send while it works now looks like any other message, and every
+  message shows ticks: one when sent, two when delivered, two in purple once the agent has read it. The working line
+  under the chat opens to show what the agent is thinking and each step it has taken, and its icon is Autora purple.
+  The yellow "nothing new for..." note is gone, and "Building" no longer breaks onto its own line on a phone. The
+  agent's cursor pops in when it starts and dissolves when it stops, and when you use a page yourself your taps show
+  as yours, not Autora's cursor. A new Visible switch (the eye left of Follow, and beside Follow on a phone) turns
+  this off so the agent works at speed with no cursor or typing to watch.
