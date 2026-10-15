@@ -156,7 +156,9 @@ non-creative work completely. Ask of every feature: is there creativity in this?
 - Visible work (the Visible switch, `state.agentCursor`) means the agent uses the app as a person does: with it on, every
   click, move, selection, keystroke and adjustment in a tool window goes through that window's own controls (real text
   selected and typed into, the real tool or menu opened, the real slider, the real OK), with its cursor travelling there at a
-  person's pace. Never edit the file on the server and play a cursor animation over the result. With it off (or nobody
+  person's pace. It is live, not a recording: the person watches the work as it is being done, and the tool call is not
+  finished until the window has done it. Never change the file first and show it afterwards (a cursor played over the
+  result, staged copies swapped in while a cursor pretends to type): that is a replay. With it off (or nobody
   watching) the agent may change files directly, at speed. A window that still replays is a gap, listed in
   `docs/VISIBLE-WORK.md`; a change to a window's agent path closes its gap or keeps that list true.
 - A chat also has a work mode, chosen in the message box: Agent (the default:

@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
-import { useAgentCursor } from "../lib/agentCursor";
 import { onPhotoHand, onPhotoState, photoStateNow, usePhotoState, type PhotoHand } from "../lib/photodesk";
 import { clearCursor, reportCursor } from "../lib/cursorPos";
 import { getCursorWho, whoColors } from "../lib/cursorWho";
-import { pointerGo, pointerRest } from "../lib/pointer";
 import { IconImage, IconMaximize, IconMinimize } from "./Icons";
 
 /**
@@ -24,6 +22,9 @@ import { IconImage, IconMaximize, IconMinimize } from "./Icons";
  *     the picture it ends with goes back to the server.
  */
 
+/** How long an edit waits for an editor that is still starting before the server does it instead. */
+const EDITOR_START_MS = 45_000;
+
 /** The cursor's colour as #rrggbb, which the editor reads: the chat's agent's own, else the theme's accent. */
 function cursorColor(): string {
   const own = whoColors()?.accent;
@@ -40,11 +41,9 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
   const known = useRef(-1);
   const [trouble, setTrouble] = useState<string | null>(null);
   const [full, setFull] = useFullscreen();
-  /* The agent's cursor: when it changed the picture, the pointer goes to the canvas and presses there, and the new
-     picture appears as it does -- so the change is seen being made rather than found. */
-  const [cursorOn] = useAgentCursor();
-  const cursorRef = useRef(cursorOn);
-  cursorRef.current = cursorOn;
+  /* No cursor is played over a picture the server changed: that would be a recording of work already done. With Visible
+     work on, the agent's edits are done here, live, by its hand in the editor (`byHand` below); what the server changes
+     (Visible work off, or a file opened) simply appears. */
 
   const post = useCallback((msg: Record<string, unknown>, transfer: Transferable[] = []) => {
     frame.current?.contentWindow?.postMessage(msg, window.location.origin, transfer);
@@ -58,21 +57,6 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
       if (!res.ok) throw new Error(`Autora answered ${res.status}`);
       const bytes = await res.arrayBuffer();
       known.current = Number(res.headers.get("X-Photo-Rev") ?? 0);
-      let tool = "";
-      try { tool = String((JSON.parse(res.headers.get("X-Photo-Cue") ?? "null") as { tool?: string } | null)?.tool ?? ""); } catch { /* no cue */ }
-      if (tool && cursorRef.current) {
-        /* Somewhere on the picture itself (a real element: the editor's canvas), not its dead centre every time. */
-        const canvas = frame.current?.contentDocument?.querySelector("canvas") ?? null;
-        const r = (canvas ?? frame.current)?.getBoundingClientRect();
-        const origin = canvas ? frame.current?.getBoundingClientRect() : null;
-        if (r && r.width > 40 && r.height > 40) {
-          const jitter = () => 0.5 + (Math.random() - 0.5) * 0.4;
-          const x = (origin ? origin.left : 0) + r.left + r.width * jitter();
-          const y = (origin ? origin.top : 0) + r.top + r.height * jitter();
-          await pointerGo({ x, y }, tool === "edit" || tool === "open");
-          pointerRest();
-        }
-      }
       post({ autoraPhoto: "load", name: "work.pcraft", bytes }, [bytes]);
       setTrouble(null);
     } catch (err) {
@@ -118,6 +102,16 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
       .then((r) => (r.ok ? (r.json() as Promise<{ won?: boolean }>) : { won: false }))
       .catch(() => ({ won: false }));
     if (!claim.won) return;
+    // The editor may still be starting (a cold start takes a while): the edit waits for it.
+    for (let waited = 0; !ready.current && waited < EDITOR_START_MS; waited += 250) await new Promise((r) => setTimeout(r, 250));
+    if (!ready.current) {
+      await fetch(`${q}/reply?id=${encodeURIComponent(hand.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", "X-Photo-Hand": encodeURIComponent(JSON.stringify({ results: [], error: "the editor did not start" })) },
+        body: new ArrayBuffer(0),
+      }).catch(() => undefined);
+      return;
+    }
     const answer = await new Promise<{ json: string; bytes: ArrayBuffer | null }>((resolve) => {
       handing.current.set(hand.id, (json, bytes) => resolve({ json, bytes }));
       post({ autoraPhoto: "hand", json: JSON.stringify({ id: hand.id, commands: hand.commands, who: { name: getCursorWho().name, color: cursorColor() } }) });
@@ -133,9 +127,9 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
     clearCursor();
   }, [post, sessionId]);
 
-  // The agent's edits to do by hand. Only once the editor is up: before that the server sends again, then does it itself.
+  /* The agent's edits to do by hand. The window takes one as soon as it is on the page, even while the editor is still
+     starting: someone has it open, so the edit waits for the editor and is done in front of them, never out of sight. */
   useEffect(() => onPhotoHand((hand) => {
-    if (!ready.current) return;
     void byHand(hand);
   }), [byHand]);
 

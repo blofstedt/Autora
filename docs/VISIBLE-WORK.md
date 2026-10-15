@@ -3,19 +3,23 @@
 The **Visible** switch (`VisibleWork.tsx`, Settings → Working together; one setting, `state.agentCursor`, mirrored by
 `lib/agentCursor.ts`) decides how the agent's work in a tool window happens.
 
-- **Visible on:** the agent works *through the window's own interface*, the way a person at the computer would. Every
+- **Visible on:** the agent works *through the window's own interface*, the way a person at the computer would, **live**:
+  the person watches it being done, not a recording of it afterwards. The tool call does not finish until the window has
+  done the work in front of them, so what the agent is told it did is what they saw happen. Every
   click, move, selection, keystroke and adjustment is made with the same controls the person has: it selects real text and
   types into it, opens the real menu or tool, drags the real slider, moves the real layer, clicks the real OK. Its cursor
   (its colour, its name) travels between them at a person's pace, so what the person watches *is* the work, not a picture of
   it.
 - **Visible off:** no cursor and no pacing. The agent may change the file directly on the server, as fast as it can, and the
   window shows the result.
-- **Nobody watching** (the window is not open in any tab, or its editor has not started) counts as off: there is nobody to
-  show the work to, so it is never held up waiting for a window.
+- **Nobody watching** (the window is not open in any tab) counts as off: there is nobody to show the work to, so it is
+  never held up waiting for a window. A window that is open but whose editor is still starting takes the work and does it
+  once the editor is up: someone is looking, so it is not done out of sight.
 
-What is **not** acceptable with Visible on: editing the file on the server and then playing a cursor animation over the
-window ("pointing at where the change landed", swapping in staged copies of the file while a cursor pretends to type). That
-is how most windows began; each is being moved over, one at a time, and this page is the list.
+What is **not** acceptable with Visible on: a recording. Editing the file on the server and then playing a cursor
+animation over the window ("pointing at where the change landed", swapping in staged copies of the file while a cursor
+pretends to type) shows work that is already finished. That is how most windows began; each is being moved over, one at a
+time, and this page is the list. A window that cannot do something live shows nothing for it rather than a replay.
 
 ## How a window does it
 
@@ -35,12 +39,12 @@ is how most windows began; each is being moved over, one at a time, and this pag
 | --- | --- | --- |
 | Browser, Creator, App preview | Real input events into the page (`server/human.ts`, `LiveBrowser`): moves, clicks, keys, wheel | Done |
 | Terminal | The command is drawn on the terminal's screen key by key (`termAgentBegin` emits it), but it runs in a process of its own, not in the shell the person sees | To do: type it into the shell itself |
-| Photo | `photo_edit` is done in the editor by hand: All tools → search → the tile → the command's dialog (values set in it, then OK), through the editor's own input (`photo/overlay/autora.rs`, `hand_*`; `byHand` in `server/photodesk.ts`) | Done for menu commands. Gaps: commands with no tile run directly (`how: "direct"`); dialog values are set in the dialog's fields with the cursor over the dialog, not by dragging each field's own widget; `photo_open` still loads the file into the window |
+| Photo | Live: `photo_edit` is done in the editor by hand while the call waits (no cursor is played over a picture the server changed): All tools → search → the tile → the command's dialog (values set in it, then OK), through the editor's own input (`photo/overlay/autora.rs`, `hand_*`; `byHand` in `server/photodesk.ts`) | Done for menu commands. Gaps: commands with no tile run directly (`how: "direct"`); dialog values are set in the dialog's fields with the cursor over the dialog, not by dragging each field's own widget; `photo_open` still loads the file into the window |
 | Video | Commands run in the editor's timeline API (`toFrame`); the cursor goes to the located element first; text is typed in steps | Partial: the edits are API calls, not clicks on the editor's controls |
-| PDF | `pdf_edit` changes the file on the server; the window plays cues (the pointer goes to where it changed) | To do |
-| Pages, Sheets, Slides | The file is changed on the server; the window is handed in-between copies while `OfficeCursor` types over it (`officestage.ts`) | To do |
-| Music | The song is changed; the clips that changed flash and the pointer points at them | To do |
-| Games | The game is changed; `GameCursor` points at what changed, then the editor reloads | To do |
+| PDF | Recording: `pdf_edit` changes the file on the server; then the window plays cues (the pointer goes to where it changed) | To do |
+| Pages, Sheets, Slides | Recording: the file is changed on the server; then the window is handed in-between copies while `OfficeCursor` types over it (`officestage.ts`) | To do |
+| Music | Recording: the song is changed; then the clips that changed flash and the pointer points at them | To do |
+| Games | Recording: the game is changed; then `GameCursor` points at what changed, and the editor reloads | To do |
 | 3D | The frame's pointer goes to the tool's button, then the model is applied | Partial: the button is pointed at, not pressed |
 | Code (file cards in the thread) | Code written to disk; the card types it out | A presentation of the file, not an editor: no change planned |
 

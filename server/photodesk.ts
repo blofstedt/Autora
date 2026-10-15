@@ -95,8 +95,6 @@ interface Entry {
   by: "agent" | "person";
   size?: { w: number; h: number };
   layers?: number;
-  /** What the agent is doing, for the window to show: the tool, and a number that goes up per call. */
-  cue: { seq: number; tool: string } | null;
   /** The revision the window made by the agent's hand (it has it), or -1. */
   hand: number;
   /** Calls to the command line for this chat, one at a time. */
@@ -119,7 +117,7 @@ function entryFor(session: string): Entry {
         // no state yet
       }
     }
-    entry = { open: Boolean(saved.open), since: saved.since ?? 0, rev: 0, by: "agent", size: saved.size, layers: saved.layers, cue: null, hand: -1, line: Promise.resolve() };
+    entry = { open: Boolean(saved.open), since: saved.since ?? 0, rev: 0, by: "agent", size: saved.size, layers: saved.layers, hand: -1, line: Promise.resolve() };
     entries.set(session, entry);
   }
   return entry;
@@ -391,7 +389,6 @@ export async function runPhotoTool(session: string, tool: string, args: Record<s
   try {
     return await inLine(session, async () => {
       const mine = entryFor(session);
-      mine.cue = { seq: (mine.cue?.seq ?? 0) + 1, tool: tool.slice(6) };
       const none = "There is no picture yet. Open one with photo_open (a file, or `new` for a blank canvas).";
 
       switch (tool) {
@@ -641,7 +638,6 @@ export function photoRoutes(app: Express, opts: {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("X-Photo-Rev", String(e.rev));
-    if (e.by === "agent" && e.cue) res.setHeader("X-Photo-Cue", JSON.stringify(e.cue));
     res.send(fs.readFileSync(file));
   });
 

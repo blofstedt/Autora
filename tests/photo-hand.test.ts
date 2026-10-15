@@ -123,6 +123,21 @@ await test("a command that failed in the window stops the edit and says which", 
   assert.match(out.summary, /no pixels selected/);
 });
 
+await test("a window whose editor never started gives the edit back, and the server does it", async () => {
+  windowAnswers([], "");
+  onPush = ((answer) => (m: Record<string, unknown>) => {
+    if (m.type !== "photodesk.hand") return;
+    void (async () => {
+      const claim = (await (await fetch(`${base}/hand/claim?id=${m.id}`, { method: "POST" })).json()) as { won: boolean };
+      if (claim.won) await fetch(`${base}/hand/reply?id=${m.id}`, { method: "POST", headers: { "X-Photo-Hand": encodeURIComponent(JSON.stringify(answer)) }, body: "" });
+    })();
+  })({ results: [], error: "the editor did not start" });
+  const out = await edit();
+  assert.equal(out.ok, true, out.summary);
+  assert.doesNotMatch(out.summary, /by hand/);
+  assert.equal(photo.photoState(session).hand, undefined);
+});
+
 await test("with nobody to claim it, the edit runs on the server at speed", async () => {
   onPush = () => undefined;
   pushes.length = 0;
