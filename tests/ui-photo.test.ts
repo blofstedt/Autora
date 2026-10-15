@@ -3,8 +3,10 @@
  * scripts/build-photo.mjs), served by Autora and working on the picture the agent's tools make.
  *
  * What this checks is the wire, end to end: the agent makes a canvas and the window opens beside the chat with the
- * picture in it; a stroke painted by hand is saved on the server by itself and marked as the person's; the agent's next
- * edit reaches the open editor without reloading the frame; and what the person saves in the editor comes out as a download.
+ * picture in it; a stroke painted by hand is saved on the server by itself and marked as the person's; with Visible work
+ * on, the agent's next edit is done in the open editor by its hand (its cursor through All tools and the command's dialog,
+ * with the editor's own input), without reloading the frame; with Visible work off it is done on the server and loaded;
+ * and what the person saves in the editor comes out as a download.
  *
  * Needs PhotoCraft built (node scripts/build-photo.mjs); skips without it or without a browser.
  *
@@ -68,6 +70,15 @@ async function main() {
     page.on("pageerror", (e) => errors.push(String(e)));
     let editorLoads = 0;
     page.on("framenavigated", (f) => { if (f.url().includes("/autora-photo/")) editorLoads += 1; });
+    // What the editor tells the window: its hand's cursor moving, and its answer.
+    await page.addInitScript(() => {
+      (window as unknown as { __photoSaid: string[] }).__photoSaid = [];
+      window.addEventListener("message", (e) => {
+        const kind = (e.data as { autoraPhoto?: unknown } | null)?.autoraPhoto;
+        if (typeof kind === "string") (window as unknown as { __photoSaid: string[] }).__photoSaid.push(kind);
+      });
+    });
+    const said = () => page.evaluate(() => (window as unknown as { __photoSaid: string[] }).__photoSaid.slice());
     await page.goto(`${app.base}/?session=${s}`);
     const pane = page.locator(".app-pane[data-pane=photo]");
 
@@ -93,21 +104,59 @@ async function main() {
       }, 20_000);
     });
 
-    await test("the agent's next edit lands in the open editor, without a reload", async () => {
+    await test("with Visible work on, the agent's edit is done in the open editor by its hand, without a reload", async () => {
       const before = editorLoads;
-      app.script.push({ tools: [{ name: "photo_edit", args: { commands: [{ id: "layer.new.layer", params: { name: "Glow" } }] } }] });
+      const cursorsBefore = (await said()).filter((k) => k === "cursor").length;
+      app.script.push({ tools: [{ name: "photo_edit", args: { commands: [{ id: "filter.blur.gaussianBlur", params: { radius: 4 } }, { id: "layer.new.layer", params: { name: "Glow" } }] } }] });
       app.script.push({ tools: [{ name: "photo_info" }] });
-      app.script.push({ text: "Added a layer." });
-      await app.turn(s, "add a layer for a glow");
+      app.script.push({ text: "Softened it and added a layer." });
+      // Halfway through, the editor shows the command's dialog the hand opened: a picture of it, for whoever reads the run.
+      const shots = process.env.AUTORA_PHOTO_SHOT;
+      const shot = (async () => {
+        for (let i = 0; i < 12 && shots; i++) {
+          await sleep(1000);
+          await page.screenshot({ path: shots.replace(/\.png$/, `-${i}.png`) }).catch(() => undefined);
+        }
+      })();
+      const started = Date.now();
+      // Two commands at a person's pace, a filter on a software-drawn canvas among them: longer than a turn usually takes.
+      await app.turn(s, "add a layer for a glow", 90_000);
+      await shot;
       const st = (await app.api("GET", `/api/photo/${s}`)).body;
       assert.equal(st.by, "agent");
       assert.equal(st.layers, 2);
-      assert.match(JSON.stringify(app.seen[app.seen.length - 1].messages), /Glow/);
+      assert.equal(st.hand, st.rev, "the window made this revision itself");
+      const messages = JSON.stringify(app.seen[app.seen.length - 1].messages.filter((m: { role: string }) => m.role === "tool"));
+      assert.match(messages, /Applied 2 commands by hand in the window/);
+      assert.doesNotMatch(messages, /as the editor's command/, "both were done through All tools and their dialogs");
+      assert.match(messages, /Glow/);
+      // A person's pace: opening All tools, typing the name, the tile, the dialog and OK take seconds, not a blink.
+      assert.ok(Date.now() - started > 2500, `done in ${Date.now() - started} ms`);
+      const now = await said();
+      assert.ok(now.filter((k) => k === "cursor").length - cursorsBefore > 10, "the hand's cursor moved in the editor");
+      assert.ok(now.includes("handed"));
       await sleep(2500);
       assert.equal(editorLoads, before, "the frame was not reloaded");
       // And the editor did not send it straight back as if it were the person's work.
       await sleep(1500);
       assert.equal((await app.api("GET", `/api/photo/${s}`)).body.by, "agent");
+    });
+
+    await test("with Visible work off, the edit is done on the server at speed and the editor loads it", async () => {
+      await app.api("PATCH", "/api/agent-cursor", { on: false });
+      const handed = (await said()).filter((k) => k === "handed").length;
+      app.script.push({ tools: [{ name: "photo_edit", args: { commands: [{ id: "layer.new.layer", params: { name: "Shade" } }] } }] });
+      app.script.push({ text: "Added another." });
+      await app.turn(s, "and one for shade");
+      const st = (await app.api("GET", `/api/photo/${s}`)).body;
+      assert.equal(st.layers, 3);
+      assert.equal(st.hand, undefined);
+      // What the tool answered (the system prompt's manual talks about the hand too).
+      const answers = JSON.stringify(app.seen[app.seen.length - 1].messages.filter((m: { role: string }) => m.role === "tool"));
+      assert.match(answers, /Applied 1 command/);
+      assert.doesNotMatch(answers, /by hand/);
+      assert.equal((await said()).filter((k) => k === "handed").length, handed, "the editor was not handed it");
+      await app.api("PATCH", "/api/agent-cursor", { on: true });
     });
 
     await test("a file saved in the editor is offered as a download", async () => {
