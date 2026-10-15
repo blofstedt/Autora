@@ -11,7 +11,7 @@ services:
     # Built by viberific/Flix's own workflow from the repo's package.json
     # version. Bump this tag (and `version` above) only once that tag exists
     # in the registry, or an update will fail with "manifest unknown".
-    image: ghcr.io/viberific/flix:0.1.0
+    image: ghcr.io/viberific/flix:0.1.1
     restart: unless-stopped
     volumes:
       # The .env with BTN_API_KEY/QB_PASS, the sqlite database and

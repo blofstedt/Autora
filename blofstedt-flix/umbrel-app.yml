@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.1.0"
+version: "0.1.1"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -44,5 +44,8 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  First release: BTN-only catalog, on-demand sequential streaming through the
-  bundled qBittorrent, HLS remux/transcode, installable PWA.
+  0.1.1 fixes the container not coming back after a restart or a killed
+  container: qBittorrent's WebUI settings were written to a config path it
+  does not read, and stale lock/ipc-socket files made the next start exit
+  after about a second. qBittorrent now starts reliably and Flix reconnects
+  to it on its own.
