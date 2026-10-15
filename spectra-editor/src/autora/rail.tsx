@@ -110,9 +110,10 @@ function savePins(pins: string[]): void {
 /* ------------------------------------------------------------------- bar */
 
 // A round button on the bar, and what is between buttons; the bar's own padding.
-const BTN = PHONE ? 40 : 44;
-const GAP = PHONE ? 2 : 4;
-const PAD = 8;
+// The sizes every app's bar uses (docs/TOOL-RAIL.md, "Sizes").
+const BTN = PHONE ? 40 : 34;
+const GAP = PHONE ? 2 : 3;
+const PAD = PHONE ? 8 : 5;
 
 /** How many tools fit in the space the window has, grid button and its divider not counted. The bar never scrolls: what does not fit is in the grid. */
 function slotsNow(): number {
@@ -150,13 +151,13 @@ function Bar({ open, slots, ids, onGrid, onPick }: { open: Open; slots: number; 
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => onPick(t)}
           >
-            <Icon name={t.icon} size={PHONE ? 21 : 22} />
+            <Icon name={t.icon} size={PHONE ? 21 : 18} />
           </button>
         );
       })}
       <span className="autora-rail-div" />
       <button type="button" className="autora-rail-btn is-grid" data-phone="grid" data-tip="All tools" aria-label="All tools" aria-haspopup="dialog" onPointerDown={(e) => e.preventDefault()} onClick={onGrid}>
-        <Icon name="grid" size={PHONE ? 21 : 22} />
+        <Icon name="grid" size={PHONE ? 21 : 17} />
       </button>
     </nav>
   );

@@ -138,7 +138,8 @@ const VIDEO = [
     "Effects, Transitions, Captions, Adjustment, Settings), playback, the clip edits (cut left and right, copy, paste, extract audio, " +
     "mute, show or hide, select all), the timeline (snapping, ripple, bookmark, zoom) and history; a desktop can pin any of them. Each " +
     "is a button you can click with video_ui by its name. The keyboard shortcuts work on a desktop as ever. Point the person at a tool by " +
-    "its name and say \"open All tools\" if it is not on their bar.",
+    "its name and say \"open All tools\" if it is not on their bar. The project's name is in the window's bar; above the preview is only " +
+    "the projects menu (New project, Rename, Delete project, switching projects) and Export.",
 ].join("\n");
 
 const STUDIO = [

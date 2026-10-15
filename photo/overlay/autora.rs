@@ -444,7 +444,7 @@ fn pill_frame(k: f32) -> egui::Frame {
         .fill(egui::Color32::from_rgba_unmultiplied(21, 24, 36, 235))
         .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(32)))
         .corner_radius(32.0 * k)
-        .inner_margin(egui::Margin::same((6.0 * k) as i8))
+        .inner_margin(egui::Margin::same((5.0 * k) as i8))
 }
 
 /// A flat text button for sheets and the grid.
@@ -504,9 +504,10 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
     let panel = egui::Color32::from_rgb(14, 16, 22);
     let edge = egui::Stroke::new(1.0, egui::Color32::from_white_alpha(28));
     let k = per_css_px(ctx);
-    let size = if phone { 40.0 * k } else { 44.0 * k };
-    let gap = if phone { 2.0 * k } else { 4.0 * k };
-    let pad = 8.0 * k;
+    // The sizes every Autora app's bar uses (docs/TOOL-RAIL.md, "Sizes"): 34px buttons on a desktop, 5px of padding.
+    let size = if phone { 40.0 * k } else { 34.0 * k };
+    let gap = if phone { 2.0 * k } else { 3.0 * k };
+    let pad = if phone { 8.0 * k } else { 5.0 * k };
 
     // What the bar shows: a phone's defaults, a desktop's pins; as many as the window has room for.
     let all = catalogue(app);
@@ -568,7 +569,7 @@ fn rail_bar(app: &PhotocraftApp, ctx: &egui::Context) {
             });
         });
     } else {
-        egui::Area::new(egui::Id::new("autora-rail")).order(egui::Order::Foreground).anchor(egui::Align2::RIGHT_CENTER, egui::vec2(-8.0 * k, 0.0)).show(ctx, |ui| {
+        egui::Area::new(egui::Id::new("autora-rail")).order(egui::Order::Foreground).anchor(egui::Align2::RIGHT_CENTER, egui::vec2(-10.0 * k, 0.0)).show(ctx, |ui| {
             pill_frame(k).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = gap;
                 ui.vertical_centered(|ui| draw_buttons(ui, &mut asks));

@@ -1,0 +1,18 @@
+diff --git a/apps/sheets/src/renderer/univer-sync.ts b/apps/sheets/src/renderer/univer-sync.ts
+index b5ed878..0300be5 100644
+--- a/apps/sheets/src/renderer/univer-sync.ts
++++ b/apps/sheets/src/renderer/univer-sync.ts
+@@ -3085,13 +3085,6 @@ async function loadRange(
+         }, 250)
+         state.retryTimers.set(sheetId, timer)
+       }
+-    } else if (isActiveSheet(runtime, sheetId)) {
+-      setMessage(
+-        t('appStreamingRows', {
+-          name: state.file.name,
+-          rows: sheet?.rowCount.toLocaleString() ?? '?',
+-        }),
+-      )
+     }
+   } catch (error: unknown) {
+     if (lazyWorkbookRef.current === state && isActiveSheet(runtime, sheetId)) {

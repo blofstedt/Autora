@@ -93,6 +93,8 @@ await test("the overview every turn explains the layout and points at the manual
   assert.ok(overview.includes("x on its tab") && overview.includes("Follow") && overview.includes("tool_manual"));
   // The switch beside Follow, and what turning it off changes for the agent.
   assert.ok(overview.includes("Visible work on") && overview.includes("Visible work off you work at speed"));
+  // Video: the name is in the window's bar, the editor's own row is the projects menu and Export.
+  assert.match(manualText("video"), /only the projects menu \(New project, Rename/);
   const briefing = await capabilityBriefing();
   assert.ok(briefing.includes("How Autora's windows work"));
   assert.ok(!briefing.includes("a real Chromium running on this machine"), "the manuals are not in the briefing");

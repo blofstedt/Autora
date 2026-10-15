@@ -111,7 +111,10 @@ interface Tool {
 }
 
 const PINS = 'autora-3d-rail-pins';
-const BTN = { phone: 40, desktop: 44 };
+// The sizes every Autora app's bar uses (Autora's docs/TOOL-RAIL.md, "Sizes"): 34px buttons and 18px icons on a desktop.
+const BTN = { phone: 40, desktop: 34 };
+const GAP = { phone: 4, desktop: 3 };
+const PAD = { phone: 8, desktop: 5 };
 /** The keyboard shortcuts the app has always had (App.tsx's key handler); a desktop's tooltips say them. */
 const KEYS: Record<string, string> = { draw: 'D', move: 'M', group: 'G', repeat: 'R', join: 'J', subtract: 'S', isolate: 'I', hide: 'H', delete: 'Del' };
 const nameOf = (t: { id: string; label: string; disabled?: boolean; hint?: string }) => (t.disabled && t.hint ? `${t.label} · ${t.hint}` : KEYS[t.id] ? `${t.label} (${KEYS[t.id]})` : t.label);
@@ -192,7 +195,7 @@ export default function Rail(props: RailProps) {
   useLayoutEffect(() => {
     const measure = () => {
       const space = phone ? window.innerWidth : window.innerHeight - 48 - 24;
-      setRoom(Math.max(1, Math.floor((space - 16 - 12 + 4) / (BTN[kind] + 4)) - 1));
+      setRoom(Math.max(1, Math.floor((space - 2 * PAD[kind] - 12 + GAP[kind]) / (BTN[kind] + GAP[kind])) - 1));
     };
     measure();
     window.addEventListener('resize', measure);
@@ -283,7 +286,7 @@ export default function Rail(props: RailProps) {
         <section
           aria-label={`${panelTool.label} options`}
           style={{ ['--tc' as string]: panelTool.color }}
-          className={`z-40 max-h-[min(60dvh,34rem)] overflow-y-auto rounded-[1.5rem] bg-slate-800 border shadow-2xl shadow-black/60 ${phone ? 'fixed left-1/2 -translate-x-1/2 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)]' : 'fixed right-[4.75rem] top-1/2 -translate-y-1/2'}`}
+          className={`z-40 max-h-[min(60dvh,34rem)] overflow-y-auto rounded-[1.5rem] bg-slate-800 border shadow-2xl shadow-black/60 ${phone ? 'fixed left-1/2 -translate-x-1/2 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)]' : 'fixed right-[4rem] top-1/2 -translate-y-1/2'}`}
         >
           <div style={{ borderColor: panelTool.color }} className="sticky top-0 z-10 flex items-center gap-2 px-4 pt-3 pb-1 bg-slate-800 border-t-0">
             <span style={{ color: panelTool.color }} className="flex items-center gap-2 text-[13px] font-medium"><panelTool.icon size={16} strokeWidth={1.75} />{panelTool.label}</span>
@@ -300,7 +303,7 @@ export default function Rail(props: RailProps) {
         className={
           phone
             ? 'shrink-0 flex items-center justify-center gap-0.5 px-2 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] bg-slate-900 border-t border-white/8 z-40'
-            : 'fixed right-2.5 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-1 p-2 rounded-full bg-slate-800/90 backdrop-blur border border-white/10 shadow-2xl shadow-black/50 max-h-[calc(100%-1.5rem)] overflow-hidden'
+            : 'fixed right-2.5 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-[3px] p-[5px] rounded-full bg-slate-800/90 backdrop-blur border border-white/10 shadow-2xl shadow-black/50 max-h-[calc(100%-1.5rem)] overflow-hidden'
         }
       >
         {ids.slice(0, room).map((id) => {
@@ -316,15 +319,15 @@ export default function Rail(props: RailProps) {
               disabled={t.disabled}
               onClick={() => press(t)}
               style={{ ['--tc' as string]: t.color, background: t.on ? t.color : `color-mix(in srgb, ${t.color} 16%, transparent)`, color: t.on ? '#fff' : t.color, boxShadow: t.on ? `0 6px 18px color-mix(in srgb, ${t.color} 45%, transparent)` : undefined }}
-              className={`shrink-0 rounded-full flex items-center justify-center transition-colors disabled:opacity-35 disabled:pointer-events-none ${phone ? 'h-10 w-10' : 'h-11 w-11'}`}
+              className={`shrink-0 rounded-full flex items-center justify-center transition-colors disabled:opacity-35 disabled:pointer-events-none ${phone ? 'h-10 w-10' : 'h-[34px] w-[34px]'}`}
             >
-              <Icon size={20} strokeWidth={1.75} />
+              <Icon size={phone ? 20 : 18} strokeWidth={1.75} />
             </button>
           );
         })}
-        <i aria-hidden="true" className={`shrink-0 bg-white/12 ${phone ? 'w-px h-6 mx-1' : 'w-6 h-px my-0.5'}`} />
-        <button type="button" aria-label="All tools" aria-haspopup="dialog" title="All tools" onClick={() => setGrid(true)} className={`shrink-0 rounded-full flex items-center justify-center bg-white/8 text-slate-300 hover:text-white ${phone ? 'h-10 w-10' : 'h-11 w-11'}`}>
-          <LayoutGrid size={18} />
+        <i aria-hidden="true" className={`shrink-0 bg-white/12 ${phone ? 'w-px h-6 mx-1' : 'w-5 h-px my-0.5'}`} />
+        <button type="button" aria-label="All tools" aria-haspopup="dialog" title="All tools" onClick={() => setGrid(true)} className={`shrink-0 rounded-full flex items-center justify-center bg-white/8 text-slate-300 hover:text-white ${phone ? 'h-10 w-10' : 'h-[34px] w-[34px]'}`}>
+          <LayoutGrid size={phone ? 18 : 17} />
         </button>
       </nav>
 

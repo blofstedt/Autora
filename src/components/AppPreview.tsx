@@ -1,7 +1,6 @@
 import { DevtoolsPanel } from "./DevtoolsPanel";
 import { TemplatesPanel, VersionsPanel } from "./AppVersions";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { useAgentCursor } from "../lib/agentCursor";
 import { useCollab } from "../lib/collab";
 import { TakeControl } from "./TakeControl";
 import { previewApi } from "../lib/appApi";
@@ -62,7 +61,6 @@ function isLight(info: ElementInfo | LightInfo): info is LightInfo {
 export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boolean }) {
   const state = usePreviewState();
   const frame = usePreviewFrame();
-  const [cursorOn, setCursorOn] = useAgentCursor();
   const [full, setFull] = useFullscreen();
   const isFull = phone && full;
   const collab = useCollab();
@@ -624,15 +622,7 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
           Templates
         </button>}
         <TakeControl sessionId={sessionId} surface="app" mine={mine} phone={phone} thing="window" variant="app" />
-        {!phone && <button
-          type="button"
-          className={`app-cursor${cursorOn ? " on" : ""}`}
-          aria-pressed={cursorOn}
-          onClick={() => setCursorOn(!cursorOn)}
-          title={cursorOn ? "Stop showing where the agent works" : "Show where the agent works, and its cursor, as it builds"}
-        >
-          Agent cursor {cursorOn ? "on" : "off"}
-        </button>}
+        {/* Whether the agent's cursor shows is Visible work, the eye beside Follow: not a switch of this window's own. */}
         {phone && (
           <button type="button" className="app-icon" onClick={() => setFull(!full)} title={full ? "Back to the conversation" : "Full screen"} aria-label={full ? "Back to the conversation" : "Full screen"} aria-pressed={full}>
             {full ? <IconMinimize size={15} /> : <IconMaximize size={15} />}

@@ -16,7 +16,7 @@ import { resetTerm, setTermState, useTermState } from "./lib/termdesk";
 import { emitStudioCommand, resetStudio, setStudioState, useStudioState } from "./lib/studio";
 import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
-import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailMini, setRailWidth, usePanes, wideScreen } from "./lib/panes";
+import { CHAT, RAIL, setChatWidth, setRailMini, setRailWidth, usePanes } from "./lib/panes";
 import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
 import { emitOfficePush, resetOffice, setOfficeState, useOfficeState, type OfficeKind } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
@@ -108,7 +108,7 @@ import {
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconArrowUp, IconChevron, IconFile, IconMask, IconMenu, IconNotebook, IconStop,
+  IconArrow, IconArrowUp, IconChevron, IconFile, IconMask, IconMenu, IconNotebook, IconPlus, IconStop,
   IconWrench,
   IconX,
 } from "./components/Icons";
@@ -1772,7 +1772,7 @@ export function App() {
 
   return (
     <div
-      className={`app${panes.collapsed ? " rail-collapsed" : ""}${panes.mini ? " rail-mini" : ""}`}
+      className={`app${panes.mini ? " rail-mini" : ""}${panes.mini || railNarrow ? " rail-icons" : ""}`}
       style={{
         ...(panes.rail ? { "--rail-w": `${panes.rail}px` } : {}),
         ...(panes.chat ? { "--chat-w": `${panes.chat}px` } : {}),
@@ -1814,7 +1814,6 @@ export function App() {
             onStartTask={(text, title) => { void startTask(text, title); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
-            onFold={() => setRailCollapsed(true)}
             mini={panes.mini || railNarrow}
             onMini={foldRail}
           />
@@ -1844,19 +1843,32 @@ export function App() {
         <InstallApp />
 
         <header className="top">
+          {/* The menu button and the presence: a phone's and a narrow window's, where the menu is a drawer. A desktop
+              always shows the menu in the margin, whole or as icons, so it has neither. */}
           <button
             className="btn icon ghost menu-btn"
-            onClick={() => { if (panes.collapsed && wideScreen()) setRailCollapsed(false); else setDrawerOpen(true); }}
+            onClick={() => setDrawerOpen(true)}
             aria-label="Open the menu"
             title="Menu"
           >
             <IconMenu size={18} />
           </button>
-
-          {/* The presence, where the sidebar is folded away. */}
           <span className="top-presence">
             <AutoraMark size={24} state={mood} idle attention={attention} pulse={welcome} />
           </span>
+
+          {/* The menu folded to icons: the way back to the whole menu and New session, in a row just right of the
+              strip and left of the chat's name, rather than stacked over the icons. A desktop only (styles.css). */}
+          {(panes.mini || railNarrow) && (
+            <span className="top-rail-acts">
+              <button className="btn icon ghost" onClick={() => foldRail(false)} title="Show the whole menu" aria-label="Show the whole menu">
+                <IconChevron size={13} className="rail-chev-right" />
+              </button>
+              <button className="btn icon ghost" onClick={() => { void newSession(); navigate("chat"); }} title="New session" aria-label="New session">
+                <IconPlus size={15} />
+              </button>
+            </span>
+          )}
 
           {page !== "chat" ? (
             <h1 className="top-title">{pageLabel(page)}</h1>

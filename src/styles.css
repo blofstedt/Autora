@@ -4274,7 +4274,7 @@ html[data-font="mono"] body { font-size: var(--fs-base); }
    ============================================================================ */
 .menu-btn { flex: 0 0 auto; margin-left: -6px; }
 .top-title { margin: 0; font-size: var(--fs-lg); font-weight: 650; letter-spacing: -0.01em; }
-@media (min-width: 1180px) { .app:not(.rail-collapsed) .menu-btn { display: none; } }
+@media (min-width: 1180px) { .menu-btn { display: none; } }
 
 .rail-top { gap: 9px; }
 .rail-icon-btn {
@@ -5489,7 +5489,13 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* The presence in the header, only where the sidebar is folded away. */
 .top-presence { display: inline-grid; place-items: center; flex: 0 0 auto; margin: 0 -6px 0 -4px; }
-@media (min-width: 1180px) { .app:not(.rail-collapsed) .top-presence { display: none; } }
+@media (min-width: 1180px) { .top-presence { display: none; } }
+/* The menu folded to icons: its way back and New session, at the left of the header beside the chat's name. */
+.top-rail-acts { display: none; }
+@media (min-width: 1180px) {
+  .app.rail-icons .top-rail-acts { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; margin-left: -10px; }
+  .top-rail-acts .btn.icon { width: 30px; height: 30px; }
+}
 
 /* The room's light. Two soft blooms of the theme's own colours, drifting very
    slowly; the mood only changes their colour and strength. */
@@ -6859,9 +6865,6 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .diff-writing, .diff-caret::before { animation: none; } }
 
 /* The switch for the agent's cursor in the app window's bar. */
-.app-cursor { font: 600 11px/1 var(--sans, system-ui); padding: 5px 9px; border-radius: var(--r-pill); border: 1px solid rgba(255, 255, 255, .12); background: transparent; color: var(--text-3); cursor: pointer; white-space: nowrap; }
-.app-cursor.on { color: var(--accent-light); border-color: rgba(var(--accent-rgb), .55); background: rgba(var(--accent-rgb), .14); }
-@media (max-width: 560px) { .app-cursor { display: none; } }
 
 /* Taking a window from the agent, and giving it back. */
 .app-control { font: 600 11px/1 var(--sans, system-ui); padding: 5px 9px; border-radius: var(--r-pill); border: 1px solid rgba(255, 255, 255, .16); background: transparent; color: var(--text, #e8e8ee); cursor: pointer; white-space: nowrap; }
@@ -6872,7 +6875,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 
 /* A phone's PDF bar has room for the name, Take control and Full screen; the
    cursor switch is in Settings there. */
-.pdf-window.is-phone .pdf-cursor-pill, .pdf-window.is-phone .pdf-bar-note { display: none; }
+.pdf-window.is-phone .pdf-bar-note { display: none; }
 /* A phone gives the bar 390px, and the controls in it come to more than that:
    at 390 the bar was 12px too wide and the full-screen button sat off the
    right edge (82px off at 320), so the way out of a full-screen tool was the
@@ -6942,8 +6945,6 @@ body.is-resizing iframe { pointer-events: none; }
   .pane-handle.is-rail { display: block; }
   .pane-handle.is-chat { display: block; }
   .rail-slot { flex-basis: var(--rail-w, 56px); }
-  /* Folded away: the menu button and the mark are back in the header, at the far left. */
-  .app.rail-collapsed .rail-slot, .app.rail-collapsed .pane-handle.is-rail { display: none; }
 }
 
 /* The browser's menu and its panels: find, bookmarks, history, downloads. */
@@ -7220,17 +7221,20 @@ body.is-resizing iframe { pointer-events: none; }
 .rail:not(.is-drawer) .rail-ctx-pct { font-size: var(--fs-xs); }
 .rail:not(.is-drawer) .rail-ctx-track, .rail:not(.is-drawer) .rail-ctx-fill, .rail:not(.is-drawer) .rail-ctx-tick { stroke-width: 4.5; }
 .rail:not(.is-drawer) .brand-word { display: none; }
-.rail-chev-left { transform: rotate(90deg); }
-.rail-chev-right { transform: rotate(-90deg); }
+/* The chevron points right as drawn: "show the whole menu" is right, "fold it" is left. (It was turned to point down
+   and up, which read as scrolling.) */
+.rail-chev-left { transform: rotate(180deg); }
+.rail-chev-right { transform: none; }
 @media (max-width: 1179px) { .rail-mini-btn { display: none; } }
 
 /* ---- Folded to icons (desktop): a strip of icons, with the context as one vertical bar under the last of them. */
 @media (min-width: 1180px) {
-  .app.rail-mini:not(.rail-collapsed) .rail-slot { flex-basis: 56px; }
+  .app.rail-mini .rail-slot { flex-basis: 56px; }
   .app.rail-mini .pane-handle.is-rail { display: none; }
 }
-.rail.is-mini .rail-top { flex-direction: column; height: auto; padding: 10px 0 8px; gap: 6px; align-items: center; }
-.rail.is-mini .rail-top .spacer, .rail.is-mini .rail-top .brand-word, .rail.is-mini .rail-top .rail-icon-btn[aria-label="New incognito chat"] { display: none; }
+.rail.is-mini .rail-top { height: var(--top-h, 52px); padding: 0; justify-content: center; }
+/* Folded, the top of the strip is the mark alone: its buttons are in the header (.top-rail-acts). */
+.rail.is-mini .rail-top .spacer, .rail.is-mini .rail-top .brand-word, .rail.is-mini .rail-top .rail-icon-btn { display: none; }
 .rail.is-mini .rail-scroll { padding: 6px 6px 12px; }
 .rail.is-mini .rail-nav-item { justify-content: center; padding: 9px 0; gap: 0; }
 .rail.is-mini .rail-nav-item > span { display: none; }
@@ -7254,8 +7258,9 @@ body.is-resizing iframe { pointer-events: none; }
 .st-window { outline: none; --ph: 0; --lvl: 0; position: relative; }
 .st-window.is-phone { height: min(62dvh, 560px); }
 .st-window.is-phone.is-full { height: auto; }
+/* As wide as the name (its size is the name's length), so "Saved as you go" sits right after it as in every window. */
 .st-song-name {
-  min-width: 0; flex: 0 1 220px; background: transparent; border: 1px solid transparent; border-radius: var(--r-xs);
+  min-width: 0; flex: 0 1 auto; max-width: 260px; field-sizing: content; background: transparent; border: 1px solid transparent; border-radius: var(--r-xs);
   color: var(--text); font: 600 var(--fs-base) var(--sans); padding: 3px 6px;
 }
 .st-song-name:hover { border-color: var(--border-strong); }
@@ -7736,7 +7741,6 @@ body.is-resizing iframe { pointer-events: none; }
 
 /* The editor's bar on a phone has no room for the cursor switch (it is in Settings); the page view is an icon like the rest. */
 @media (max-width: 680px) {
-  .is-phone .pdf-bar .pdf-cursor-pill { display: none; }
 }
 
 /* The browser on a phone: back, reload, the address, hand-over, drag and enlarge. Forward, bookmark, the menu, the zoom
