@@ -72,6 +72,7 @@ import { checkWidget } from "./widgets";
 import { deskHooks } from "./pdfdesk";
 import { handToWindow } from "./pdfhand";
 import { officeHooks } from "./officedesk";
+import { handToWindow as officeHandToWindow } from "./officehand";
 import { runPdfTool } from "./pdf";
 import { runVideoTool } from "./opencut";
 import { runStudioTool, studioBriefing } from "./studio";
@@ -3312,7 +3313,10 @@ async function runToolUnredacted(
           showFile: ctx.showFile,
           putBlob: ctx.putBlob,
           showImage: ctx.showImage,
-          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session), win: officeHooks(ctx.session) }),
+          ...(ctx.memory.incognito ? {} : {
+            desk: deskHooks(ctx.session), win: officeHooks(ctx.session),
+            hand: (kind: Parameters<typeof officeHandToWindow>[1], steps: Parameters<typeof officeHandToWindow>[2]) => officeHandToWindow(ctx.session, kind, steps),
+          }),
           ...(ctx.held ? { held: (_surface: "office", subject: string) => ctx.held!("office", subject) } : {}),
           off: (["docx", "xlsx", "pptx"] as const).filter((k) => !toolSettings()[{ docx: "pages", xlsx: "sheets", pptx: "slides" }[k] as "pages" | "sheets" | "slides"].enabled),
           cancelled: ctx.cancelled,

@@ -6749,7 +6749,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .pdf-versions li { display: flex; align-items: center; gap: 6px; padding: 5px 0; }
 .pdf-version-main { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text); display: flex; flex-direction: column; }
 .pdf-version-main small { color: var(--text-3); font-size: var(--fs-xs); }
-/* The editor and, over it, the agent's cursor (components/OfficeCursor.tsx). */
+/* The editor; the agent's cursor styles below are shared with the page's pointer (lib/pointer.ts). */
 .office-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .office-cursor-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
 .office-cursor { position: absolute; left: 0; top: 0; will-change: transform; }

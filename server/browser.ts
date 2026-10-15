@@ -739,7 +739,7 @@ async function browserGeo(): Promise<BrowserGeo> {
  *
  * A headless browser has no cursor, so a recording of one clicking is a
  * recording of a page changing for no visible reason. This paints one: the same
- * arrow and "Autora" tag the Office windows use (src/components/OfficeCursor.tsx),
+ * arrow and "Autora" tag the other windows' cursors wear (lib/pointer.ts, the editors' hands),
  * so the agent looks the same in every tool. It is driven by the real input, not
  * by a guess at it: the arrow follows each genuine mouse move, presses when the
  * button goes down and ripples at that moment, shows "typing" while keys are

@@ -134,6 +134,7 @@ import {
   type Device, } from "./server/preview";
 import { deskDocument, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase } from "./server/pdfdesk";
 import { pdfHandRoutes } from "./server/pdfhand";
+import { officeHandRoutes } from "./server/officehand";
 import { staticDir } from "./server/staticfiles";
 import { memoryRoutes } from "./server/routes/memory";
 import { healthRoutes } from "./server/routes/health";
@@ -6242,6 +6243,8 @@ async function startServer() {
   deskRoutes(app, { exists: (id) => sessions.has(id), cwd: () => terminalDir() });
   // Visible work in the PDF window: the agent's pdf_edit, done there by hand.
   pdfHandRoutes(app, { exists: (id) => sessions.has(id), push: (id, message) => sendEphemeral(id, message), visible: () => state.agentCursor });
+  // ...and in Pages, Sheets and Slides: office_edit's typing, done there by hand.
+  officeHandRoutes(app, { exists: (id) => sessions.has(id), push: (id, message) => sendEphemeral(id, message), visible: () => state.agentCursor });
 
   /* The PDF window's editor (server/spectra.ts): Spectra-PDF's own UI and its
      own PDF engine, with the desk above as the document both sides share. */

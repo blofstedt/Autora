@@ -83,10 +83,7 @@ async function main() {
       frame = await editorIn(page);
       assert.ok(await laidOut(frame), "the editor never laid the document out");
       await until("the heading", async () => /Launch memo/.test(await bodyText(frame)));
-      // A new document is typed in as the person watches: the rest of it follows the heading.
       await until("the rest of the memo", async () => /The launch is on Friday/.test(await bodyText(frame)), 60_000);
-      const stages = async () => (((await app.api("GET", `/api/officedesk/${s}`)).body.windows as any[]).find((w) => w.kind === "docx") ?? {}).stage;
-      await until("the agent to finish typing", async () => !(await stages()), 60_000);
       // Calibri is drawn in its metric twin, so the pages are the same: no warning about it.
       assert.doesNotMatch(await bodyText(frame), /Missing document fonts/);
       assert.equal(await page.locator(".pdf-bar-name").innerText(), "memo.docx");
@@ -136,9 +133,7 @@ async function main() {
       // Wait out the lease, as the agent would by working on something else.
       await sleep(22_000);
       const frameBefore = frame;
-      // The agent's cursor goes to the heading and types it over the editor, with the same motion as in the browser.
-      const cursor = page.waitForSelector(".office-cursor-layer .office-cursor", { state: "attached", timeout: 60_000 });
-      // The typing is the change: the heading is in the editor a run of words at a time, not drawn over a finished one.
+      // With Visible work on, the agent's hand types the heading in the editor itself, a key at a time.
       const seen: string[] = [];
       let watching = true;
       void (async () => {
@@ -155,7 +150,6 @@ async function main() {
         console.log("frame text:", (await bodyText(frame)).slice(0, 300).replace(/\n/g, " | "));
       }
       await until("the new heading", async () => /Launch notes/.test(await bodyText(frame)), 40_000);
-      await cursor;
       watching = false;
       // In between, the heading was part typed: neither the old words nor the finished ones, in the editor itself.
       assert.ok(seen.some((t) => /Launch(?! memo| notes)/.test(t) && !/Launch (memo|notes)/.test(t)), "the heading was typed in steps");

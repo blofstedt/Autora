@@ -186,8 +186,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Visible work now means you watch the agent really use the app, live, in Photo and PDF. With Visible on, the agent's
-  cursor picks the tool, drags on the page, types into the real text box or form field and presses Save, at a
-  person's pace, and its change is still yours to accept or decline. With Visible off it works at full speed and the
-  file just changes. Also fixed in the PDF window: Save now really saves, and filling in a form (Fill fields) works;
-  both failed quietly before. And smoother scrolling in Photo.
+  Visible work now means you watch the agent really use the app, live: in Photo, PDF, and now Pages, Sheets and
+  Slides. With Visible on, the agent's cursor selects the words and types over them, types into cells through the
+  name box and confirms them, and opens a slide's text box and types in it, at a person's pace, before the finished
+  file (with its formatting) is put in. With Visible off it works at full speed and the document just changes. Also
+  fixed in the PDF window: Save now really saves, and filling in a form works. And smoother scrolling in Photo.

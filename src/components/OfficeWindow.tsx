@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
-import { useAgentCursor } from "../lib/agentCursor";
 import { useCollab } from "../lib/collab";
 import { TakeControl } from "./TakeControl";
-import { onOfficePush, useOfficeWindow, type OfficeCue, type OfficeKind } from "../lib/officedesk";
-import { OfficeCursor, type Acted, type Located } from "./OfficeCursor";
+import { onOfficeHand, onOfficePush, useOfficeWindow, type OfficeHand, type OfficeKind } from "../lib/officedesk";
+import { clearCursor, reportCursor } from "../lib/cursorPos";
+import { getCursorWho, whoColors } from "../lib/cursorWho";
 import { OfficePages } from "./OfficePages";
 import { useFrameTheme } from "../lib/frameTheme";
 import { IconEdit, IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
@@ -26,6 +26,17 @@ const APP: Record<OfficeKind, string> = { docx: "docs", pptx: "slides", xlsx: "s
 const THING: Record<OfficeKind, string> = { docx: "document", pptx: "presentation", xlsx: "spreadsheet" };
 /** The app each kind opens in, by its name. */
 const NAME: Record<OfficeKind, string> = { docx: "Autora Pages", pptx: "Autora Slides", xlsx: "Autora Sheets" };
+/** How long an edit waits for an editor that is still starting before it simply appears instead. */
+const EDITOR_START_MS = 45_000;
+
+/** The cursor's colour as #rrggbb, which the editor draws it in: the chat's agent's own, else the theme's accent. */
+function cursorColor(): string {
+  const own = whoColors()?.accent;
+  if (own && /^#[0-9a-f]{6}$/i.test(own)) return own;
+  const rgb = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").split(",").map((v) => Number(v.trim()));
+  if (rgb.length !== 3 || rgb.some((v) => !Number.isFinite(v))) return "#6e5bff";
+  return `#${rgb.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("")}`;
+}
 
 export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; kind: OfficeKind; phone: boolean }) {
   // The window for this app: Autora Pages, Autora Sheets and Autora Slides each have their own, all open at once.
@@ -46,16 +57,12 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
   const pages = phone && !editing;
   const collab = useCollab();
   const mine = collab.held.includes("office");
-  const [cursorOn] = useAgentCursor();
-  /** The agent's last change, being played over the editor (see OfficeCursor). */
-  const [play, setPlay] = useState<{ seq: number; items: OfficeCue[]; stage: { rev: number; count: number } | null } | null>(null);
-  const played = useRef<number | undefined>(undefined);
-  /** The `loadRev` the editor has opened its document at: steps of a change are only shown to an editor that has one. */
+  /** The `loadRev` the editor has opened its document at: the agent's hand works only in an editor that has one. */
   const [openedRev, setOpenedRev] = useState(-1);
-  /** Questions to the editor about where things are, waiting for its answer. */
-  const asking = useRef(new Map<number, { done: (found: Located | null) => void; once: boolean }>());
-  /** What the agent did in the editor, waiting for the editor to say what it made of it. */
-  const acting = useRef(new Map<number, (said: Acted | null) => void>());
+  const openedRef = useRef(openedRev);
+  openedRef.current = openedRev;
+  /** The agent's edits being typed in the editor by hand, by id: answered when the editor says it is done. */
+  const handing = useRef(new Map<string, (said: { results?: unknown; error?: unknown }) => void>());
   /** Every call says which window it is about, since each app's document is open beside the chat at the same time. */
   const api = useCallback((path: string) => {
     const at = `/api/officedesk/${encodeURIComponent(sessionId)}${path}`;
@@ -134,25 +141,16 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
               reply(true, { ok: true });
               break;
             }
-            case "acted": {
-              // What the editor did about a click or a piece of typing the agent asked for (office/shim/cursor.js).
-              const heard = acting.current.get(Number(payload.id));
-              if (heard) {
-                acting.current.delete(Number(payload.id));
-                heard(payload as unknown as Acted);
-              }
+            case "handed": {
+              // The agent's hand is done in the editor (office/shim/hand.js): what each step did.
+              handing.current.get(String(payload.id))?.(payload);
               reply(true, {});
               break;
             }
-            case "located": {
-              // The editor's answer to where the cursor should go (office/shim/cursor.js).
-              const found = asking.current.get(Number(payload.id));
-              // Unless the asker takes the first answer, found or not, an answer with nothing in it is waited past:
-              // the document may still be opening.
-              if (found && Array.isArray(payload.rects) && (found.once || payload.rects.some(Boolean))) {
-                asking.current.delete(Number(payload.id));
-                found.done({ rects: payload.rects, view: payload.view ?? { w: 800, h: 600 } });
-              }
+            case "hand-cursor": {
+              // Where the hand's cursor is, for the few words beside it (AgentThought).
+              const r = frame.current?.getBoundingClientRect();
+              if (r && Number.isFinite(payload.x) && Number.isFinite(payload.y)) reportCursor(r.left + Number(payload.x), r.top + Number(payload.y));
               reply(true, {});
               break;
             }
@@ -197,78 +195,45 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
   useEffect(() => {
     if (engine || word.loadRev === undefined || shown.current === 0 || word.loadRev === shown.current) return;
     shown.current = word.loadRev;
+    const rev = word.loadRev;
     void fetchDocument()
-      .then((bytes) => post({ type: "autora:office-push", op: "load", payload: { bytes, name: wordRef.current.name ?? "document.docx" } }, [bytes]))
+      .then((bytes) => {
+        post({ type: "autora:office-push", op: "load", payload: { bytes, name: wordRef.current.name ?? "document.docx" } }, [bytes]);
+        // The editor has this version now: the agent's hand may work in it.
+        setOpenedRev(rev);
+      })
       .catch((err: any) => setTrouble(`The document could not be loaded: ${err?.message ?? err}`));
   }, [engine, word.loadRev, fetchDocument, post]);
 
-  /**
-   * The next step of the agent's change: the server makes the document be that file, and the editor is given it. The
-   * typing the cursor does is these steps, one after another, so the words are in the document as they are typed.
-   */
-  const stage = useCallback(async (rev: number, step: number) => {
-    const res = await fetch(api(`/stage?rev=${rev}&step=${step}`), { method: "POST" }).catch(() => null);
-    if (!res?.ok) return false;
-    // A deck or a workbook is reloaded by its engine; a document is fetched and handed to the editor.
-    if (!engine) {
-      try {
-        const bytes = await fetchDocument();
-        post({ type: "autora:office-push", op: "load", payload: { bytes, name: wordRef.current.name ?? "document.docx" } }, [bytes]);
-      } catch {
-        return false;
-      }
-    }
-    return true;
-  }, [api, engine, fetchDocument, post]);
-
-  // The agent changed the document: play where it worked, once, if the window is on screen now.
-  useEffect(() => {
-    if (!word.cues || word.cues.length === 0 || word.cueRev === undefined) return;
-    const staged = word.stage && word.stage.rev === word.cueRev ? word.stage : null;
-    // A change shown in steps may be waiting for a new document's editor to start: it can be played for longer.
-    if (played.current === word.cueRev || (word.cueAge ?? 0) > (staged ? 30000 : 6000)) return;
-    if (!cursorOn || pages) {
-      // Nobody is watching it type: the document is brought to what the agent made, without the show.
-      if (staged) { played.current = word.cueRev; void stage(staged.rev, staged.count - 1); }
-      return;
-    }
-    if (staged && openedRev !== (word.loadRev ?? 0)) return;
-    played.current = word.cueRev;
-    setPlay({ seq: word.cueRev, items: word.cues, stage: staged });
-  }, [cursorOn, pages, word.cues, word.cueRev, word.cueAge, word.stage, word.loadRev, openedRev, stage]);
-
-  const locate = useCallback((items: OfficeCue[], once = false) => new Promise<Located | null>((resolve) => {
-    const id = Date.now() + Math.floor(Math.random() * 1000);
-    const targets = items.map((c) => ({ text: c.text, cell: c.cell, sheet: c.sheet, box: c.box, slide: c.slide }));
-    let tries = 0;
-    const finish = (found: Located | null) => { clearInterval(timer); asking.current.delete(id); resolve(found); };
-    asking.current.set(id, { done: finish, once });
-    // The frame may still be starting (a window just opened, a document loading): ask again until it answers.
-    const send = () => {
-      post({ type: "autora:office-locate", id, targets, wait: once ? 500 : 1400 });
-      if (++tries > 6) finish(null);
-    };
-    const timer = setInterval(send, 1500);
-    send();
-  }), [post]);
-
-  /**
-   * What the agent really does in the editor: click where it is working, type into the editor's own field, and leave
-   * the edit. The editor answers with what it did (the cell its name box shows, whether it had a field to type in),
-   * and an answer of ok: false sends the window back to drawing the words itself.
-   */
-  const act = useCallback((what: { act: "click" | "type" | "end"; x?: number; y?: number; text?: string }) => new Promise<Acted | null>((resolve) => {
-    const id = Date.now() + Math.floor(Math.random() * 1000);
-    const finish = (said: Acted | null) => { clearInterval(timer); acting.current.delete(id); resolve(said); };
-    let tries = 0;
-    const send = () => {
-      post({ type: "autora:office-act", id, ...what });
-      if (++tries > 4) finish(null);
-    };
-    acting.current.set(id, finish);
-    const timer = setInterval(send, 260);
-    send();
-  }), [post]);
+  /* The agent's hand (Visible work on): what its office_edit changes in the words is typed in the editor, live, by the
+     hand in the frame (office/shim/hand.js), while the call waits. The window only carries it: the first window of the
+     chat to claim it hands it to its editor -- once the editor has the document open, which it waits for -- and tells
+     the server what was done. Nothing is played over a document the server changed: that would be a recording. */
+  const byHand = useCallback(async (hand: OfficeHand) => {
+    const at = (p: string) => `/api/officedesk/${encodeURIComponent(sessionId)}/hand/${p}?id=${encodeURIComponent(hand.id)}`;
+    const claim = await fetch(at("claim"), { method: "POST" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ won?: boolean }>) : { won: false }))
+      .catch(() => ({ won: false }));
+    if (!claim.won) return;
+    const reply = (body: Record<string, unknown>) => fetch(at("reply"), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }).catch(() => undefined);
+    const ready = () => openedRef.current === (wordRef.current.loadRev ?? 0) && !!frame.current?.contentWindow;
+    for (let waited = 0; !ready() && waited < EDITOR_START_MS; waited += 250) await new Promise((r) => setTimeout(r, 250));
+    if (!ready()) { await reply({ results: [], error: "the editor did not start" }); return; }
+    // A document just opened is laid out a moment after it is opened.
+    await new Promise((r) => setTimeout(r, 1200));
+    const said = await new Promise<{ results?: unknown; error?: unknown }>((resolve) => {
+      handing.current.set(hand.id, resolve);
+      post({ type: "autora:office-hand", id: hand.id, steps: hand.steps, who: { name: getCursorWho().name, color: cursorColor() } });
+    });
+    handing.current.delete(hand.id);
+    clearCursor();
+    await reply({ results: said.results ?? [], ...(typeof said.error === "string" ? { error: said.error } : {}) });
+  }, [post, sessionId]);
+  useEffect(() => onOfficeHand((hand) => {
+    if (hand.kind === kind && !pages) void byHand(hand);
+  }), [byHand, kind, pages]);
 
   const restore = useCallback(async (n: number) => {
     setVersionsOpen(false);
@@ -382,19 +347,6 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             title={`${word.name ?? THING[kind]}, in ${NAME[kind]}`}
             sandbox="allow-scripts allow-downloads allow-modals allow-popups"
           />
-          )}
-          {cursorOn && play && (
-            <OfficeCursor
-              cues={play.items}
-              seq={play.seq}
-              locate={locate}
-              click={(at) => act({ act: "click", x: at.x, y: at.y })}
-              type={(text) => act({ act: "type", text })}
-              end={() => act({ act: "end" })}
-              stage={(step) => (play.stage ? stage(play.stage.rev, step) : Promise.resolve(false))}
-              stages={play.stage?.count ?? 0}
-              onDone={() => setPlay(null)}
-            />
           )}
         </div>
       )}

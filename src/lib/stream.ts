@@ -31,6 +31,7 @@ type Handlers = {
   onStudioCommand?: (cmd: { id: string; name: string; args: Record<string, unknown> }) => void;
   onOfficeDesk?: (state: unknown) => void;
   onOfficePush?: (msg: unknown) => void;
+  onOfficeHand?: (msg: unknown) => void;
   /** Who has hold of what: surfaces the person has taken, and ones in use. */
   onPresence?: (state: unknown) => void;
 };
@@ -176,6 +177,9 @@ export class SessionStream {
           break;
         case "officedesk.push":
           this.handlers.onOfficePush?.(msg);
+          break;
+        case "officedesk.hand":
+          this.handlers.onOfficeHand?.(msg);
           break;
         case "gamedesk":
           this.handlers.onGameDesk?.(msg.state);

@@ -188,6 +188,13 @@ const OFFICE = [
     "editor has, one group per old ribbon tab (Insert, Design, Layout, Review, View...), where a desktop can pin any of them to the bar. " +
     "Commands with a drop-down open it beside the bar. The keyboard shortcuts work on a desktop as ever. Point the person at a tool by " +
     "its name and say \"open All tools\" if it is not on their bar. You have every tool whatever is shown.",
+  "  With Visible work on and the document open in its window, office_edit's words are typed there by your hand, live, before the " +
+    "call returns: in Pages the words that change are selected and typed over, a new paragraph is typed after the one it follows and a " +
+    "removed one selected and deleted; in Sheets each cell is gone to by typing its address in the name box, typed into and confirmed " +
+    "with the formula bar's tick; in Slides the box is opened on its slide and its words typed over. The person watches every key. Then " +
+    "the file your operations made goes in, so the document is exactly that, and what was not typing (styles, tables, pictures, charts, " +
+    "a new slide or box) appears then; the result says what was typed by hand. It takes seconds per change, so send what the change " +
+    "needs. A new document (office_create) simply appears. With Visible work off, or no window open, the change simply appears.",
 ].join("\n");
 
 const CAD = [

@@ -4,8 +4,8 @@
  * tremor that settles, a rest, a press with a ring -- and fades away after a while with nothing to do.
  *
  * A layer of its own on the body, so no window needs to hold it. It never goes anywhere nothing is: callers give
- * it the rectangle of a real element, or a point a frame confirmed. (The Office windows have their own, which also
- * types; see components/OfficeCursor.tsx.)
+ * it the rectangle of a real element, or a point a frame confirmed. (The editors with an agent's hand -- Photo, PDF,
+ * Pages, Sheets, Slides -- draw their own cursor inside their frame, where the hand works.)
  */
 import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "./humanPath";
 import { clearCursor, reportCursor } from "./cursorPos";

@@ -40,8 +40,6 @@ type OfficeWindowState = {
   cueRev?: number;
   /** Milliseconds since they were made: a page that opens the window much later has missed them. */
   cueAge?: number;
-  /** The change is being shown in steps: ask the server for each document in turn, for this `rev`. */
-  stage?: { rev: number; count: number };
 };
 
 type OfficeState = { open: boolean; windows: OfficeWindowState[] };
@@ -88,4 +86,19 @@ export function emitOfficePush(m: unknown) {
 export function onOfficePush(fn: (m: OfficePush) => void): () => void {
   pushListeners.add(fn);
   return () => { pushListeners.delete(fn); };
+}
+
+/** The agent's edit, to be typed in a window by hand (Visible work on; server/officehand.ts): which app, and the steps. */
+export type OfficeHand = { id: string; kind: OfficeKind; steps: unknown[] };
+const handListeners = new Set<(h: OfficeHand) => void>();
+
+export function emitOfficeHand(m: unknown) {
+  const msg = m as Partial<OfficeHand> | null;
+  if (!msg || typeof msg.id !== "string" || !Array.isArray(msg.steps) || !["docx", "pptx", "xlsx"].includes(String(msg.kind))) return;
+  for (const l of handListeners) l(msg as OfficeHand);
+}
+
+export function onOfficeHand(fn: (h: OfficeHand) => void): () => void {
+  handListeners.add(fn);
+  return () => { handListeners.delete(fn); };
 }
