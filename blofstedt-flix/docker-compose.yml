@@ -1,0 +1,22 @@
+version: "3.7"
+
+services:
+  # Umbrel's reverse proxy. APP_HOST follows <app-id>_<service-name>_1.
+  app_proxy:
+    environment:
+      APP_HOST: blofstedt-flix_app_1
+      APP_PORT: 8096
+
+  app:
+    # Built by viberific/Flix's own workflow from the repo's package.json
+    # version. Bump this tag (and `version` above) only once that tag exists
+    # in the registry, or an update will fail with "manifest unknown".
+    image: ghcr.io/viberific/flix:0.1.0
+    restart: unless-stopped
+    volumes:
+      # The .env with BTN_API_KEY/QB_PASS, the sqlite database and
+      # qBittorrent's config — everything that survives an update.
+      - "${APP_DATA_DIR}/data:/data"
+      # The media, shared by qBittorrent (writes) and Flix (streams). Must be
+      # the same path inside the container for both, which it is: /downloads.
+      - "${APP_DATA_DIR}/downloads:/downloads"

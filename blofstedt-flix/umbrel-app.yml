@@ -1,0 +1,48 @@
+manifestVersion: 1
+id: blofstedt-flix
+name: Flix
+tagline: Your own streaming service, sourced straight from BTN
+icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
+category: media
+version: "0.1.0"
+port: 8096
+description: >-
+  Flix is a private, Jellyfin-style media server whose only source is
+  BroadcasTheNet. Search BTN's catalog, pick a show, press play — Flix starts a
+  sequential torrent download in the bundled qBittorrent and begins streaming
+  the file as its pieces arrive, remuxing or transcoding to HLS when the
+  browser can't play the original format. It is an installable PWA: add it to
+  your phone's home screen and it behaves like an app.
+
+
+  Everything runs in one container: the app, qBittorrent-nox (BTN only allows
+  whitelisted clients) and ffmpeg. Seeding follows BTN's rule — 130 hours or a
+  1:1 ratio — and is not configurable.
+
+
+  Setup: create a .env file in the app's data directory with your BTN API key
+  and a qBittorrent password, then restart the app:
+
+
+    mkdir -p ~/umbrel/app-data/blofstedt-flix/data
+    printf 'BTN_API_KEY=yourkey\nQB_PASS=choose-a-password\n' > ~/umbrel/app-data/blofstedt-flix/data/.env
+
+
+  (You can also add TMDB_API_KEY=... for automatic content ratings.) Then open
+  Flix and create your admin account — the first account made becomes the
+  administrator. The torrent engine is internal only: its Web UI is bound to
+  localhost inside the container and is never exposed.
+
+
+  Your library, users and downloads live in the app's data directory and
+  survive updates.
+developer: blofstedt
+website: https://github.com/viberific/Flix
+submitter: blofstedt
+submission: https://github.com/blofstedt/Autora
+repo: https://github.com/viberific/Flix
+support: https://github.com/viberific/Flix/issues
+gallery: []
+releaseNotes: >-
+  First release: BTN-only catalog, on-demand sequential streaming through the
+  bundled qBittorrent, HLS remux/transcode, installable PWA.
