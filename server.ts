@@ -71,7 +71,7 @@ import { isSmallTalk } from "./server/quick";
 import { agentBrief, developFromTalk, findAgent, getAgent, handoffTargets, LEAD_ID, listAgents, mentionedAgents, producedWork, recordCollab, recordWork, withoutHandover } from "./server/agents";
 import { agentMind, clusters, remember, teach } from "./server/agentmind";
 import {
-  LifeGate, MAX_AGENT_RUN, MAX_WONDERS, PACE, isNamed, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
+  LifeGate, MAX_AGENT_RUN, applyVotes, MAX_WONDERS, PACE, isNamed, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
   lifePrompt, lifeSystem, parseChoice, personWaiting, pickAgent, reactionOf, replyPrompt, reviewPrompt, reviewersOf, somethingNew, toTheRoom, trailingAgentRun, urgeOf,
   vetLinks, wonderNote, wondersOf,
 } from "./server/threadlife";
@@ -3204,7 +3204,9 @@ async function threadLifeStep(): Promise<void> {
     // Twenty and three before: with the forum this quiet, a silent agent sat out a third of an hour
     // over and over, so the few agents actually willing to talk still rarely did.
     lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 6 : 2)) * 60_000);
-    if (choice.action === "none") { log("info", "threads", `${agent.name}: looked, had nothing to add`); return; }
+    // Its ratings ride on whatever it chose, "none" included: they cost no call of their own.
+    const rated = applyVotes(choice.votes, me);
+    if (choice.action === "none") { log("info", "threads", `${agent.name}: looked, had nothing to add${rated ? `, rated ${rated}` : ""}`); return; }
     const why = lifeAllowed(choice, me);
     if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return; }
     /* Forum text never carries a secret (the blanking events get), and a link only
@@ -3231,8 +3233,9 @@ async function threadLifeStep(): Promise<void> {
   }
 }
 
-/* A reply is owed an answer. When anyone comments in Threads, the one the comment answers (the author of the comment it
-   replies to, or of the post) always replies, whatever its mood and however recently it spoke; the person's own words are
+/* The person's reply is owed an answer. When the person comments in Threads, the one the comment answers (the author of
+   the comment it replies to, or of the post) always replies, whatever its mood and however recently it spoke (an agent's
+   comment only asks the one it answers to decide, like the others below); the person's own words are
    never held back by the forum's hourly ceiling. "However recently it spoke" is about the ceiling and its sleep, not the
    budget: the answer it owes is checked like any other comment, so it answers in words it has not used in this thread or
    says nothing at all. Then every other agent in the thread, and any the comment names, reads what
@@ -3263,7 +3266,7 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
   if (!first || !trigger || !state.threadsAlive) return;
   const byPerson = trigger.by.kind === "user";
   const run = trailingAgentRun(first);
-  if (!byPerson && (run > MAX_AGENT_RUN || first.comments[first.comments.length - 1]?.id !== trigger.id)) return;
+  if (!byPerson && (run >= MAX_AGENT_RUN || first.comments[first.comments.length - 1]?.id !== trigger.id)) return;
   // Wait out an autonomous step in progress, then hold the forum while this runs so the two do not talk over each other.
   for (let i = 0; lifeBusy && i < 240; i += 1) await new Promise((r) => setTimeout(r, 500));
   if (lifeBusy) { log("info", "threads", "replies: skipped, the forum stayed busy for two minutes"); return; }
@@ -3276,15 +3279,18 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
     const room = () => lifeGate.room(Date.now(), perHourFor(state.threadsMood));
 
     /** One agent reads the thread and, if it has something, says it. Returns whether a comment was added. */
-    const speak = async (agent: (typeof roster)[number], owed: boolean): Promise<boolean> => {
+    const speak = async (agent: (typeof roster)[number], owed: boolean, addressed = false): Promise<boolean> => {
       const key = `${postRef}|${agent.id}`;
       const post = getPost(postRef);
       if (!post) return false;
       const seen = reactSeen.get(key) ?? 0;
       const system = lifeSystem(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), byId, gifs);
-      const prompt = owed ? replyPrompt(post, trigger, agent.id) : reviewPrompt(post, trigger, agent.id, seen);
+      const prompt = owed ? replyPrompt(post, trigger, agent.id) : reviewPrompt(post, trigger, agent.id, seen, addressed);
       const raw = await backgroundCall("threads", system, prompt, FORUM_TOKENS, 0.95);
       lifeGate.note(Date.now());
+      const me = { kind: "agent" as const, id: agent.id, name: agent.name };
+      // Whatever it says, or does not, its ratings of what it read count: they are how the agents learn what is worth saying.
+      applyVotes(parseChoice(raw).votes, me);
       let said = reactionOf(raw, post, owed ? trigger : null);
       if (!said) noteUnreadable(agent.name, raw);
       if (!said && owed) {
@@ -3298,7 +3304,6 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
       if (said?.wonder && wondersOf(agent.id).length < MAX_WONDERS) remember(agent.id, wonderNote(said.wonder), "lesson");
       if (said?.again) lifeSleep.set(agent.id, Date.now() + said.again * 60_000);
       if (!said) return false;
-      const me = { kind: "agent" as const, id: agent.id, name: agent.name };
       /* An owed answer is checked like any other telling. One that owes a reply is expected to say something, but not
          the same words it has already said in this thread: refused, it falls through to none rather than posting the
          echo this budget exists to stop - and both prompts tell it so before it writes. */
@@ -3313,13 +3318,15 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
       return true;
     };
 
-    // The one who was answered always answers: not held to its mood, its sleep, or (when it is the person speaking) the ceiling.
+    /* The person's words are owed an answer by the one they answer: not held to its mood, its sleep, or the ceiling. A
+       colleague's answer is not: the agent it answers reads it and decides, like anyone else, with silence and a rating
+       as good answers - owing every agent's answer an answer is what made threads an echo chamber of agreement. */
     const to = addresseeOf(first, trigger);
     const owedBy = to?.kind === "agent" ? roster.find((a) => a.id === to.id) : undefined;
     const skip: string[] = [];
     if (owedBy) {
       skip.push(owedBy.id);
-      if (!answered(first, trigger, owedBy.id) && (byPerson || (room() && Math.random() < replyChance(run, state.threadsMood)))) await speak(owedBy, true);
+      if (!answered(first, trigger, owedBy.id) && (byPerson || (room() && Math.random() < replyChance(run, state.threadsMood)))) await speak(owedBy, byPerson, !byPerson);
     }
     // Everyone else in the thread reads what changed and decides.
     const reviewers = reviewersOf(first, trigger, roster, skip, !state.threadsUnprompted).sort(() => Math.random() - 0.5);

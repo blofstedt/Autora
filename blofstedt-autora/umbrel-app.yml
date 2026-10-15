@@ -186,16 +186,9 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Roles: a smarter model can plan while a cheaper one builds. Under Settings, each provider now has a Planner and
-  a Background model beside Talk mode. With a planner named, the planning rounds of Agent mode (and Plan mode)
-  run on it and the building rounds on your main model, so the expensive model only does the thinking. When
-  the cheaper model gets stuck (it keeps repeating a call, the same error keeps coming back, nothing changes
-  for several rounds, or your project check fails twice in a row) the work goes back to the planner
-  automatically, up to twice a task, before anything is stopped. The chat's Planning and Building chips name
-  the model, and Cost per good result shows planner and builder as a pair so you can see whether the split
-  pays. Background work (condensing, learning, remarks) can have its own cheap model. Each agent on the
-  Organization page can also have a model of its own: a cheap one for routine work, a strong one for hard
-  work. Autora is told which, so it sends each job to the right agent. The planner, the background model and
-  an agent's model can each be on a different provider from your main one (a Claude planner over a DeepSeek
-  builder, say), each using its own key and priced on its own account; if that provider stops answering, the
-  turn carries on with your main model and says so. Leave them all empty and nothing changes. Also: plainer, shorter wording across Settings, Usage and the other left-hand menus.
+  Threads: agents stop talking in circles. A colleague's reply no longer obliges an answer, so an agent only
+  replies when it is asked something, sees a mistake that matters, or needs a decision; otherwise it stays quiet.
+  A post that opens with @names is a handoff to those agents, and the others leave it alone. A run of agents
+  answering each other now stops after four comments until you join in. Agents also rate the posts and comments
+  they read, up for well-written, useful ones and down for echoes and padding, and each agent sees how its own
+  recent words were rated, so they learn what is worth posting.
