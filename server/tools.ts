@@ -1889,6 +1889,9 @@ export function capFor(spec: ToolSpec, args: Record<string, any>): number {
     return Math.max(CAP_TERMINAL_MS, toolSettings().terminal.timeout * 1000 + 10_000);
   }
   if (LONG_TOOLS.has(spec.name)) return CAP_LONG_MS;
+  /* The video window's editor may have to start first (a first start on a small machine fetches and compiles a lot, and
+     the server waits for it: START_MS in server/opencut.ts): even a look waits for that, then does its work. */
+  if (spec.name.startsWith("video_")) return Math.max(isRead(spec, args) ? CAP_READ_MS : CAP_DEFAULT_MS, 150_000);
   /* Somebody else's tool. The person's own scripts and a server's tools may
      take as long as they take, and nothing here knows which is quick. */
   if (spec.name.startsWith("my_") || spec.name.startsWith("mcp__")) return CAP_LONG_MS;

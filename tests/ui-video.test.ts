@@ -170,6 +170,49 @@ async function main() {
       await phone.close();
     });
 
+    await test("after the server restarts (an update), the open window is the agent's again, without a reload", async () => {
+      const open = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      await open.goto(`${app.base}/?session=${s}`);
+      await open.waitForSelector(".app-pane[data-pane=video]", { timeout: 20_000 });
+      const frame = await editorIn(open);
+      await frame.waitForSelector("[data-rail], .has-rail", { timeout: 60_000 });
+      await sleep(3000);
+      await app.restart();
+      await sleep(4000);
+      n = steps.length - 1;
+      app.seen.length = 0;
+      const started = Date.now();
+      const events = await app.turn(s, "look at the timeline", 150_000);
+      assert.deepEqual(events.filter((e) => e.kind === "tool.error").map((e) => e.payload.error), [], "the editor answered");
+      assert.match(said(), /image "violet.png"/);
+      assert.ok(Date.now() - started < 60_000, `it answered in ${Math.round((Date.now() - started) / 1000)}s`);
+      await open.close();
+    });
+
+    await test("a browser whose GPU never answers still gets an editor, and the agent can use it", async () => {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      // The editor's own request for a GPU adapter, made to never answer (its script, rewritten on the way in): a sandboxed
+      // frame takes no init script, and this is the call that hangs on the machines where it does.
+      let hangs = 0;
+      await ctx.route(/\/opencut-editor\/assets\/.*\.js$/, async (route) => {
+        const res = await route.fetch();
+        const body = (await res.text()).replace(/return (\w+)\.requestAdapter\((\w*)\)\}/g, () => { hangs++; return "return new Promise(function(){})}"; });
+        await route.fulfill({ response: res, body });
+      });
+      const hung = await ctx.newPage();
+      await hung.goto(`${app.base}/?session=${s}`);
+      await hung.waitForSelector(".app-pane[data-pane=video]", { timeout: 20_000 });
+      n = steps.length - 1;
+      app.seen.length = 0;
+      const started = Date.now();
+      const events = await app.turn(s, "look at it once more", 150_000);
+      assert.deepEqual(events.filter((e) => e.kind === "tool.error").map((e) => e.payload.error), [], "the editor answered");
+      assert.match(said(), /image "violet.png"/);
+      assert.ok(Date.now() - started < 45_000, `it answered in ${Math.round((Date.now() - started) / 1000)}s`);
+      assert.ok(hangs > 0, "the GPU request was the one that hangs");
+      await ctx.close();
+    });
+
     await test("a reload finds the project again", async () => {
       const again = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       await again.goto(`${app.base}/?session=${s}`);

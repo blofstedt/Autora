@@ -112,7 +112,9 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
 
   /** This window's frame has said it is up: until then a command sent to it would be lost, so it claims none. */
   const up = useRef(false);
-  useBootWatch(() => up.current, sessionId, "video editor", setTrouble);
+  /** Goes up when the frame is loaded afresh: a start that failed or stalled is tried once more by itself. */
+  const [generation, setGeneration] = useState(0);
+  useBootWatch(() => up.current, `${sessionId}:${generation}`, "video editor", setTrouble);
 
   const post = useCallback((msg: Record<string, unknown>) => {
     frame.current?.contentWindow?.postMessage(msg, "*");
@@ -200,6 +202,14 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
           post({ type: "autora:opencut:theme", vars: themeVars() });
           send("ready", { ready: true });
           break;
+        case "autora:opencut:problem": {
+          // The editor could not start, and said why: shown here, and told to the server so the agent hears it at once.
+          if (up.current) break;
+          const message = String(msg.message ?? "it stopped while starting").slice(0, 300);
+          setTrouble(`The video editor could not start: ${message}`);
+          send("ready", { ready: false, problem: message });
+          break;
+        }
         case "autora:opencut:reply": {
           const w = typeof msg.id === "number" ? waiting.current.get(msg.id) : undefined;
           if (!w || typeof msg.id !== "number") break;
@@ -214,11 +224,31 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
     return () => window.removeEventListener("message", onMessage);
   }, [post, send, sessionId, store]);
 
-  // A window that has just mounted has a frame that has not started: the server must not send it commands yet.
+  // A window that has just mounted (or reloaded its frame) has a frame that has not started: the server must not send it
+  // commands yet.
   useEffect(() => {
     up.current = false;
     send("ready", { ready: false });
+  }, [send, generation]);
+
+  /* Up, it says so again every few seconds: the server forgets when it restarts (an update), and a word said once would
+     then leave the agent waiting on an editor that is plainly there. */
+  useEffect(() => {
+    const beat = window.setInterval(() => { if (up.current) send("ready", { ready: true }); }, 5000);
+    return () => window.clearInterval(beat);
   }, [send]);
+
+  /* Not up after half a minute (a fetch that stalled, a start that hung): the frame is loaded once more, as a person would
+     reload it. Only once: a second failure is said, not hidden behind more tries. */
+  useEffect(() => {
+    if (generation > 0) return;
+    const timer = window.setTimeout(() => {
+      if (up.current) return;
+      setTrouble("The video editor is taking a while to start, so it is being loaded again.");
+      setGeneration(1);
+    }, 30_000);
+    return () => window.clearTimeout(timer);
+  }, [generation]);
 
   // Autora's theme, followed: another theme, font or text size here is another one in the editor.
   useEffect(() => {
@@ -415,6 +445,7 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
       <div className="office-stage">
         <iframe
           ref={frame}
+          key={generation}
           className="pdf-frame"
           src={`/opencut-editor/index.html?session=${encodeURIComponent(sessionId)}${opening ? `&project=${encodeURIComponent(opening)}` : ""}${phone ? "&phone=1" : ""}`}
           title={`${desk.name ?? "Video"}, in Autora Video`}

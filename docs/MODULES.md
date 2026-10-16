@@ -444,7 +444,14 @@ Spectra's fetched renderer is most of what is on disk.
   the window, under `stateDir()/opencut/` (`server/opencut.ts`). Projects belong to the person, not to a chat.
   **Traps:** (1) the iframe `src` must never change while it is mounted (it reloads, and loses a command in flight);
   (2) `ready` is said once a *project* is loaded, not when the page is up; a window that mounts sets the server's
-  flag false first; (3) a command can arrive in two tabs: `/api/opencut/claim` makes one of them do it, and the
+  flag false first, and an up window says it again every 5 s (`readyAt`, good for 15 s), so a server that restarted
+  knows at once; which chats have the window open, on which project, is kept in `opencut/windows.json` for the same
+  reason (forgetting it took the editor down and opened a new empty project); a start that fails says why
+  (`trouble` in `bridge.ts`, from the overlay's `editor-provider.tsx` and `start()`), the window shows it and a command
+  fails at once with it; a frame not up after 30 s is loaded once more; a command waits up to 90 s for a start, and the
+  `video_*` tools are capped at 150 s; the GPU is waited on 6 s at most (overlay `services/renderer/gpu-renderer.ts`:
+  on some machines the adapter request never answers, and the editor hung on "Loading project..."); the project list
+  that picks the first project is asked again rather than read as empty; (3) a command can arrive in two tabs: `/api/opencut/claim` makes one of them do it, and the
   server sends an unclaimed one again every 1.5 s; (4) theme: the window reads Autora's tokens off its own page and
   posts them (`--a-*`), so a different theme here is a different one there; (5) automatic captions are removed (they
   download a model from Hugging Face); (6) saved exports are capped at the artifact limit (50 MB), the editor's own

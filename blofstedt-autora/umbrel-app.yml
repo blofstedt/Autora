@@ -188,12 +188,11 @@ gallery: []
 releaseNotes: >-
   Every app now has a Save button in its top bar (Photo, PDF, Pages, Sheets, Slides, Video, Music, 3D and Games):
   press it to keep your work right now, without asking the agent; all but Video also put a copy on the Artifacts
-  page. Artifacts are
-  now in folders, one per project: a chat's files start in their own folder, and when another chat carries on with
-  them both chats share one folder. Move files into a new folder, rename it or remove it from the Artifacts page.
-  Visible work now means you watch the agent really use Photo, PDF, Pages, Sheets, Slides and Music, live: it selects
-  the words and types over them, types into cells and confirms them, opens a slide's text box and types in it, and in
-  Music adds tracks, draws clips, sets the tempo and places notes in the piano roll and drum grid with your own
-  controls. In the Terminal its commands are typed at your own prompt and run in your shell. With Visible off it works
-  at full speed. Also fixed: Save in the PDF window really saves, filling in a form works, and
-  scrolling in Photo is smooth.
+  page. Artifacts are now in folders, one per project: a chat's files start in their own folder, and when another
+  chat carries on with them both chats share one folder. Move files into a new folder, rename it or remove it.
+  Visible work now means you watch the agent really use Photo, PDF, Pages, Sheets, Slides, Music and the Terminal,
+  live: it selects words and types over them, types into cells, opens a slide's text box and types in it, adds
+  tracks, draws clips and places notes in Music with your own controls, and types its commands at your own prompt
+  in the Terminal. With Visible off it works at full speed. Also fixed: the Video window no longer gets stuck
+  loading (on machines where the graphics card never answered) or loses its project when Autora restarts, so the
+  agent can use it again; Save in the PDF window really saves, filling in a form works, and Photo scrolls smoothly.
