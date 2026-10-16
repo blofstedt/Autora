@@ -365,11 +365,16 @@ Spectra's fetched renderer is most of what is on disk.
   `postMessage`: `ready` -> the model is fetched and sent down with Autora's theme (`THEME_TOKENS`, applied by `autora-3d/src/embed.ts`,
   colours only); `changed` -> `PUT /api/cad/:session/doc`; an agent change -> `caddesk` over the socket -> the frame is sent the new
   model. Each change carries `by` (agent or person) so the window reloads only for the agent's: a drag in progress is never
-  answered with an echo. With Visible work on, a page watching and the window open, the calls in `HAND_TOOLS` are done by hand
-  (`byHand`): worked out on a copy, pushed as `cad.hand` until the page claims it (`/hand/claim`, 4 s or done here), posted to the frame
-  as `{autora3d: "hand"}`, done by `runHand` (`agentHand.ts`: the bar's tools, Size & position's fields, clicks in the view at
-  `screenOf`, which asks the viewer's own hit test so arrows and other shapes are not pressed), answered with `handed` and
-  `/hand/reply`; then the copy's model goes in with the window's new ids swapped in. `cad_export` is saved as an artifact (the STL never goes through the conversation). Traps: the window opens
+  answered with an echo; and a model that came down is not sent back up, even as a new object (`embed.ts` compares content), or
+  a late echo would undo the agent's next change. With Visible work on, a page watching and the window open, every call that
+  changes the model is done by hand (`byHand`; not `READS`, and `NO_CONTROL` says why not): worked out on a copy, pushed as
+  `cad.hand` until the page claims it (`/hand/claim`, 4 s or done here; the claim answers with `goal`, the model as the call
+  leaves it, and `need`, what it names), posted to the frame as `{autora3d: "hand"}`, done by `runHand` (`agentHand.ts`, using
+  the viewer's `project`, `toPlane`, `hitAt`, `handles` and `mmPerPixel`), answered with `handed` and `/hand/reply`; then the
+  copy's model goes in with the window's new ids swapped in. A batch goes one command at a time. While `entry.handing`, the
+  window's `PUT /doc` is its hand's steps and is not taken, so a call stays one step of the model's history. Undo and redo
+  (`historyByHand`) read where the model's history leads without taking it, the hand presses until the window is there, then
+  the history steps. `cad_export` is saved as an artifact (the STL never goes through the conversation). Traps: the window opens
   on the agent's first call; an incognito chat has none; tool names in the engine's messages are prefixed on the way out
   (`asAgentSees`). The phone shows it as a tab in the pinned view like the other windows (`Thread.tsx`, `lib/stage.ts` kind `cad`).
 - `server/studio.ts`, `server/specs/studio.ts`, `src/lib/studio/`, `src/components/StudioWindow.tsx` + `src/components/studio/`:

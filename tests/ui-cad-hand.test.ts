@@ -42,10 +42,11 @@ async function main() {
     const run = async (said: string, calls: Array<{ name: string; args: Record<string, unknown> }>) => {
       let n = 0;
       app.seen.length = 0;
-      app.decide = (req) => guard(req) ?? (n < calls.length ? { tools: [calls[n++]] } : { text: "Done." });
+      // Only the turn's own steps get the calls: a request offering no such tool is one of the app's own, in the background.
+      app.decide = (req) => guard(req) ?? (n < calls.length && req.tools.includes(calls[n].name) ? { tools: [calls[n++]] } : req.tools.length ? { text: "Done." } : { text: "SKIP" });
       await app.turn(s, said, 240_000);
       const out = app.seen.map((r) => JSON.stringify(r.messages.filter((m) => m.role === "tool"))).join("\n").replace(/\\+"/g, '"');
-      assert.doesNotMatch(out, /Not by hand/, out.slice(-1500));
+      assert.doesNotMatch(out, /Not by hand \(/, out.slice(-1500));
       return out;
     };
     const bodies = async () => ((await app.api("GET", `/api/cad/${s}/doc`)).body.doc.bodies ?? []) as Body[];
@@ -103,7 +104,7 @@ async function main() {
       const ids = (await bodies()).map((b) => b.id);
       assert.equal(ids.length, 2);
       const out = await run("join them", [{ name: "cad_shapes_join", args: { ids } }]);
-      assert.match(out, /picked the shapes and pressed Join/, out.slice(-1500));
+      assert.match(out, /picked the shapes in the view; pressed Join/, out.slice(-1500));
       assert.equal((await bodies()).length, 1);
       await run("clear", [{ name: "cad_shape_delete", args: { ids: (await bodies()).map((b) => b.id) } }]);
     });

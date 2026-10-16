@@ -178,9 +178,6 @@ export default function App() {
 
   const [selectedBodyId, setSelectedBodyId] = useState<string | null>(null);
   const [selectedBodyIds, setSelectedBodyIds] = useState<string[]>([]);
-  // What is picked now, for the agent's hand, which reads it between its clicks (agentHand.ts).
-  const selectedIdsRef = useRef(selectedBodyIds);
-  selectedIdsRef.current = selectedBodyIds;
   const [selectedEdges, setSelectedEdges] = useState<EdgeSel[]>([]);
   const [selectedFace, setSelectedFace] = useState<FaceSel | null>(null);
   /** When set, only these bodies are shown, in both 2D and 3D. */
@@ -213,6 +210,10 @@ export default function App() {
 
   /** See-through mode: shapes turn glassy so what is inside another shape can be picked. */
   const [xray, setXray] = useState(false);
+
+  // What is picked and open now, for the agent's hand, which reads it between its clicks (agentHand.ts).
+  const handRef = useRef({ selected: selectedBodyIds, face: selectedFace, edges: selectedEdges, repeat, draw });
+  handRef.current = { selected: selectedBodyIds, face: selectedFace, edges: selectedEdges, repeat, draw };
 
   const editingRepeatOf = repeat?.bodyId ?? null;
 
@@ -271,8 +272,12 @@ export default function App() {
     getDoc: () => docRef.current,
     // Each agent change is its own undo step, apart from whatever the person was doing a moment before.
     setDoc: (d) => {
+      const next = settle(d);
+      // The same model again (the agent's hand made it here already): not a step of its own.
+      const same = (x: Doc) => JSON.stringify([x.bodies, x.groups, x.repeats, x.library]);
+      if (same(next) === same(docRef.current)) return;
       history.commit();
-      setDocRaw(settle(d));
+      setDocRaw(next);
       history.commit();
     },
     newIds: () => uiIds.current,
@@ -333,11 +338,14 @@ export default function App() {
     const touched = after.bodies.filter((b) => !b.repeatOf && was.get(b.id) !== JSON.stringify(b)).map((b) => b.id);
     return touched.length ? viewerApi.current?.screenOf(touched) ?? null : null;
   }, {
-    // The agent's hand (agentHand.ts): the model, what is picked, and where a shape is drawn.
+    // The agent's hand (agentHand.ts): the model, what is picked and open now, and the 3D view.
     doc: () => docRef.current,
-    selected: () => selectedIdsRef.current,
-    screenOf: (ids) => viewerApi.current?.screenOf(ids) ?? null,
-    emptySpot: () => viewerApi.current?.emptySpot() ?? null,
+    selected: () => handRef.current.selected,
+    face: () => handRef.current.face,
+    edges: () => handRef.current.edges,
+    repeat: () => handRef.current.repeat,
+    draw: () => handRef.current.draw,
+    view: () => viewerApi.current,
   });
 
   // ---- Selection ----------------------------------------------------------

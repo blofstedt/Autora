@@ -194,7 +194,10 @@ releaseNotes: >-
   live: it selects words and types over them, types into cells, opens a slide's text box and types in it, adds
   tracks, draws clips and places notes in Music with your own controls, types its commands at your own prompt
   in the Terminal, in Video picks clips, clicks the ruler, presses Split and Delete and drags clips into place,
-  and in 3D adds shapes from the Shape tray, clicks shapes in the view, types sizes into Size & position and
-  presses Join, Subtract, Group and Delete. With Visible off it works at full speed. Also fixed: the Video window no longer gets stuck
+  and in 3D does everything by hand: adds shapes from the Shape tray, draws with Draw, clicks shapes, faces and
+  edges in the view, types sizes, drags the ring to turn and a bevel's handle to round an edge, steps a repeat's
+  count and drags its dots, uses Properties, Material, the Library, Join, Subtract, Group and Delete, and presses
+  Undo and Redo. With Visible off it works at full speed. The 3D window also no longer loses a change the agent
+  makes right after another. Also fixed: the Video window no longer gets stuck
   loading on machines with no graphics card (and remembers there is none, so it starts at once), and no longer loses
   its project when Autora restarts, so the agent can use it again; Save in the PDF window really saves, filling in a form works, and Photo scrolls smoothly.

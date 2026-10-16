@@ -263,6 +263,15 @@ export async function handGo(to: Point, pressed: boolean, control?: HTMLElement 
   await goTo(to, pressed, control);
 }
 
+/** During a drag: the pointer is where the hand's pointer is now, with no travel of its own. */
+export function handAt(to: Point, words?: string): void {
+  ensureLayer();
+  window.clearTimeout(hideTimer);
+  if (thought && words) { thought.textContent = words; thought.style.opacity = '1'; }
+  if (arrow) arrow.style.opacity = '1';
+  place(to);
+}
+
 /** The hand is done: the pointer fades after a while. */
 export function handRest(): void {
   rest();

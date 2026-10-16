@@ -95,7 +95,26 @@ export interface ViewerApi {
   screenOf(ids: string[]): { x: number; y: number; clear?: boolean } | null;
   /** A point of the view where a press touches nothing (and so drops the pick), or null. */
   emptySpot(): { x: number; y: number } | null;
+  /** Where a point of the model (mm: x right, y away, z up; in a wall shape's own space with `frame`) is on the page; null when not in view. */
+  project(p: { x: number; y: number; z: number }, frame?: Frame): { x: number; y: number } | null;
+  /** Where the pointer at this spot of the page meets the level plane at height z, in model mm. */
+  toPlane(clientX: number, clientY: number, z: number): { x: number; y: number } | null;
+  /** What a press at this spot of the page would touch, worked out as a press works it out. */
+  hitAt(clientX: number, clientY: number): ViewerHit | null;
+  /**
+   * The handles drawn now (arrows, dots, the ring, the repeat's dots), each with where it is on the page, and where it is in the
+   * model and how far it spreads across the ground (the ring's radius), in mm.
+   */
+  handles(): (Extract<ViewerHit, { type: 'gizmo' }> & { x: number; y: number; at: { x: number; y: number; z: number }; spread: number })[];
+  /** How many millimetres one pixel is at the middle of the view, which is what a drag of a handle goes by. */
+  mmPerPixel(): number;
 }
+
+/** What a press touches, for the agent's hand (agentHand.ts). */
+export type ViewerHit =
+  | { type: 'gizmo'; gizmo: string; bodyId?: string; index?: number; axis?: string }
+  | { type: 'edge'; bodyId: string; kind: EdgeSel['kind']; index: number }
+  | { type: 'body'; bodyId: string; face: { kind: FaceSel['kind']; index?: number } };
 
 export interface ModelViewer3DProps {
   apiRef?: React.MutableRefObject<ViewerApi | null>;
@@ -1608,6 +1627,51 @@ export default function ModelViewer3D({
           }
           return middle && { ...middle, clear: false };
         },
+        project: (p, frame) => {
+          const v = new THREE.Vector3(p.x, p.z, -p.y);
+          if (frame) v.applyMatrix4(frameMatrix(frame));
+          v.project(camera);
+          if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null;
+          const r = renderer.domElement.getBoundingClientRect();
+          return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height };
+        },
+        toPlane: (cx, cy, z) => {
+          const p = intersectPlane(cx, cy, z);
+          return p ? { x: p.x, y: -p.z } : null;
+        },
+        hitAt: (cx, cy) => {
+          const hit = resolveHit(cx, cy);
+          if (!hit) return null;
+          if (hit.type === 'gizmo') return { type: 'gizmo', gizmo: hit.gizmo, bodyId: hit.bodyId, index: hit.index, axis: hit.axis };
+          if (hit.type === 'edge') return { type: 'edge', bodyId: hit.sel.bodyId, kind: hit.sel.kind, index: hit.sel.index };
+          return { type: 'body', bodyId: hit.bodyId, face: { kind: hit.face.kind, index: hit.face.index } };
+        },
+        handles: () => {
+          const out: ReturnType<ViewerApi['handles']> = [];
+          const r = renderer.domElement.getBoundingClientRect();
+          const at = (o: THREE.Object3D) => {
+            const box = new THREE.Box3().setFromObject(o);
+            const c = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const v = c.clone().project(camera);
+            if (v.z > 1) return null;
+            return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height, at: { x: c.x, y: -c.z, z: c.y }, spread: Math.max(size.x, size.z) / 2 };
+          };
+          if (gizmoGroup.visible) {
+            gizmoGroup.traverse((o) => {
+              const g = o.userData.gizmo as string | undefined;
+              const p = g && o.visible ? at(o) : null;
+              if (g && p) out.push({ type: 'gizmo', gizmo: g, bodyId: o.userData.bodyId, index: o.userData.index, axis: o.userData.axis, ...p });
+            });
+          }
+          previewGroup.traverse((o) => {
+            const h = o.userData.repeatHandle as string | undefined;
+            const p = h ? at(o) : null;
+            if (h && p) out.push({ type: 'gizmo', gizmo: h === 'end' ? 'repeat-end' : 'repeat-bend', ...p });
+          });
+          return out;
+        },
+        mmPerPixel: () => mmPerPixel(),
         emptySpot: () => {
           const r = renderer.domElement.getBoundingClientRect();
           for (const [fx, fy] of [[0.85, 0.8], [0.15, 0.8], [0.85, 0.3], [0.15, 0.3], [0.5, 0.88], [0.5, 0.15]]) {

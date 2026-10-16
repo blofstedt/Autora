@@ -242,16 +242,23 @@ const CAD = [
     "separate; Size & position, Properties, Material, Pick edges, Push & pull; Save to library, Edit object, Separate; Export & file. " +
     "A tool that does not apply yet (Join with one shape picked) is dimmed. Name a tool by its button and say \"open All tools\" if " +
     "it is not on their bar. Everything they can do you can do with the cad_* tools, whatever is shown.",
-  "  With Visible work on and the window open where the person is looking, these are done there by your hand, live, while the " +
-    "call waits: cad_shape_add (the Shape tray's tile pressed, then its width, depth, height and place typed into Size & position), " +
-    "cad_shape_move, cad_shape_resize and cad_shape_set's height and elevation (the shape clicked in the view, the numbers typed into " +
-    "Size & position), cad_shape_delete (the shapes clicked, Delete pressed and its question answered), cad_shapes_join, " +
-    "cad_shapes_subtract with one cutter (picked last) and cad_group_create (the shapes clicked, Shift for each after the first, then " +
-    "Join, Subtract or Group pressed and the group named in the top bar). To reach a shape your hand may click empty space to let go " +
-    "of what is picked, fit the model in view or scroll in on it, so the person's view can move. Then the finished model goes in, " +
-    "keeping the ids the window gave what the hand made. Your result says \"Done by hand in the 3D window\" with each step, and " +
-    "\"Not by hand\" with why for what was not (a shape in a group, one placed on top of another, out of reach). Every other call, " +
-    "and all of them when nobody is watching, changes the model at speed and the window shows it. With Visible work off every call does.",
+  "  With Visible work on and the window open where the person is looking, every call that changes the model is done there by " +
+    "your hand, live, while the call waits, with the modeller's own controls: shapes from the Shape tray (on a picked top face for " +
+    "onTopOf); cad_shape_draw and cad_shape_cut with Draw (corners tapped and Finish pressed, a rectangle or a circle dragged out, " +
+    "on the ground, a picked top face or a picked wall, Cut for a hole); shapes, faces and edges clicked in the view (Shift for each " +
+    "after the first, a click again to pick one shape inside its group); sizes and places typed into Size & position; a face's own " +
+    "number typed for cad_face_set and cad_face_push; names, All corners and Duplicate in Properties; colours and finishes in " +
+    "Material; a turn by dragging the ring; a bevel by tapping the edge's handle and dragging Curved edge or Flat bevel; a repeat " +
+    "by stepping its count, dragging its dots and keeping the copies; Join, Subtract (once per cutter), Group, Ungroup, Delete and " +
+    "its question, Hide and Show hidden; Save to library, the Library card's objects, globe and remove, Edit object and Separate; " +
+    "Undo and Redo in the top bar; a cad_batch one command at a time; cad_doc_clear by picking everything and Delete. To reach " +
+    "something your hand may let go of the pick, close a card, fit the model in view, scroll in or out, or look from another " +
+    "side, so the person's view can move. Then the finished model goes in, keeping the ids the window gave what the hand made. " +
+    "Your result says \"Done by hand in the 3D window\" with each step, and \"Not by hand\" with why for what was not: the " +
+    "window has no control for cad_doc_set, cad_library_import, cad_library_rename or a new outline in cad_shape_set, Draw's " +
+    "Cut goes all the way through (a shallower pocket goes in with the finished model), and the curve of a drawn shape's closing " +
+    "side; anything the hand could not reach. Calls that only read are not shown. With Visible work off, or nobody watching, " +
+    "every call changes the model at speed and the window shows it.",
   "  Saving. The model is saved as you go; the window's top bar (Autora 3D, the count of shapes) also has Save, which keeps a copy in Artifacts as a GLB named after the chat. cad_export is still yours for other formats.",
 ].join("\n");
 

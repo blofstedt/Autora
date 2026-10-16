@@ -144,15 +144,15 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
     void (async () => {
       const q = `/api/cad/${encodeURIComponent(sessionId)}/hand`;
       const claim = await fetch(`${q}/claim?id=${encodeURIComponent(hand.id)}`, { method: "POST" })
-        .then((r) => (r.ok ? (r.json() as Promise<{ won?: boolean }>) : { won: false }))
-        .catch(() => ({ won: false }));
+        .then((r) => (r.ok ? (r.json() as Promise<{ won?: boolean; goal?: unknown; need?: unknown }>) : { won: false, goal: undefined, need: undefined }))
+        .catch(() => ({ won: false, goal: undefined, need: undefined }));
       if (!claim.won) return;
       for (let waited = 0; !ready.current && waited < 45_000; waited += 250) await new Promise((r) => setTimeout(r, 250));
       const answer = ready.current
         ? await new Promise<Record<string, unknown>>((resolve) => {
-          const timer = setTimeout(() => resolve({ did: [], skipped: "the modeller did not answer" }), 110_000);
+          const timer = setTimeout(() => resolve({ did: [], skipped: "the modeller did not answer" }), 140_000);
           handing.current.set(hand.id, (a) => { clearTimeout(timer); resolve(a); });
-          post({ autora3d: "hand", id: hand.id, name: hand.name, args: hand.args });
+          post({ autora3d: "hand", id: hand.id, name: hand.name, args: hand.args, goal: claim.goal, need: claim.need });
         })
         : { did: [], skipped: "the modeller did not start" };
       handing.current.delete(hand.id);
