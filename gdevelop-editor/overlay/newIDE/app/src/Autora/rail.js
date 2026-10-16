@@ -203,6 +203,11 @@ export const run = async (id: string): Promise<void> => {
     if (made) h.openLayout(made, { openEventsEditor: false, openSceneEditor: true, focusWhenOpened: 'scene' });
     return;
   }
+  if (id === 'back') {
+    const scene = name || scenesOf(e.project)[0];
+    if (scene) h.openLayout(scene, { openEventsEditor: false, openSceneEditor: true, focusWhenOpened: 'scene' });
+    return;
+  }
   if (id === 'pictures') return h.openResources();
   if (id === 'project') return h.toggleProjectManager();
   if (id === 'export') return h.openShareDialog();
@@ -265,6 +270,12 @@ export const startAutoraRail = () => {
 
   let last = '';
   setInterval(() => {
+    // The editor's own toolbar is the scene's old chrome; on any other editor (rules, pictures) it stays, less its preview and share buttons.
+    const tab = hands() ? hands().activeTab() : null;
+    document.documentElement.setAttribute(
+      'data-autora-on',
+      tab && tab.kind === 'layout' ? 'scene' : tab && tab.kind === 'layout events' ? 'events' : 'other'
+    );
     let now = null;
     try {
       now = stateOf();

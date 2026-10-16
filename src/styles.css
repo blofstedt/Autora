@@ -6796,6 +6796,12 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .gm-chip:hover:not(:disabled) { color: var(--text); background: var(--s3); border-color: var(--accent-line); }
 .gm-chip.is-on { color: var(--text); background: var(--accent-soft); border-color: var(--accent-line); }
 .gm-chip.is-new { border-style: dashed; }
+/* Over the editor when it shows something other than the scene (the rules, the pictures): the way back, now the tab strip is away. */
+.gm-back {
+  position: absolute; left: 12px; bottom: 12px; z-index: 3; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--r-pill); cursor: pointer;
+  background: var(--s2); border: 1px solid var(--border-strong); color: var(--text); font: 550 var(--fs-sm) var(--sans); box-shadow: var(--shadow-lg);
+}
+.gm-back:hover { border-color: var(--accent-line); background: var(--s3); }
 .pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); display: block; }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */

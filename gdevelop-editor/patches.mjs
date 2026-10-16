@@ -359,4 +359,23 @@ import {
     find: `  const canAddEffectFromStore = target === 'layer';`,
     replace: `  const canAddEffectFromStore = false;`,
   },
+  // ---- The window's tool bar takes the place of the toolbar and the phone's bottom row (autora.css hides them). ----
+  {
+    file: SRC + "UI/Toolbar.js",
+    find: `        className="almost-invisible-scrollbar"
+        style={{
+          ...styles.toolbar,`,
+    replace: `        className="almost-invisible-scrollbar autora-toolbar"
+        style={{
+          ...styles.toolbar,`,
+  },
+  {
+    file: SRC + "SceneEditor/SwipeableDrawerEditorsDisplay/BottomToolbar.js",
+    find: `      <Paper background="medium" square style={styles.container}>`,
+    replace: `      <Paper
+        background="medium"
+        square
+        style={{ ...styles.container, display: 'none' }}
+      >`,
+  },
 ];

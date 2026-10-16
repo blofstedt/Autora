@@ -5,7 +5,7 @@ import { useFullscreen } from "../lib/fullscreen";
 import { gameStateNow, onGameState, useGameState, type GameCue } from "../lib/gamedesk";
 import { useAgentCursor } from "../lib/agentCursor";
 import { GameCursor } from "./GameCursor";
-import { IconGame, IconMaximize, IconMinimize } from "./Icons";
+import { IconArrowLeft, IconGame, IconMaximize, IconMinimize } from "./Icons";
 import { GameRail, type GameRailState } from "./game/GameRail";
 
 /** The colours Autora sends the editor: the custom properties its own pages are drawn from (the editor's theme maps them). */
@@ -177,6 +177,11 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
            game through Autora's routes. A game the person is making does not run here: previews are served apart (see previews). */
         allow="fullscreen; autoplay; gamepad"
       />
+      {up && rail && rail.on !== "scene" && (
+        <button type="button" className="gm-back" onClick={() => run("back")}>
+          <IconArrowLeft size={13} /> Back to the scene
+        </button>
+      )}
       {show && <GameCursor cues={show.cues} seq={show.seq} frame={frame} onDone={reloadAfter} />}
       </div>
       <GameRail phone={phone} rail={up ? rail : null} run={run} ask={ask} asked={asked} />
