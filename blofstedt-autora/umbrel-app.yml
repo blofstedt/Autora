@@ -188,6 +188,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The "learned from this" block under a reply is tighter: each memory's chip now sits right above its note and Discard
-  button, and the gaps around the block are smaller, so a turn that saves memories no longer leaves a tall empty stretch
-  before the suggested next steps.
+  What the agent learned from a turn now shows in one rounded "New memories…" box: a coloured dot and a line for each
+  memory, with an x at the end to forget it. The agent can now connect two memories when it notices they belong together
+  (a new memory_link tool, shown in the Mind), and is told to write, fix and confirm its own skills as memories of kind
+  skill. Earlier in this release: the to-do list is ticked off one item at a time, and the copy and read-aloud buttons
+  sit beside the agent's name.

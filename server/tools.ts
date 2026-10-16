@@ -488,6 +488,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `save tool ${CUSTOM_PREFIX}${String(args.name ?? "").replace(CUSTOM_PREFIX, "")}:\n${args.script}`;
     case "memory_update":
       return `update memory ${args.id}`;
+    case "memory_link":
+      return `connect memory ${args.from} to ${args.to}${args.rel ? ` (${args.rel})` : ""}`;
     case "memory_forget":
       return `forget memory ${args.id}${args.replaced_by ? ` (replaced by ${args.replaced_by})` : ""}`;
     case "read_file":
@@ -650,6 +652,8 @@ export interface ToolContext {
     /** Say that a memory still holds, and stamp it checked today. */
     confirm: (id: string, note?: string) => boolean;
     forget: (id: string, replacedBy?: string | null) => boolean;
+    /** Tie two memories together; an error in words, or null when drawn. */
+    link: (a: string, b: string, rel?: string) => string | null;
   };
   /** True when this session is doing work someone handed it -- an agent started
       on a task, or an automated run. Threads is the agents' own corner and is
@@ -3456,6 +3460,16 @@ async function runToolUnredacted(
           return { ok: false, summary: `There is no memory ${id}. memory_search shows the ids.` };
         }
         return { ok: true, summary: `Updated ${id}.`, preview: id };
+      }
+
+      case "memory_link": {
+        if (ctx.memory.incognito) return incognitoMemory();
+        const from = String(args.from ?? "").trim();
+        const to = String(args.to ?? "").trim();
+        if (!from || !to) return { ok: false, summary: "Both memory ids are needed: from and to." };
+        const wrong = ctx.memory.link(from, to, typeof args.rel === "string" ? args.rel : undefined);
+        if (wrong) return { ok: false, summary: `Not connected. ${wrong} memory_search shows the ids.` };
+        return { ok: true, summary: `Connected ${from} and ${to}.`, preview: `${from} ↔ ${to}` };
       }
 
       case "memory_forget": {

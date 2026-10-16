@@ -652,6 +652,29 @@ export class MemoryGraph {
     return r;
   }
 
+  /**
+   * Tie two memories together because something noticed they belong together.
+   *
+   * The automatic links ("similar") are redrawn from the words whenever the graph is relinked; one made
+   * here is a judgement -- "this skill uses that reference" -- and is kept under its own name (`rel`, a
+   * word or two), never redrawn or dropped by `relink`. Returns an error in words, or null when drawn
+   * (including when the two were already tied that way).
+   */
+  connect(a: string, b: string, rel = "related to"): string | null {
+    const [x, y] = [this.get(a), this.get(b)];
+    if (!x) return `There is no memory ${a}.`;
+    if (!y) return `There is no memory ${b}.`;
+    if (x.id === y.id) return "A memory cannot be connected to itself.";
+    if (x.superseded_by || y.superseded_by) return "One of them has been replaced; connect the memory that replaced it.";
+    const name = rel.trim().toLowerCase().replace(/[^a-z0-9 _-]+/g, "").replace(/\s+/g, "_").slice(0, 40) || "related_to";
+    const old = this.links.find((l) => (l.src === x.id && l.dst === y.id) || (l.src === y.id && l.dst === x.id));
+    if (old?.rel === name) return null;
+    if (old && old.rel === "similar") old.rel = name;
+    else this.links.push({ src: x.id, dst: y.id, rel: name });
+    this.changed();
+    return null;
+  }
+
   /** Retire a memory: replaced by another if one is named, else removed. */
   forget(id: string, replacedBy?: string | null): boolean {
     const r = this.get(id);

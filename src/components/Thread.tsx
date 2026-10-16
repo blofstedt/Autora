@@ -1279,34 +1279,10 @@ const Reply = memo(function Reply({
         <AutoraMark size={27} state={working ? phase : "rest"} />
       </span>
       <div className="msg-body">
-        <div className="msg-who">autora</div>
-        {thinking && (
-          <>
-            <button
-              className={`reason-toggle ${open ? "open" : ""}`}
-              onClick={() => setOpen(!open)}
-              aria-expanded={open}
-            >
-              <IconChevron size={11} />
-              {open ? "hide reasoning" : "reasoning"}
-            </button>
-            {open && <pre className="reason-body">{thinking}</pre>}
-          </>
-        )}
-        {memories.map((m, index) => (
-          <MemoryCell key={index} cell={m} onOpen={onOpenMind} inline />
-        ))}
-        {text && <div className="msg-text is-md"><Markdown text={text} streaming={working} /></div>}
-        {/* One button with two faces, and it says what the next press will do
-            rather than what is happening now: the speaker to hear the reply,
-            the slashed one once it has been stopped, the speaker again to hear
-            it. Only on a reply that has landed -- offering to read out a
-            sentence still being written is offering to read half of it -- and
-            only the reply the voice is actually on shows the second face, since
-            pressing another reply's speaker stops this one: there is one
-            voice. */}
+        <div className="msg-who">
+          autora
         {text && !working && (
-          <div className="msg-tools">
+          <span className="msg-tools">
             <button
               type="button"
               className={`msg-tool ${copied ? "is-copied" : ""}`.trim()}
@@ -1332,8 +1308,34 @@ const Reply = memo(function Reply({
             >
               {mine?.muted ? <IconSpeakerOff size={13} /> : <IconSpeaker size={13} />}
             </button>}
-          </div>
+          </span>
         )}
+        </div>
+        {thinking && (
+          <>
+            <button
+              className={`reason-toggle ${open ? "open" : ""}`}
+              onClick={() => setOpen(!open)}
+              aria-expanded={open}
+            >
+              <IconChevron size={11} />
+              {open ? "hide reasoning" : "reasoning"}
+            </button>
+            {open && <pre className="reason-body">{thinking}</pre>}
+          </>
+        )}
+        {memories.map((m, index) => (
+          <MemoryCell key={index} cell={m} onOpen={onOpenMind} inline />
+        ))}
+        {text && <div className="msg-text is-md"><Markdown text={text} streaming={working} /></div>}
+        {/* One button with two faces, and it says what the next press will do
+            rather than what is happening now: the speaker to hear the reply,
+            the slashed one once it has been stopped, the speaker again to hear
+            it. Only on a reply that has landed -- offering to read out a
+            sentence still being written is offering to read half of it -- and
+            only the reply the voice is actually on shows the second face, since
+            pressing another reply's speaker stops this one: there is one
+            voice. */}
         {onOpenSettings && (
           <button className="btn primary msg-action" onClick={onOpenSettings}>
             Open Settings <IconArrow size={13} />

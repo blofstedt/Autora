@@ -4931,6 +4931,19 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             }
             return Boolean(record);
           },
+          link: (a, b, rel) => {
+            if (session.incognito) return "This chat is incognito.";
+            const wrong = mind.connect(a, b, rel);
+            if (!wrong) {
+              const record = mind.get(a);
+              if (record) {
+                emitEvent(session, "memory.write", "agent", {
+                  id: record.id, title: record.title, kind: record.kind, action: "connected",
+                });
+              }
+            }
+            return wrong;
+          },
           forget: (id, replacedBy) => {
             if (session.incognito) return false;
             const record = mind.get(id);

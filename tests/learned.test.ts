@@ -1,5 +1,5 @@
 /**
- * The rows under "learned from this", in the real app.
+ * The rows in the "New memories" box, in the real app.
  *
  * Three things it is easy to get wrong, all of them about a row that reads its
  * own state from the server rather than from the event that made it:
@@ -127,9 +127,9 @@ async function main() {
         { timeout: 10_000 },
       );
       const shown = (await row.innerText()).replace(/\s+/g, " ");
-      assert.match(shown, /a correction to an existing memory/);
-      // Remembered already: the only thing offered is Discard.
-      assert.match(shown, /Discard/);
+      assert.match((await row.locator(".learned-open").getAttribute("title")) ?? "", /a correction to an existing memory/);
+      // Remembered already: the only thing offered is the x that forgets it.
+      assert.equal(await row.locator(".learned-x").count(), 1);
       assert.ok(!/Keep/.test(shown), `the row still offers Keep: "${shown}"`);
     });
 
@@ -182,7 +182,7 @@ async function main() {
       const shown = (await row.innerText()).replace(/\s+/g, " ");
       assert.ok(settled, `the row still reads "${shown}" -- it only catches up on a reload`);
       assert.ok(!/Keep/.test(shown), `the row still offers Keep: "${shown}"`);
-      assert.match(shown, /Discard/);
+      assert.equal(await row.locator(".learned-x").count(), 1);
     });
   } finally {
     await browser.close();

@@ -22,7 +22,8 @@ const { withoutUnloaded } = await import("../server/toolload");
 
 // Raised to 48_200 (2026-10-16): main stood at exactly 48,000; artifact_list and artifact_save now say that files live in
 // one folder per project (the composer's Artifacts button attaches project folders), +66 chars after trimming both.
-const SCHEMA_BUDGET_CHARS = 48_200;
+// Raised again, to 48_700 (2026-10-16): memory_link, the tool that connects two memories (~420 chars with its schema).
+const SCHEMA_BUDGET_CHARS = 48_700;
 // Raised from 17,500 for the windows overview (server/handbook.ts): the manuals themselves are not in the briefing, they arrive with a window's first call.
 // Raised again, to 22_000: on CI the browser, memory and voice groups are all available, and their guides are in the briefing (20,871 chars there before Autora Photo's line, about 18,000 on a machine without a browser).
 // Raised again, to 24_000: the tool bars add each window's bar and All-tools grid to the guides; CI measured 23,354 chars, about 21,500 on a machine without a browser.
