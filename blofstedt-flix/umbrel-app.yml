@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.1.4"
+version: "0.1.5"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -45,6 +45,11 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
+  A new Flix logo, and no more blank page when the server is unreachable: if
+  Flix cannot reach its own API, the app now says so instead of showing an
+  empty screen.
+
+
   API keys can now be set from inside Flix, no .env file and no restart. An
   admin gets a Settings page in the app with the BTN API key, the optional
   TMDB key and the qBittorrent connection on it, each with a Test connection
