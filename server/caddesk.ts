@@ -255,7 +255,6 @@ const READS = new Set([
 const NO_CONTROL: Record<string, string> = {
   doc_set: "the window has no control that puts in a whole model",
   library_import: "the window has no control that imports library objects",
-  library_rename: "the window has no control that renames a library object",
 };
 /** Undo and redo: done in the window with its own buttons, on the history the model already has. */
 const HISTORY = new Set(["history_undo", "history_redo"]);

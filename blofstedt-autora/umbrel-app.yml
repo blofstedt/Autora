@@ -188,6 +188,9 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora 3D's parts pane (Shapes, Objects and the Library, down the left on a desktop) is now a slim column instead of a
-  wide one, and has a search box that narrows the list by name. Before this: you can rename shapes and objects by
-  double-clicking the name, keep either in the Library, add independent copies from it, and open a group to edit inside it.
+  The agent now works the 3D parts pane the way you do when Visible work is on: its cursor goes to a thumbnail to pick a
+  shape or an object (Shift for more), types a name into the Search box to find one in a long list, double-clicks a name
+  to rename it, presses the bookmark to keep something in the Library, and adds, renames, shares or removes library
+  objects in the Library tab, each by the right thumbnail even when two share a name. It can also open a group with Edit
+  inside and leave it again (two new tools, cad_group_enter and cad_group_exit), so you can watch it work on one part of an
+  object. Renaming a library object is now done by hand too.

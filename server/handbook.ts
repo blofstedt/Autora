@@ -263,11 +263,11 @@ const CAD = [
     "Material; a turn by dragging the ring; a bevel by tapping the edge's handle and dragging Curved edge or Flat bevel; a repeat " +
     "by stepping its count, dragging its dots and keeping the copies; Join, Subtract (once per cutter), Group, Ungroup, Delete and " +
     "its question, Hide and Show hidden; Save to library, the Library's objects, globe and remove (in the parts pane, or the Library card on a phone), Edit object and Separate; " +
-    "Undo and Redo in the top bar; a cad_batch one command at a time; cad_doc_clear by picking everything and Delete. To reach " +
+    "Undo and Redo in the top bar; a cad_batch one command at a time; cad_doc_clear by picking everything and Delete. On a desktop the parts pane is used as a person uses it: shapes and objects are picked by their thumbnails (Shift for each after the first; with a long list, by typing the name in Search by name), named by double-clicking the name, saved with the bookmark under the thumbnail, and library objects are added, renamed, kept in every project or removed in its Library tab; cad_group_enter presses Edit inside and cad_group_exit presses Exit group (a view only: the model does not change, and with Visible work off nothing is shown).  To reach " +
     "something your hand may let go of the pick, close a card, fit the model in view, scroll in or out, or look from another " +
     "side, so the person's view can move. Then the finished model goes in, keeping the ids the window gave what the hand made. " +
     "Your result says \"Done by hand in the 3D window\" with each step, and \"Not by hand\" with why for what was not: the " +
-    "window has no control for cad_doc_set, cad_library_import, cad_library_rename or a new outline in cad_shape_set, Draw's " +
+    "window has no control for cad_doc_set, cad_library_import, cad_library_rename on a phone or a new outline in cad_shape_set, Draw's " +
     "Cut goes all the way through (a shallower pocket goes in with the finished model), and the curve of a drawn shape's closing " +
     "side; anything the hand could not reach. Calls that only read are not shown. With Visible work off, or nobody watching, " +
     "every call changes the model at speed and the window shows it.",

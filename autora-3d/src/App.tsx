@@ -1057,7 +1057,11 @@ export default function App() {
             groups={groups}
             selectedBodyIds={selectedBodyIds}
             entered={enteredGroup}
-            onPickShapes={(ids) => selectMany(ids)}
+            onPickShapes={(ids, extend) => {
+              if (!extend) return selectMany(ids);
+              const all = ids.every((i) => selectedBodyIds.includes(i));
+              selectMany(all ? selectedBodyIds.filter((i) => !ids.includes(i)) : [...new Set([...selectedBodyIds, ...ids])]);
+            }}
             onRename={handlePaneRename}
             onSave={handlePaneSave}
             onEnter={(id) => (enteredGroup === id ? exitGroup() : enterGroup(id))}

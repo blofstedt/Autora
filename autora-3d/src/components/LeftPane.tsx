@@ -35,7 +35,8 @@ export interface LeftPaneProps {
   selectedBodyIds: string[];
   /** The group being edited from the inside, if one is. */
   entered: string | null;
-  onPickShapes: (ids: string[]) => void;
+  /** `extend`: Shift or Ctrl was held, so the shapes join the pick (or leave it, when all are in it already). */
+  onPickShapes: (ids: string[], extend: boolean) => void;
   onRename: (kind: 'shape' | 'object' | 'item', id: string, name: string) => void;
   onSave: (kind: 'shape' | 'object', id: string) => void;
   onEnter: (groupId: string) => void;
@@ -110,10 +111,10 @@ const IconBtn = ({ label, onClick, children, danger, pressed }: { label: string;
   </button>
 );
 
-function Card({ selected, children, onPick, label }: { selected?: boolean; children: React.ReactNode; onPick: () => void; label: string }) {
+function Card({ selected, children, onPick, label, part }: { selected?: boolean; children: React.ReactNode; onPick: (extend: boolean) => void; label: string; part: { kind: 'shape' | 'object' | 'item'; id: string } }) {
   return (
-    <div className={`rounded-2xl p-1.5 flex flex-col gap-1 border transition-colors ${selected ? 'bg-accent-500/20 border-accent-400/60' : 'bg-white/5 border-transparent hover:bg-white/8'}`}>
-      <button type="button" aria-label={label} aria-pressed={!!selected} onClick={onPick} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
+    <div data-part-kind={part.kind} data-part-id={part.id} className={`rounded-2xl p-1.5 flex flex-col gap-1 border transition-colors ${selected ? 'bg-accent-500/20 border-accent-400/60' : 'bg-white/5 border-transparent hover:bg-white/8'}`}>
+      <button type="button" aria-label={label} aria-pressed={!!selected} onClick={(e) => onPick(e.shiftKey || e.ctrlKey || e.metaKey)} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
         {(children as React.ReactNode[])[0]}
       </button>
       {(children as React.ReactNode[]).slice(1)}
@@ -191,7 +192,7 @@ export default function LeftPane(props: LeftPaneProps) {
             : shownShapes.length === 0 ? none('shapes')
             : <div className="grid grid-cols-2 gap-1.5">
                 {shownShapes.map((s) => (
-                  <Card key={s.id} label={`Pick ${s.name}`} selected={picked(s.ids)} onPick={() => props.onPickShapes(s.ids)}>
+                  <Card key={s.id} part={{ kind: 'shape', id: s.group ?? s.id }} label={`Pick ${s.name}`} selected={picked(s.ids)} onPick={(x) => props.onPickShapes(s.ids, x)}>
                     <Thumb bodies={s.bodies} name={s.name} />
                     <Name value={s.name} label={s.name} onCommit={(n) => props.onRename(s.group ? 'object' : 'shape', s.group ?? s.id, n)} />
                     <div className="flex items-center justify-between">
@@ -211,7 +212,7 @@ export default function LeftPane(props: LeftPaneProps) {
                 {shownObjects.map((g) => {
                   const inside = bodies.filter((b) => g.bodyIds.includes(b.id));
                   return (
-                    <Card key={g.id} label={`Pick ${g.name}`} selected={picked(g.bodyIds)} onPick={() => props.onPickShapes(g.bodyIds)}>
+                    <Card key={g.id} part={{ kind: 'object', id: g.id }} label={`Pick ${g.name}`} selected={picked(g.bodyIds)} onPick={(x) => props.onPickShapes(g.bodyIds, x)}>
                       <Thumb bodies={inside} name={g.name} />
                       <Name value={g.name} label={g.name} onCommit={(n) => props.onRename('object', g.id, n)} />
                       <div className="flex items-center justify-between">
@@ -233,7 +234,7 @@ export default function LeftPane(props: LeftPaneProps) {
             : shownLibrary.length === 0 ? none('library objects')
             : <div className="grid grid-cols-2 gap-1.5">
                 {shownLibrary.map((item) => (
-                  <Card key={item.id} label={`Add a copy of ${item.name}`} onPick={() => props.onPlaceItem(item.id)}>
+                  <Card key={item.id} part={{ kind: 'item', id: item.id }} label={`Add a copy of ${item.name}`} onPick={() => props.onPlaceItem(item.id)}>
                     <img src={item.thumb} alt="" aria-hidden="true" className="w-full aspect-square rounded-xl bg-slate-950/70" draggable={false} />
                     <Name value={item.name} label={item.name} onCommit={(n) => props.onRename('item', item.id, n)} />
                     <div className="flex items-center justify-between">

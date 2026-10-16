@@ -992,6 +992,32 @@ export const cadSPECS: ToolSpec[] = [
     }
   },
   {
+    "name": "cad_group_enter",
+    "group": "files",
+    "description": "Open a group for editing from the inside, as the person does with Edit inside: the window shows only its shapes, and each is picked on its own. It changes nothing in the model and is only a view, shown when Visible work is on. Leave with cad_group_exit.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "group"
+      ]
+    }
+  },
+  {
+    "name": "cad_group_exit",
+    "group": "files",
+    "description": "Leave the group opened with cad_group_enter (a view in the person's window; the model does not change).",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
     "name": "cad_group_rename",
     "group": "files",
     "description": "Rename a group (e.g. \"head\"). Find group ids with cad_scene_get.",

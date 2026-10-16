@@ -53,7 +53,7 @@ await test("the Games manual teaches the tool bar, Play in the window and the Ad
 
 await test("the 3D manual teaches the tool bar and not the bottom bar it replaced", () => {
   const cad = manualText("cad");
-  for (const needle of ["All tools", "Size & position", "Pick edges", "Push & pull", "pin any tool", "no bottom bar", "whatever is shown", "parts pane", "Edit inside", "independent copy"]) {
+  for (const needle of ["All tools", "Size & position", "Pick edges", "Push & pull", "pin any tool", "no bottom bar", "whatever is shown", "parts pane", "Edit inside", "independent copy", "cad_group_enter", "Search by name"]) {
     assert.ok(cad.includes(needle), `the 3D manual lacks "${needle}"`);
   }
 });

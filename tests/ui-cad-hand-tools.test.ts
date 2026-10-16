@@ -86,7 +86,7 @@ async function main() {
       const base = await named("Base");
       const out = await byHand("put a red metal cylinder on top", [{ name: "cad_shape_add", args: { kind: "cylinder", width: 20, height: 30, onTopOf: base.id, name: "Post", color: "#ef4444", material: "metal" } }]);
       assert.match(out, /picked the top face/);
-      assert.match(out, /typed the name "Post" in Properties/);
+      assert.match(out, /named it "Post" in the parts pane/);
       assert.match(out, /chose Crimson Red in Material/);
       const post = await named("Post");
       assert.equal(post.color.toLowerCase(), "#ef4444");
@@ -179,7 +179,7 @@ async function main() {
       await run("group", [{ name: "cad_group_create", args: { ids: d.bodies.map((b) => b.id), name: "Pair" } }]);
       const g = (await doc()).groups[0];
       let out = await byHand("rename it", [{ name: "cad_group_rename", args: { group: g.id, name: "Twins" } }]);
-      assert.match(out, /named it "Twins" in the top bar/);
+      assert.match(out, /named it "Twins" in the parts pane/);
       assert.equal((await doc()).groups[0].name, "Twins");
       out = await byHand("ungroup it", [{ name: "cad_group_remove", args: { group: g.id } }]);
       assert.match(out, /pressed Ungroup/);
@@ -202,7 +202,7 @@ async function main() {
       await start([add("Knob", { width: 20, depth: 20 })]);
       const knob = await named("Knob");
       let out = await byHand("keep it", [{ name: "cad_library_save", args: { id: knob.id, name: "Knob" } }]);
-      assert.match(out, /pressed Save to library/);
+      assert.match(out, /pressed Save to the library under its thumbnail/);
       const item = (await doc()).library[0];
       assert.ok(item, "an object in the library");
       out = await byHand("place another", [{ name: "cad_library_place", args: { item: item.id, x: 60, y: 0 } }]);
@@ -210,6 +210,51 @@ async function main() {
       out = await byHand("forget it", [{ name: "cad_library_remove", args: { item: item.id } }]);
       assert.match(out, /pressed remove beside Knob/);
       assert.equal((await doc()).library.length, 0);
+    });
+
+    await test("pane", "the parts pane: a shape picked by its thumbnail, named there, found by search among many", async () => {
+      await start([add("Alpha", { x: -90 }), add("Beta", { x: -60 }), add("Gamma", { x: -30 }), add("Delta", { x: 0 }), add("Eps", { x: 30 }), add("Zeta", { x: 60 }), add("Eta", { x: 90 })]);
+      const eta = await named("Eta");
+      let out = await byHand("make Eta taller", [{ name: "cad_shape_resize", args: { id: eta.id, height: 45 } }]);
+      assert.match(out, /picked the shape in the view/);
+      assert.equal(box(await named("Eta")).h, 45);
+      out = await byHand("rename it", [{ name: "cad_shape_set", args: { id: eta.id, name: "Theta" } }]);
+      assert.match(out, /named it "Theta" in the parts pane/);
+      assert.equal((await doc()).bodies.filter((b) => b.name === "Theta").length, 1);
+    });
+
+    await test("enter", "a group opened with Edit inside, one of its shapes resized, then Exit group", async () => {
+      await start([add("A", { x: -40 }), add("B", { x: 40 }), add("Out", { x: 120 })]);
+      const d = await doc();
+      await run("group", [{ name: "cad_group_create", args: { ids: d.bodies.filter((b) => b.name !== "Out").map((b) => b.id), name: "Pair" } }]);
+      const g = (await doc()).groups[0];
+      let out = await byHand("open it", [{ name: "cad_group_enter", args: { group: g.id } }]);
+      assert.match(out, /pressed Edit inside Pair/);
+      const a = await named("A");
+      out = await byHand("taller A", [{ name: "cad_shape_resize", args: { id: a.id, height: 33 } }]);
+      assert.match(out, /picked the shape/);
+      assert.equal(box(await named("A")).h, 33);
+      out = await byHand("close it", [{ name: "cad_group_exit", args: {} }]);
+      assert.match(out, /pressed Exit group/);
+    });
+
+    await test("libname", "two library objects with one name: the right one is renamed and added; shape saved from inside a group", async () => {
+      await start([add("Knob", { width: 20, depth: 20 }), add("Knob", { width: 30, depth: 30, x: 80 })]);
+      const knobs = (await doc()).bodies;
+      await byHand("keep one", [{ name: "cad_library_save", args: { id: knobs[0].id, name: "Knob" } }]);
+      await byHand("keep the other", [{ name: "cad_library_save", args: { id: knobs[1].id, name: "Knob" } }]);
+      const items = (await doc()).library;
+      assert.equal(items.length, 2);
+      let out = await byHand("rename the second", [{ name: "cad_library_rename", args: { item: items[1].id, name: "Wide knob" } }]);
+      assert.match(out, /named it "Wide knob" in the parts pane/);
+      const after = (await doc()).library;
+      assert.equal(after.find((i) => i.id === items[1].id)?.name, "Wide knob");
+      assert.equal(after.find((i) => i.id === items[0].id)?.name, "Knob");
+      const before = (await doc()).bodies.length;
+      out = await byHand("add the wide one", [{ name: "cad_library_place", args: { item: items[1].id, x: 200, y: 0 } }]);
+      assert.match(out, /placed Wide knob from the Library/);
+      const placed = (await doc()).bodies.slice(before);
+      assert.ok(placed.length && placed.every((b) => Math.round(box(b).w) === 30), "the wide knob, not the other");
     });
 
     await test("group-shape", "a shape inside a group: clicked again until only it is picked, then resized", async () => {

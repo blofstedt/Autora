@@ -886,6 +886,17 @@ export function unlinkObject(doc: Doc, ids: IdGen, a: { group: string; forget?: 
   return { doc: next, result: { group: g.id, shapes: [...fresh.entries()].filter(([k]) => doc.bodies.some((b) => b.id === k)).map(([, v]) => v), editing: !a.forget } };
 }
 
+/**
+ * Opening a group for editing from the inside is something the person's window shows, not part of the model: the model
+ * does not change. This only checks the group can be opened, and says what the window does with it.
+ */
+export function enterGroup(doc: Doc, a: { group: string }): OpResult<{ group: string; name: string; note: string }> {
+  const g = groupOf(doc, a.group);
+  if (g.joined) return fail(`"${g.name}" is a joined shape, one solid: there is nothing inside it to edit.`);
+  if (g.place || g.instanceOf) return fail(`"${g.name}" is a linked library object, one piece.`, 'Open it for editing with object_unlink, or make it separate.');
+  return { doc, result: { group: g.id, name: g.name, note: 'Editing inside is a view in the person\'s window: with Visible work on the window opens the group (only its shapes show, each picked on its own); otherwise nothing is shown. The model is the same either way.' } };
+}
+
 export function renameLibraryItem(doc: Doc, a: { item: string; name: string }): OpResult<{ item: string; name: string }> {
   const item = itemOf(doc, a.item);
   const name = String(a.name ?? '').trim();

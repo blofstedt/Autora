@@ -1,5 +1,5 @@
 diff --git a/autora-3d/src/App.tsx b/autora-3d/src/App.tsx
-index 8728a3c..9555cf6 100644
+index 8728a3c..36d84e2 100644
 --- a/autora-3d/src/App.tsx
 +++ b/autora-3d/src/App.tsx
 @@ -25,7 +25,8 @@ import { installBridge } from './core/bridge';
@@ -183,7 +183,7 @@ index 8728a3c..9555cf6 100644
      hiddenCount: hiddenCount,
      onHide: hideSelected,
      onShowHidden: showHidden,
-@@ -984,6 +1048,25 @@ export default function App() {
+@@ -984,6 +1048,29 @@ export default function App() {
        <TopBar {...railProps} />
  
        <div className="flex-1 min-h-0 flex">
@@ -196,7 +196,11 @@ index 8728a3c..9555cf6 100644
 +            groups={groups}
 +            selectedBodyIds={selectedBodyIds}
 +            entered={enteredGroup}
-+            onPickShapes={(ids) => selectMany(ids)}
++            onPickShapes={(ids, extend) => {
++              if (!extend) return selectMany(ids);
++              const all = ids.every((i) => selectedBodyIds.includes(i));
++              selectMany(all ? selectedBodyIds.filter((i) => !ids.includes(i)) : [...new Set([...selectedBodyIds, ...ids])]);
++            }}
 +            onRename={handlePaneRename}
 +            onSave={handlePaneSave}
 +            onEnter={(id) => (enteredGroup === id ? exitGroup() : enterGroup(id))}
@@ -209,7 +213,7 @@ index 8728a3c..9555cf6 100644
          {/* Viewport */}
          <main className="relative flex-1 min-w-0 min-h-0 bg-slate-950">
            <div className="absolute inset-0">
-@@ -1057,6 +1140,23 @@ export default function App() {
+@@ -1057,6 +1144,23 @@ export default function App() {
            {/* Bottom-center stack: isolation state and toasts */}
            <div className="absolute z-30 left-1/2 -translate-x-1/2 bottom-3 w-[calc(100%-1.5rem)] max-w-xl flex flex-col items-center gap-2 pointer-events-none [&>*]:pointer-events-auto">
              <AnimatePresence>
@@ -234,10 +238,208 @@ index 8728a3c..9555cf6 100644
                  <motion.div
                    key="isolated"
 diff --git a/autora-3d/src/agentHand.ts b/autora-3d/src/agentHand.ts
-index 0a41dcc..ad40d0b 100644
+index 0a41dcc..152725e 100644
 --- a/autora-3d/src/agentHand.ts
 +++ b/autora-3d/src/agentHand.ts
-@@ -663,6 +663,25 @@ const faceOf = (id: string, spec: unknown): FaceSel => {
+@@ -74,11 +74,11 @@ const pointer = (type: string, p: Point, shift = false, held = type === 'pointer
+     bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, button: 0,
+     buttons: held ? 1 : 0, pointerId: 1, pointerType: 'mouse', isPrimary: true, shiftKey: shift,
+   });
+-const mouse = (type: string, p: Point): MouseEvent =>
+-  new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, button: 0, buttons: type === 'mousedown' ? 1 : 0 });
++const mouse = (type: string, p: Point, shift = false): MouseEvent =>
++  new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, button: 0, buttons: type === 'mousedown' ? 1 : 0, shiftKey: shift });
+ 
+ /** Go to a control and press it, with the events a mouse makes. */
+-async function press(el: HTMLElement | null, words?: string): Promise<void> {
++async function press(el: HTMLElement | null, words?: string, shift = false): Promise<void> {
+   if (!el) throw new Skip('a control was not on the screen');
+   if ((el as HTMLButtonElement).disabled) throw new Skip(`${el.getAttribute('aria-label') ?? el.textContent?.trim() ?? 'a control'} was not available`);
+   const p = centre(el);
+@@ -87,7 +87,7 @@ async function press(el: HTMLElement | null, words?: string): Promise<void> {
+   el.dispatchEvent(mouse('mousedown', p));
+   el.dispatchEvent(pointer('pointerup', p));
+   el.dispatchEvent(mouse('mouseup', p));
+-  el.dispatchEvent(mouse('click', p));
++  el.dispatchEvent(mouse('click', p, shift));
+   await sleep(rand(160, 260));
+ }
+ 
+@@ -318,6 +318,94 @@ async function spot(api: HandApi, cands: () => Cand[], ok: (h: ViewerHit) => boo
+   throw new Skip('it could not be reached in the view');
+ }
+ 
++// ---- The parts pane ---------------------------------------------------------------------------------------------------
++
++type PartKind = 'shape' | 'object' | 'item';
++const TAB_OF: Record<PartKind, string> = { shape: 'Shapes', object: 'Objects', item: 'Library' };
++/** More cards than this and a person would search for the one they want rather than look for it. */
++const SEARCH_ABOVE = 6;
++
++const parts = () => document.querySelector<HTMLElement>('aside[aria-label="Parts"]');
++const partCard = (kind: PartKind, id: string) => parts()?.querySelector<HTMLElement>(`[data-part-kind="${kind}"][data-part-id="${CSS.escape(id)}"]`) ?? null;
++
++/**
++ * The card of a shape, an object or a library item in the parts pane, with its tab open: through the search box when the
++ * list is long. Null when there is no pane (a phone) or the thing is not listed (a piece of a joined shape).
++ */
++async function paneFind(kind: PartKind, id: string, name: string): Promise<HTMLElement | null> {
++  const pane = parts();
++  if (!pane) return null;
++  const tab = Array.from(pane.querySelectorAll<HTMLElement>('[role="tab"]')).find((t) => t.textContent?.trim().startsWith(TAB_OF[kind]));
++  if (tab && tab.getAttribute('aria-selected') !== 'true') await press(tab, `Opening ${TAB_OF[kind]}`);
++  const search = pane.querySelector<HTMLInputElement>('input[aria-label="Search by name"]');
++  let found = await waitFor(() => partCard(kind, id), 1200);
++  if (search && search.value) {
++    // A search left in the box hides what is wanted: clear it.
++    setValue(search, '');
++    search.dispatchEvent(new Event('input', { bubbles: true }));
++    await sleep(120);
++    found = partCard(kind, id);
++  }
++  if (!found) return null;
++  if (search && pane.querySelectorAll('[data-part-kind]').length > SEARCH_ABOVE && name) {
++    await typeInto(search, name, `Searching for ${name}`, false);
++    found = (await waitFor(() => partCard(kind, id))) ?? found;
++  }
++  found.scrollIntoView({ block: 'nearest' });
++  return found;
++}
++
++/** Whether the pane has a thumbnail for it: a piece of a joined shape, a copy of a repeat and a linked object's insides have none. */
++function listedInPane(api: HandApi, t: { kind: PartKind; id: string }): boolean {
++  const d = api.doc();
++  if (t.kind === 'object') {
++    const g = d.groups.find((x) => x.id === t.id);
++    return !!g && !g.joined && !g.instanceOf;
++  }
++  const b = d.bodies.find((x) => x.id === t.id);
++  return !!b && !b.repeatOf && !groupChain(d.groups, b.groupId).some((g) => g.joined);
++}
++
++/** Empty the search box again, as a person does once they have what they came for. */
++async function paneClearSearch(): Promise<void> {
++  const search = parts()?.querySelector<HTMLInputElement>('input[aria-label="Search by name"]');
++  if (!search || !search.value) return;
++  setValue(search, '');
++  search.dispatchEvent(new Event('input', { bubbles: true }));
++  await sleep(rand(120, 200));
++}
++
++/** What a shape or an object is called now, by id. */
++const nameOfPart = (api: HandApi, kind: PartKind, id: string) =>
++  kind === 'object' || (kind === 'shape' && api.doc().groups.some((g) => g.id === id)) ? api.doc().groups.find((g) => g.id === id)?.name ?? '' : kind === 'item' ? api.doc().library.find((i) => i.id === id)?.name ?? '' : api.doc().bodies.find((b) => b.id === id)?.name ?? '';
++
++/** A card pressed to pick it: Shift for each after the first. False when the pane does not list it. */
++async function panePick(api: HandApi, kind: PartKind, id: string, words: string, extend = false): Promise<boolean> {
++  const card = await paneFind(kind, id, nameOfPart(api, kind, id));
++  const button = card?.querySelector<HTMLElement>('button[aria-pressed]');
++  if (!button) return false;
++  await press(button, words, extend);
++  return true;
++}
++
++/**
++ * Name a shape, an object or a library item in the pane: double-click its name, type, Enter. False when there is no pane
++ * or it does not list the thing, so the caller names it the other way (Properties, the top bar).
++ */
++async function paneRename(api: HandApi, kind: PartKind, id: string, name: string, did: string[]): Promise<boolean> {
++  const card = await paneFind(kind, id, nameOfPart(api, kind, id));
++  const label = card?.querySelector<HTMLElement>('span[title$="(double-click to rename)"]');
++  if (!card || !label) return false;
++  const p = centre(label);
++  await handGo(p, true, label, `Naming it ${name}`);
++  label.dispatchEvent(mouse('dblclick', p));
++  const input = await waitFor(() => card.querySelector<HTMLInputElement>('input[aria-label^="Name of"]'));
++  await typeInto(input, name, 'Typing the name');
++  await paneClearSearch();
++  did.push(`named it "${name}" in the parts pane`);
++  return true;
++}
++
+ // ---- Picking ----------------------------------------------------------------------------------------------------------
+ 
+ /** A click that picked something else is tried once more, as a person tries again after a slip. */
+@@ -348,6 +436,10 @@ async function pickOnce(api: HandApi, want: string[], alone = false): Promise<vo
+   const doc = api.doc();
+   const target = alone ? [want[0]] : [...new Set(want.flatMap((id) => withGroupMates(doc.groups, doc.bodies, id)))];
+   if (sameSet(api.selected(), target)) return;
++  if (await pickInPane(api, want, alone)) {
++    if (!sameSet(api.selected(), target)) throw new Skip('the click picked something else');
++    return;
++  }
+   if (alone) {
+     const b = bodyIn(api, want[0]);
+     const depth = groupChain(doc.groups, b.groupId).length;
+@@ -365,11 +457,39 @@ async function pickOnce(api: HandApi, want: string[], alone = false): Promise<vo
+   if (alone ? !sameSet(now, target) : !want.every((id) => now.includes(id))) throw new Skip('the click picked something else');
+ }
+ 
++/**
++ * Pick in the parts pane when it is open: a shape's thumbnail for one shape; for the rest the outermost object it is in (or
++ * the shape), Shift-pressed for each after the first. False when the pane cannot (a phone, a piece of a joined shape).
++ */
++async function pickInPane(api: HandApi, want: string[], alone: boolean): Promise<boolean> {
++  if (!parts()) return false;
++  const doc = api.doc();
++  const cards = want.map((id) => {
++    const b = bodyIn(api, id);
++    const top = alone ? undefined : groupChain(doc.groups, b.groupId)[0];
++    return top ? { kind: (top.joined ? 'shape' : 'object') as PartKind, id: top.id, words: 'Picking the object in the parts pane' } : { kind: 'shape' as PartKind, id, words: 'Picking the shape in the parts pane' };
++  });
++  for (let i = 0; i < cards.length; i++) {
++    if (i > 0 && cards[i].id === cards[i - 1].id) continue;
++    if (!(await panePick(api, cards[i].kind, cards[i].id, i === 0 ? cards[i].words : 'Adding it to the pick', i > 0))) {
++      if (i === 0) return false;
++      throw new Skip('the parts pane does not list the shape that was picked');
++    }
++  }
++  await paneClearSearch();
++  return true;
++}
++
+ /** Pick a group: a click on one of its shapes, again until the pick is the group. */
+ const pickGroup = (api: HandApi, groupId: string) => again(() => pickGroupOnce(api, groupId));
+ async function pickGroupOnce(api: HandApi, groupId: string): Promise<void> {
+   const g = api.doc().groups.find((x) => x.id === groupId);
+   if (!g?.bodyIds.length) throw new Skip(`there is no group ${groupId} in the window`);
++  if (!g.joined && (await panePick(api, 'object', groupId, 'Picking the object in the parts pane'))) {
++    await paneClearSearch();
++    if (!sameSet(api.selected(), g.bodyIds)) throw new Skip('the click picked something else');
++    return;
++  }
+   const b = bodyIn(api, g.bodyIds[0]);
+   const depth = groupChain(api.doc().groups, b.groupId).length;
+   for (let i = 0; i <= depth && !sameSet(api.selected(), g.bodyIds); i++) {
+@@ -442,9 +562,11 @@ function sizesOf(bodies: Body3D[]) {
+ async function setLook(api: HandApi, id: string, look: { name?: string | null; color?: string | null; material?: string | null }, did: string[]): Promise<void> {
+   const body = () => api.doc().bodies.find((b) => b.id === id);
+   if (look.name !== null && look.name !== undefined && body()?.name !== look.name) {
+-    const props = await card('Properties');
+-    await typeInto(props.querySelector<HTMLInputElement>('input[type="text"]'), look.name, 'Typing the name', false);
+-    did.push(`typed the name "${look.name}" in Properties`);
++    if (!(await paneRename(api, 'shape', id, look.name, did))) {
++      const props = await card('Properties');
++      await typeInto(props.querySelector<HTMLInputElement>('input[type="text"]'), look.name, 'Typing the name', false);
++      did.push(`typed the name "${look.name}" in Properties`);
++    }
+   }
+   if (look.material && body()?.materialType !== look.material) {
+     const preset = MATERIAL_PRESETS.find((m) => m.id === look.material);
+@@ -643,6 +765,12 @@ async function confirmDelete(api: HandApi, gone: string[], did: string[]): Promi
+   did.push(sure ? 'pressed Delete and said yes' : 'pressed Delete');
+ }
+ 
++/** Name a group: in the parts pane when it lists it, else in the top bar. */
++async function renameGroup(api: HandApi, groupId: string, name: string, did: string[]): Promise<void> {
++  if (await paneRename(api, 'object', groupId, name, did)) return;
++  await renameGroupInTopBar(name, did);
++}
++
+ async function renameGroupInTopBar(name: string, did: string[]): Promise<void> {
+   const title = await waitFor(() => document.querySelector<HTMLElement>('button[title="Tap to rename"]'));
+   await press(title, 'Naming the group');
+@@ -663,6 +791,21 @@ const faceOf = (id: string, spec: unknown): FaceSel => {
    throw new Skip('that face is not one the window knows');
  };
  
@@ -246,14 +448,10 @@ index 0a41dcc..ad40d0b 100644
 + * "Add a copy of ..."), else in the Library card of a phone's bar. `place` is the button that adds a copy; `row`
 + * is what holds the remove and globe buttons.
 + */
-+async function libraryEntry(name: string): Promise<{ place: HTMLElement | null; scope: HTMLElement } | null> {
-+  const pane = document.querySelector<HTMLElement>('aside[aria-label="Parts"]');
-+  if (pane) {
-+    const tab = Array.from(pane.querySelectorAll<HTMLElement>('[role="tab"]')).find((t) => t.textContent?.trim().startsWith('Library'));
-+    if (tab && tab.getAttribute('aria-selected') !== 'true') await press(tab, 'Opening the Library');
-+    const place = await waitFor(() => pane.querySelector<HTMLElement>(`button[aria-label="Add a copy of ${name}"]`));
-+    const scope = place?.parentElement ?? null;
-+    return scope ? { place, scope } : null;
++async function libraryEntry(id: string, name: string): Promise<{ place: HTMLElement | null; scope: HTMLElement } | null> {
++  if (parts()) {
++    const scope = await paneFind('item', id, name);
++    return scope ? { place: scope.querySelector<HTMLElement>('button[aria-pressed]'), scope } : null;
 +  }
 +  const lib = await card('Library');
 +  const row = libraryRow(lib, name);
@@ -263,15 +461,71 @@ index 0a41dcc..ad40d0b 100644
  /** Library rows: the place button carries the object's name. */
  const libraryRow = (cardEl: HTMLElement, name: string) =>
    Array.from(cardEl.querySelectorAll<HTMLElement>('div.flex.items-center.gap-1')).find((row) => row.querySelector('button span.truncate')?.textContent?.trim() === name) ?? null;
-@@ -1029,6 +1048,7 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+@@ -931,13 +1074,37 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+         if (!(await waitFor(() => api.doc().groups.some((g) => members.every((id) => g.bodyIds.includes(id)))))) throw new Skip('Group did nothing');
+         did.push('pressed Group');
+         const label = str(args.name)?.trim();
+-        if (label) await renameGroupInTopBar(label, did);
++        if (label) {
++          const made = api.doc().groups.find((g) => sameSet(g.bodyIds, api.selected()));
++          if (!made) throw new Skip('the new group was not picked');
++          await renameGroup(api, made.id, label, did);
++        }
+         break;
+       }
+       case 'group_rename': {
+-        await pickGroup(api, String(args.group ?? ''));
+-        did.push('picked the group in the view');
+-        await renameGroupInTopBar(String(args.name ?? ''), did);
++        const gid = String(args.group ?? '');
++        await pickGroup(api, gid);
++        did.push(parts() ? 'picked the object in the parts pane' : 'picked the group in the view');
++        await renameGroup(api, gid, String(args.name ?? ''), did);
++        break;
++      }
++      case 'group_enter': {
++        const gid = String(args.group ?? '');
++        if (!(await panePick(api, 'object', gid, 'Opening the object to edit inside')) && !parts()) throw new Skip('the window has no parts pane here (a phone): editing inside is only shown on a desktop');
++        const group = api.doc().groups.find((g) => g.id === gid);
++        if (!group) throw new Skip(`there is no group ${gid} in the window`);
++        const card = partCard('object', gid);
++        await press(card?.querySelector<HTMLElement>('button[aria-label^="Edit inside"]') ?? null, `Editing inside ${group.name}`);
++        if (!(await waitFor(() => Array.from(document.querySelectorAll('strong')).some((x) => x.parentElement?.textContent?.startsWith('Editing inside')), 3000))) throw new Skip('the group did not open');
++        await paneClearSearch();
++        did.push(`pressed Edit inside ${group.name}`);
++        break;
++      }
++      case 'group_exit': {
++        const exit = Array.from(document.querySelectorAll<HTMLElement>('button')).find((b) => b.textContent?.trim() === 'Exit group');
++        if (!exit) throw new Skip('no group was open for editing inside');
++        await press(exit, 'Leaving the group');
++        did.push('pressed Exit group');
+         break;
+       }
+       case 'group_remove': {
+@@ -1029,8 +1196,21 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
          break;
        }
        case 'library_save': {
 +        if (args.linked === true) throw new Skip('a linked copy is made by the model; the window keeps an independent copy');
          const gid = str(args.group);
          const label = str(args.name);
++        const target = gid ? { kind: 'object' as PartKind, id: gid } : { kind: 'shape' as PartKind, id: String(args.id ?? '') };
++        const keptBefore = api.doc().library.length;
++        if (parts() && listedInPane(api, target)) {
++          // The bookmark under its thumbnail in the parts pane.
++          if (label && label !== nameOfPart(api, target.kind, target.id)) await paneRename(api, target.kind, target.id, label, did);
++          const card = await paneFind(target.kind, target.id, nameOfPart(api, target.kind, target.id));
++          await press(card?.querySelector<HTMLElement>('button[aria-label^="Save "]') ?? null, 'Saving it to the library');
++          await waitFor(() => api.doc().library.length !== keptBefore || api.doc().library.some((i) => i.rev && Date.now() - i.rev < 3000));
++          await paneClearSearch();
++          did.push('pressed Save to the library under its thumbnail');
++          break;
++        }
          if (gid) {
-@@ -1055,21 +1075,14 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+           await pickGroup(api, gid);
+           did.push('picked the group in the view');
+@@ -1055,21 +1235,15 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
            await pickFace(api, host, { kind: 'top' });
            did.push('picked the top face to place it on');
          }
@@ -283,8 +537,9 @@ index 0a41dcc..ad40d0b 100644
 +        if (args.linked === true) throw new Skip('a linked copy is made by the model; the window places independent copies');
 +        const knownGroups = new Set(api.doc().groups.map((g) => g.id));
 +        const knownBodies = new Set(api.doc().bodies.map((b) => b.id));
-+        const entry = await libraryEntry(item.name);
++        const entry = await libraryEntry(item.id, item.name);
 +        await press(entry?.place ?? null, `Adding a copy of ${item.name}`);
++        await paneClearSearch();
 +        const placed = await waitFor(() => api.doc().bodies.find((b) => !knownBodies.has(b.id)) ?? api.doc().groups.find((g) => !knownGroups.has(g.id)), 4000);
          if (!placed) throw new Skip('the object was not placed');
          did.push(`placed ${item.name} from the Library`);
@@ -299,13 +554,24 @@ index 0a41dcc..ad40d0b 100644
          break;
        }
        case 'object_unlink': {
-@@ -1084,14 +1097,14 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+@@ -1080,18 +1254,25 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+         did.push(`pressed ${forget ? 'Separate' : 'Edit object'}`);
+         break;
+       }
++      case 'library_rename': {
++        const item = api.doc().library.find((i) => i.id === args.item);
++        if (!item) throw new Skip('there is no such library object');
++        if (!parts()) throw new Skip('a phone has no control that renames a library object');
++        if (!(await paneRename(api, 'item', item.id, String(args.name ?? ''), did))) throw new Skip('the object was not in the Library');
++        break;
++      }
+       case 'library_share':
        case 'library_remove': {
          const item = api.doc().library.find((i) => i.id === args.item);
          if (!item) throw new Skip('there is no such library object');
 -        const lib = await card('Library');
 -        const row = libraryRow(lib, item.name);
-+        const entry = await libraryEntry(item.name);
++        const entry = await libraryEntry(item.id, item.name);
 +        const row = entry?.scope ?? null;
          if (!row) throw new Skip('the object was not in the Library');
          if (name === 'library_remove') {
@@ -319,10 +585,10 @@ index 0a41dcc..ad40d0b 100644
              await press(globe, want ? 'Keeping it in every project' : 'Keeping it only here');
 diff --git a/autora-3d/src/components/LeftPane.tsx b/autora-3d/src/components/LeftPane.tsx
 new file mode 100644
-index 0000000..888a835
+index 0000000..f91fb39
 --- /dev/null
 +++ b/autora-3d/src/components/LeftPane.tsx
-@@ -0,0 +1,255 @@
+@@ -0,0 +1,256 @@
 +/**
 + * @license
 + * SPDX-License-Identifier: Apache-2.0
@@ -360,7 +626,8 @@ index 0000000..888a835
 +  selectedBodyIds: string[];
 +  /** The group being edited from the inside, if one is. */
 +  entered: string | null;
-+  onPickShapes: (ids: string[]) => void;
++  /** `extend`: Shift or Ctrl was held, so the shapes join the pick (or leave it, when all are in it already). */
++  onPickShapes: (ids: string[], extend: boolean) => void;
 +  onRename: (kind: 'shape' | 'object' | 'item', id: string, name: string) => void;
 +  onSave: (kind: 'shape' | 'object', id: string) => void;
 +  onEnter: (groupId: string) => void;
@@ -435,10 +702,10 @@ index 0000000..888a835
 +  </button>
 +);
 +
-+function Card({ selected, children, onPick, label }: { selected?: boolean; children: React.ReactNode; onPick: () => void; label: string }) {
++function Card({ selected, children, onPick, label, part }: { selected?: boolean; children: React.ReactNode; onPick: (extend: boolean) => void; label: string; part: { kind: 'shape' | 'object' | 'item'; id: string } }) {
 +  return (
-+    <div className={`rounded-2xl p-1.5 flex flex-col gap-1 border transition-colors ${selected ? 'bg-accent-500/20 border-accent-400/60' : 'bg-white/5 border-transparent hover:bg-white/8'}`}>
-+      <button type="button" aria-label={label} aria-pressed={!!selected} onClick={onPick} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
++    <div data-part-kind={part.kind} data-part-id={part.id} className={`rounded-2xl p-1.5 flex flex-col gap-1 border transition-colors ${selected ? 'bg-accent-500/20 border-accent-400/60' : 'bg-white/5 border-transparent hover:bg-white/8'}`}>
++      <button type="button" aria-label={label} aria-pressed={!!selected} onClick={(e) => onPick(e.shiftKey || e.ctrlKey || e.metaKey)} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
 +        {(children as React.ReactNode[])[0]}
 +      </button>
 +      {(children as React.ReactNode[]).slice(1)}
@@ -516,7 +783,7 @@ index 0000000..888a835
 +            : shownShapes.length === 0 ? none('shapes')
 +            : <div className="grid grid-cols-2 gap-1.5">
 +                {shownShapes.map((s) => (
-+                  <Card key={s.id} label={`Pick ${s.name}`} selected={picked(s.ids)} onPick={() => props.onPickShapes(s.ids)}>
++                  <Card key={s.id} part={{ kind: 'shape', id: s.group ?? s.id }} label={`Pick ${s.name}`} selected={picked(s.ids)} onPick={(x) => props.onPickShapes(s.ids, x)}>
 +                    <Thumb bodies={s.bodies} name={s.name} />
 +                    <Name value={s.name} label={s.name} onCommit={(n) => props.onRename(s.group ? 'object' : 'shape', s.group ?? s.id, n)} />
 +                    <div className="flex items-center justify-between">
@@ -536,7 +803,7 @@ index 0000000..888a835
 +                {shownObjects.map((g) => {
 +                  const inside = bodies.filter((b) => g.bodyIds.includes(b.id));
 +                  return (
-+                    <Card key={g.id} label={`Pick ${g.name}`} selected={picked(g.bodyIds)} onPick={() => props.onPickShapes(g.bodyIds)}>
++                    <Card key={g.id} part={{ kind: 'object', id: g.id }} label={`Pick ${g.name}`} selected={picked(g.bodyIds)} onPick={(x) => props.onPickShapes(g.bodyIds, x)}>
 +                      <Thumb bodies={inside} name={g.name} />
 +                      <Name value={g.name} label={g.name} onCommit={(n) => props.onRename('object', g.id, n)} />
 +                      <div className="flex items-center justify-between">
@@ -558,7 +825,7 @@ index 0000000..888a835
 +            : shownLibrary.length === 0 ? none('library objects')
 +            : <div className="grid grid-cols-2 gap-1.5">
 +                {shownLibrary.map((item) => (
-+                  <Card key={item.id} label={`Add a copy of ${item.name}`} onPick={() => props.onPlaceItem(item.id)}>
++                  <Card key={item.id} part={{ kind: 'item', id: item.id }} label={`Add a copy of ${item.name}`} onPick={() => props.onPlaceItem(item.id)}>
 +                    <img src={item.thumb} alt="" aria-hidden="true" className="w-full aspect-square rounded-xl bg-slate-950/70" draggable={false} />
 +                    <Name value={item.name} label={item.name} onCommit={(n) => props.onRename('item', item.id, n)} />
 +                    <div className="flex items-center justify-between">
@@ -634,7 +901,7 @@ index 7e3a3ac..9d47b11 100644
                {props.library.map((item) => (
                  <div key={item.id} className="flex items-center gap-1">
 diff --git a/autora-3d/src/core/ops.ts b/autora-3d/src/core/ops.ts
-index 7e4f33a..e59d8bb 100644
+index 7e4f33a..75bdfea 100644
 --- a/autora-3d/src/core/ops.ts
 +++ b/autora-3d/src/core/ops.ts
 @@ -783,7 +783,7 @@ const groupOf = (doc: Doc, id: unknown): ShapeGroup => {
@@ -687,11 +954,38 @@ index 7e4f33a..e59d8bb 100644
  }
  
  /**
+@@ -876,6 +886,17 @@ export function unlinkObject(doc: Doc, ids: IdGen, a: { group: string; forget?:
+   return { doc: next, result: { group: g.id, shapes: [...fresh.entries()].filter(([k]) => doc.bodies.some((b) => b.id === k)).map(([, v]) => v), editing: !a.forget } };
+ }
+ 
++/**
++ * Opening a group for editing from the inside is something the person's window shows, not part of the model: the model
++ * does not change. This only checks the group can be opened, and says what the window does with it.
++ */
++export function enterGroup(doc: Doc, a: { group: string }): OpResult<{ group: string; name: string; note: string }> {
++  const g = groupOf(doc, a.group);
++  if (g.joined) return fail(`"${g.name}" is a joined shape, one solid: there is nothing inside it to edit.`);
++  if (g.place || g.instanceOf) return fail(`"${g.name}" is a linked library object, one piece.`, 'Open it for editing with object_unlink, or make it separate.');
++  return { doc, result: { group: g.id, name: g.name, note: 'Editing inside is a view in the person\'s window: with Visible work on the window opens the group (only its shapes show, each picked on its own); otherwise nothing is shown. The model is the same either way.' } };
++}
++
+ export function renameLibraryItem(doc: Doc, a: { item: string; name: string }): OpResult<{ item: string; name: string }> {
+   const item = itemOf(doc, a.item);
+   const name = String(a.name ?? '').trim();
 diff --git a/autora-3d/src/core/tools.ts b/autora-3d/src/core/tools.ts
-index 00df69c..fcb4931 100644
+index 00df69c..e656155 100644
 --- a/autora-3d/src/core/tools.ts
 +++ b/autora-3d/src/core/tools.ts
-@@ -185,13 +185,13 @@ export const TOOL_SPECS: ToolSpec[] = [
+@@ -176,6 +176,8 @@ export const TOOL_SPECS: ToolSpec[] = [
+     inputSchema: obj({ ids, by: obj({ x: { type: 'number' }, y: { type: 'number' } }) }, ['ids']),
+   },
+   { name: 'group_create', description: 'Group shapes so they select, move and turn together, and give the group a name (it becomes the object name in GLB export). Groups nest: a group that is wholly inside the ids is put inside the new one, so group "head" + "body" makes one "character".', inputSchema: obj({ ids, name: { type: 'string' } }, ['ids']) },
++  { name: 'group_enter', description: 'Open a group for editing from the inside, as the person does with Edit inside: the window shows only its shapes, and each is picked on its own. It changes nothing in the model and is only a view, shown when Visible work is on. Leave with group_exit.', inputSchema: obj({ group: { type: 'string' } }, ['group']) },
++  { name: 'group_exit', description: 'Leave the group opened with group_enter (a view in the person\'s window; the model does not change).', inputSchema: obj({}) },
+   { name: 'group_rename', description: 'Rename a group (e.g. "head"). Find group ids with scene_get.', inputSchema: obj({ group: { type: 'string' }, name: { type: 'string' } }, ['group', 'name']) },
+   {
+     name: 'library_list',
+@@ -185,13 +187,13 @@ export const TOOL_SPECS: ToolSpec[] = [
    },
    {
      name: 'library_save',
@@ -709,7 +1003,14 @@ index 00df69c..fcb4931 100644
    },
    {
      name: 'object_unlink',
-@@ -329,7 +329,7 @@ export function runDocTool(ctx: ToolContext, name: string, rawArgs: unknown): To
+@@ -326,10 +328,14 @@ export function runDocTool(ctx: ToolContext, name: string, rawArgs: unknown): To
+       return done(ops.groupShapes(doc, ids, a as { ids: string[] }));
+     case 'group_rename':
+       return done(ops.renameGroup(doc, a as { group: string; name: string }));
++    case 'group_enter':
++      return done(ops.enterGroup(doc, a as { group: string }));
++    case 'group_exit':
++      return { doc: ctx.doc, result: { note: 'Back out of the group in the person\'s window (a view only; the model did not change).' } };
      case 'library_list':
        return { doc: ctx.doc, result: { items: libraryItems(doc) } };
      case 'library_save':

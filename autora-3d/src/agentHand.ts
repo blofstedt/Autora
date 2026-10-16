@@ -74,11 +74,11 @@ const pointer = (type: string, p: Point, shift = false, held = type === 'pointer
     bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, button: 0,
     buttons: held ? 1 : 0, pointerId: 1, pointerType: 'mouse', isPrimary: true, shiftKey: shift,
   });
-const mouse = (type: string, p: Point): MouseEvent =>
-  new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, button: 0, buttons: type === 'mousedown' ? 1 : 0 });
+const mouse = (type: string, p: Point, shift = false): MouseEvent =>
+  new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, button: 0, buttons: type === 'mousedown' ? 1 : 0, shiftKey: shift });
 
 /** Go to a control and press it, with the events a mouse makes. */
-async function press(el: HTMLElement | null, words?: string): Promise<void> {
+async function press(el: HTMLElement | null, words?: string, shift = false): Promise<void> {
   if (!el) throw new Skip('a control was not on the screen');
   if ((el as HTMLButtonElement).disabled) throw new Skip(`${el.getAttribute('aria-label') ?? el.textContent?.trim() ?? 'a control'} was not available`);
   const p = centre(el);
@@ -87,7 +87,7 @@ async function press(el: HTMLElement | null, words?: string): Promise<void> {
   el.dispatchEvent(mouse('mousedown', p));
   el.dispatchEvent(pointer('pointerup', p));
   el.dispatchEvent(mouse('mouseup', p));
-  el.dispatchEvent(mouse('click', p));
+  el.dispatchEvent(mouse('click', p, shift));
   await sleep(rand(160, 260));
 }
 
@@ -318,6 +318,94 @@ async function spot(api: HandApi, cands: () => Cand[], ok: (h: ViewerHit) => boo
   throw new Skip('it could not be reached in the view');
 }
 
+// ---- The parts pane ---------------------------------------------------------------------------------------------------
+
+type PartKind = 'shape' | 'object' | 'item';
+const TAB_OF: Record<PartKind, string> = { shape: 'Shapes', object: 'Objects', item: 'Library' };
+/** More cards than this and a person would search for the one they want rather than look for it. */
+const SEARCH_ABOVE = 6;
+
+const parts = () => document.querySelector<HTMLElement>('aside[aria-label="Parts"]');
+const partCard = (kind: PartKind, id: string) => parts()?.querySelector<HTMLElement>(`[data-part-kind="${kind}"][data-part-id="${CSS.escape(id)}"]`) ?? null;
+
+/**
+ * The card of a shape, an object or a library item in the parts pane, with its tab open: through the search box when the
+ * list is long. Null when there is no pane (a phone) or the thing is not listed (a piece of a joined shape).
+ */
+async function paneFind(kind: PartKind, id: string, name: string): Promise<HTMLElement | null> {
+  const pane = parts();
+  if (!pane) return null;
+  const tab = Array.from(pane.querySelectorAll<HTMLElement>('[role="tab"]')).find((t) => t.textContent?.trim().startsWith(TAB_OF[kind]));
+  if (tab && tab.getAttribute('aria-selected') !== 'true') await press(tab, `Opening ${TAB_OF[kind]}`);
+  const search = pane.querySelector<HTMLInputElement>('input[aria-label="Search by name"]');
+  let found = await waitFor(() => partCard(kind, id), 1200);
+  if (search && search.value) {
+    // A search left in the box hides what is wanted: clear it.
+    setValue(search, '');
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(120);
+    found = partCard(kind, id);
+  }
+  if (!found) return null;
+  if (search && pane.querySelectorAll('[data-part-kind]').length > SEARCH_ABOVE && name) {
+    await typeInto(search, name, `Searching for ${name}`, false);
+    found = (await waitFor(() => partCard(kind, id))) ?? found;
+  }
+  found.scrollIntoView({ block: 'nearest' });
+  return found;
+}
+
+/** Whether the pane has a thumbnail for it: a piece of a joined shape, a copy of a repeat and a linked object's insides have none. */
+function listedInPane(api: HandApi, t: { kind: PartKind; id: string }): boolean {
+  const d = api.doc();
+  if (t.kind === 'object') {
+    const g = d.groups.find((x) => x.id === t.id);
+    return !!g && !g.joined && !g.instanceOf;
+  }
+  const b = d.bodies.find((x) => x.id === t.id);
+  return !!b && !b.repeatOf && !groupChain(d.groups, b.groupId).some((g) => g.joined);
+}
+
+/** Empty the search box again, as a person does once they have what they came for. */
+async function paneClearSearch(): Promise<void> {
+  const search = parts()?.querySelector<HTMLInputElement>('input[aria-label="Search by name"]');
+  if (!search || !search.value) return;
+  setValue(search, '');
+  search.dispatchEvent(new Event('input', { bubbles: true }));
+  await sleep(rand(120, 200));
+}
+
+/** What a shape or an object is called now, by id. */
+const nameOfPart = (api: HandApi, kind: PartKind, id: string) =>
+  kind === 'object' || (kind === 'shape' && api.doc().groups.some((g) => g.id === id)) ? api.doc().groups.find((g) => g.id === id)?.name ?? '' : kind === 'item' ? api.doc().library.find((i) => i.id === id)?.name ?? '' : api.doc().bodies.find((b) => b.id === id)?.name ?? '';
+
+/** A card pressed to pick it: Shift for each after the first. False when the pane does not list it. */
+async function panePick(api: HandApi, kind: PartKind, id: string, words: string, extend = false): Promise<boolean> {
+  const card = await paneFind(kind, id, nameOfPart(api, kind, id));
+  const button = card?.querySelector<HTMLElement>('button[aria-pressed]');
+  if (!button) return false;
+  await press(button, words, extend);
+  return true;
+}
+
+/**
+ * Name a shape, an object or a library item in the pane: double-click its name, type, Enter. False when there is no pane
+ * or it does not list the thing, so the caller names it the other way (Properties, the top bar).
+ */
+async function paneRename(api: HandApi, kind: PartKind, id: string, name: string, did: string[]): Promise<boolean> {
+  const card = await paneFind(kind, id, nameOfPart(api, kind, id));
+  const label = card?.querySelector<HTMLElement>('span[title$="(double-click to rename)"]');
+  if (!card || !label) return false;
+  const p = centre(label);
+  await handGo(p, true, label, `Naming it ${name}`);
+  label.dispatchEvent(mouse('dblclick', p));
+  const input = await waitFor(() => card.querySelector<HTMLInputElement>('input[aria-label^="Name of"]'));
+  await typeInto(input, name, 'Typing the name');
+  await paneClearSearch();
+  did.push(`named it "${name}" in the parts pane`);
+  return true;
+}
+
 // ---- Picking ----------------------------------------------------------------------------------------------------------
 
 /** A click that picked something else is tried once more, as a person tries again after a slip. */
@@ -348,6 +436,10 @@ async function pickOnce(api: HandApi, want: string[], alone = false): Promise<vo
   const doc = api.doc();
   const target = alone ? [want[0]] : [...new Set(want.flatMap((id) => withGroupMates(doc.groups, doc.bodies, id)))];
   if (sameSet(api.selected(), target)) return;
+  if (await pickInPane(api, want, alone)) {
+    if (!sameSet(api.selected(), target)) throw new Skip('the click picked something else');
+    return;
+  }
   if (alone) {
     const b = bodyIn(api, want[0]);
     const depth = groupChain(doc.groups, b.groupId).length;
@@ -365,11 +457,39 @@ async function pickOnce(api: HandApi, want: string[], alone = false): Promise<vo
   if (alone ? !sameSet(now, target) : !want.every((id) => now.includes(id))) throw new Skip('the click picked something else');
 }
 
+/**
+ * Pick in the parts pane when it is open: a shape's thumbnail for one shape; for the rest the outermost object it is in (or
+ * the shape), Shift-pressed for each after the first. False when the pane cannot (a phone, a piece of a joined shape).
+ */
+async function pickInPane(api: HandApi, want: string[], alone: boolean): Promise<boolean> {
+  if (!parts()) return false;
+  const doc = api.doc();
+  const cards = want.map((id) => {
+    const b = bodyIn(api, id);
+    const top = alone ? undefined : groupChain(doc.groups, b.groupId)[0];
+    return top ? { kind: (top.joined ? 'shape' : 'object') as PartKind, id: top.id, words: 'Picking the object in the parts pane' } : { kind: 'shape' as PartKind, id, words: 'Picking the shape in the parts pane' };
+  });
+  for (let i = 0; i < cards.length; i++) {
+    if (i > 0 && cards[i].id === cards[i - 1].id) continue;
+    if (!(await panePick(api, cards[i].kind, cards[i].id, i === 0 ? cards[i].words : 'Adding it to the pick', i > 0))) {
+      if (i === 0) return false;
+      throw new Skip('the parts pane does not list the shape that was picked');
+    }
+  }
+  await paneClearSearch();
+  return true;
+}
+
 /** Pick a group: a click on one of its shapes, again until the pick is the group. */
 const pickGroup = (api: HandApi, groupId: string) => again(() => pickGroupOnce(api, groupId));
 async function pickGroupOnce(api: HandApi, groupId: string): Promise<void> {
   const g = api.doc().groups.find((x) => x.id === groupId);
   if (!g?.bodyIds.length) throw new Skip(`there is no group ${groupId} in the window`);
+  if (!g.joined && (await panePick(api, 'object', groupId, 'Picking the object in the parts pane'))) {
+    await paneClearSearch();
+    if (!sameSet(api.selected(), g.bodyIds)) throw new Skip('the click picked something else');
+    return;
+  }
   const b = bodyIn(api, g.bodyIds[0]);
   const depth = groupChain(api.doc().groups, b.groupId).length;
   for (let i = 0; i <= depth && !sameSet(api.selected(), g.bodyIds); i++) {
@@ -442,9 +562,11 @@ function sizesOf(bodies: Body3D[]) {
 async function setLook(api: HandApi, id: string, look: { name?: string | null; color?: string | null; material?: string | null }, did: string[]): Promise<void> {
   const body = () => api.doc().bodies.find((b) => b.id === id);
   if (look.name !== null && look.name !== undefined && body()?.name !== look.name) {
-    const props = await card('Properties');
-    await typeInto(props.querySelector<HTMLInputElement>('input[type="text"]'), look.name, 'Typing the name', false);
-    did.push(`typed the name "${look.name}" in Properties`);
+    if (!(await paneRename(api, 'shape', id, look.name, did))) {
+      const props = await card('Properties');
+      await typeInto(props.querySelector<HTMLInputElement>('input[type="text"]'), look.name, 'Typing the name', false);
+      did.push(`typed the name "${look.name}" in Properties`);
+    }
   }
   if (look.material && body()?.materialType !== look.material) {
     const preset = MATERIAL_PRESETS.find((m) => m.id === look.material);
@@ -643,6 +765,12 @@ async function confirmDelete(api: HandApi, gone: string[], did: string[]): Promi
   did.push(sure ? 'pressed Delete and said yes' : 'pressed Delete');
 }
 
+/** Name a group: in the parts pane when it lists it, else in the top bar. */
+async function renameGroup(api: HandApi, groupId: string, name: string, did: string[]): Promise<void> {
+  if (await paneRename(api, 'object', groupId, name, did)) return;
+  await renameGroupInTopBar(name, did);
+}
+
 async function renameGroupInTopBar(name: string, did: string[]): Promise<void> {
   const title = await waitFor(() => document.querySelector<HTMLElement>('button[title="Tap to rename"]'));
   await press(title, 'Naming the group');
@@ -668,14 +796,10 @@ const faceOf = (id: string, spec: unknown): FaceSel => {
  * "Add a copy of ..."), else in the Library card of a phone's bar. `place` is the button that adds a copy; `row`
  * is what holds the remove and globe buttons.
  */
-async function libraryEntry(name: string): Promise<{ place: HTMLElement | null; scope: HTMLElement } | null> {
-  const pane = document.querySelector<HTMLElement>('aside[aria-label="Parts"]');
-  if (pane) {
-    const tab = Array.from(pane.querySelectorAll<HTMLElement>('[role="tab"]')).find((t) => t.textContent?.trim().startsWith('Library'));
-    if (tab && tab.getAttribute('aria-selected') !== 'true') await press(tab, 'Opening the Library');
-    const place = await waitFor(() => pane.querySelector<HTMLElement>(`button[aria-label="Add a copy of ${name}"]`));
-    const scope = place?.parentElement ?? null;
-    return scope ? { place, scope } : null;
+async function libraryEntry(id: string, name: string): Promise<{ place: HTMLElement | null; scope: HTMLElement } | null> {
+  if (parts()) {
+    const scope = await paneFind('item', id, name);
+    return scope ? { place: scope.querySelector<HTMLElement>('button[aria-pressed]'), scope } : null;
   }
   const lib = await card('Library');
   const row = libraryRow(lib, name);
@@ -950,13 +1074,37 @@ export async function runHand(name: string, args: Record<string, unknown>, api: 
         if (!(await waitFor(() => api.doc().groups.some((g) => members.every((id) => g.bodyIds.includes(id)))))) throw new Skip('Group did nothing');
         did.push('pressed Group');
         const label = str(args.name)?.trim();
-        if (label) await renameGroupInTopBar(label, did);
+        if (label) {
+          const made = api.doc().groups.find((g) => sameSet(g.bodyIds, api.selected()));
+          if (!made) throw new Skip('the new group was not picked');
+          await renameGroup(api, made.id, label, did);
+        }
         break;
       }
       case 'group_rename': {
-        await pickGroup(api, String(args.group ?? ''));
-        did.push('picked the group in the view');
-        await renameGroupInTopBar(String(args.name ?? ''), did);
+        const gid = String(args.group ?? '');
+        await pickGroup(api, gid);
+        did.push(parts() ? 'picked the object in the parts pane' : 'picked the group in the view');
+        await renameGroup(api, gid, String(args.name ?? ''), did);
+        break;
+      }
+      case 'group_enter': {
+        const gid = String(args.group ?? '');
+        if (!(await panePick(api, 'object', gid, 'Opening the object to edit inside')) && !parts()) throw new Skip('the window has no parts pane here (a phone): editing inside is only shown on a desktop');
+        const group = api.doc().groups.find((g) => g.id === gid);
+        if (!group) throw new Skip(`there is no group ${gid} in the window`);
+        const card = partCard('object', gid);
+        await press(card?.querySelector<HTMLElement>('button[aria-label^="Edit inside"]') ?? null, `Editing inside ${group.name}`);
+        if (!(await waitFor(() => Array.from(document.querySelectorAll('strong')).some((x) => x.parentElement?.textContent?.startsWith('Editing inside')), 3000))) throw new Skip('the group did not open');
+        await paneClearSearch();
+        did.push(`pressed Edit inside ${group.name}`);
+        break;
+      }
+      case 'group_exit': {
+        const exit = Array.from(document.querySelectorAll<HTMLElement>('button')).find((b) => b.textContent?.trim() === 'Exit group');
+        if (!exit) throw new Skip('no group was open for editing inside');
+        await press(exit, 'Leaving the group');
+        did.push('pressed Exit group');
         break;
       }
       case 'group_remove': {
@@ -1051,6 +1199,18 @@ export async function runHand(name: string, args: Record<string, unknown>, api: 
         if (args.linked === true) throw new Skip('a linked copy is made by the model; the window keeps an independent copy');
         const gid = str(args.group);
         const label = str(args.name);
+        const target = gid ? { kind: 'object' as PartKind, id: gid } : { kind: 'shape' as PartKind, id: String(args.id ?? '') };
+        const keptBefore = api.doc().library.length;
+        if (parts() && listedInPane(api, target)) {
+          // The bookmark under its thumbnail in the parts pane.
+          if (label && label !== nameOfPart(api, target.kind, target.id)) await paneRename(api, target.kind, target.id, label, did);
+          const card = await paneFind(target.kind, target.id, nameOfPart(api, target.kind, target.id));
+          await press(card?.querySelector<HTMLElement>('button[aria-label^="Save "]') ?? null, 'Saving it to the library');
+          await waitFor(() => api.doc().library.length !== keptBefore || api.doc().library.some((i) => i.rev && Date.now() - i.rev < 3000));
+          await paneClearSearch();
+          did.push('pressed Save to the library under its thumbnail');
+          break;
+        }
         if (gid) {
           await pickGroup(api, gid);
           did.push('picked the group in the view');
@@ -1078,8 +1238,9 @@ export async function runHand(name: string, args: Record<string, unknown>, api: 
         if (args.linked === true) throw new Skip('a linked copy is made by the model; the window places independent copies');
         const knownGroups = new Set(api.doc().groups.map((g) => g.id));
         const knownBodies = new Set(api.doc().bodies.map((b) => b.id));
-        const entry = await libraryEntry(item.name);
+        const entry = await libraryEntry(item.id, item.name);
         await press(entry?.place ?? null, `Adding a copy of ${item.name}`);
+        await paneClearSearch();
         const placed = await waitFor(() => api.doc().bodies.find((b) => !knownBodies.has(b.id)) ?? api.doc().groups.find((g) => !knownGroups.has(g.id)), 4000);
         if (!placed) throw new Skip('the object was not placed');
         did.push(`placed ${item.name} from the Library`);
@@ -1093,11 +1254,18 @@ export async function runHand(name: string, args: Record<string, unknown>, api: 
         did.push(`pressed ${forget ? 'Separate' : 'Edit object'}`);
         break;
       }
+      case 'library_rename': {
+        const item = api.doc().library.find((i) => i.id === args.item);
+        if (!item) throw new Skip('there is no such library object');
+        if (!parts()) throw new Skip('a phone has no control that renames a library object');
+        if (!(await paneRename(api, 'item', item.id, String(args.name ?? ''), did))) throw new Skip('the object was not in the Library');
+        break;
+      }
       case 'library_share':
       case 'library_remove': {
         const item = api.doc().library.find((i) => i.id === args.item);
         if (!item) throw new Skip('there is no such library object');
-        const entry = await libraryEntry(item.name);
+        const entry = await libraryEntry(item.id, item.name);
         const row = entry?.scope ?? null;
         if (!row) throw new Skip('the object was not in the Library');
         if (name === 'library_remove') {

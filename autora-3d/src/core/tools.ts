@@ -176,6 +176,8 @@ export const TOOL_SPECS: ToolSpec[] = [
     inputSchema: obj({ ids, by: obj({ x: { type: 'number' }, y: { type: 'number' } }) }, ['ids']),
   },
   { name: 'group_create', description: 'Group shapes so they select, move and turn together, and give the group a name (it becomes the object name in GLB export). Groups nest: a group that is wholly inside the ids is put inside the new one, so group "head" + "body" makes one "character".', inputSchema: obj({ ids, name: { type: 'string' } }, ['ids']) },
+  { name: 'group_enter', description: 'Open a group for editing from the inside, as the person does with Edit inside: the window shows only its shapes, and each is picked on its own. It changes nothing in the model and is only a view, shown when Visible work is on. Leave with group_exit.', inputSchema: obj({ group: { type: 'string' } }, ['group']) },
+  { name: 'group_exit', description: 'Leave the group opened with group_enter (a view in the person\'s window; the model does not change).', inputSchema: obj({}) },
   { name: 'group_rename', description: 'Rename a group (e.g. "head"). Find group ids with scene_get.', inputSchema: obj({ group: { type: 'string' }, name: { type: 'string' } }, ['group', 'name']) },
   {
     name: 'library_list',
@@ -326,6 +328,10 @@ export function runDocTool(ctx: ToolContext, name: string, rawArgs: unknown): To
       return done(ops.groupShapes(doc, ids, a as { ids: string[] }));
     case 'group_rename':
       return done(ops.renameGroup(doc, a as { group: string; name: string }));
+    case 'group_enter':
+      return done(ops.enterGroup(doc, a as { group: string }));
+    case 'group_exit':
+      return { doc: ctx.doc, result: { note: 'Back out of the group in the person\'s window (a view only; the model did not change).' } };
     case 'library_list':
       return { doc: ctx.doc, result: { items: libraryItems(doc) } };
     case 'library_save':
