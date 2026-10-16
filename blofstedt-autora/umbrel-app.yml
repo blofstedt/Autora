@@ -188,8 +188,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora 3D has a parts pane down the left on a desktop. Shapes and Objects (groups of shapes) show as thumbnails you can
-  pick and rename by double-clicking the name, and a bookmark under either keeps it in the Library, which sits beside
-  them. A tap on a Library thumbnail adds an independent copy of it: ordinary shapes you can change freely, nothing
-  following the original. You can also open a group and edit inside it (Edit inside, then Exit group or Esc), so you work
-  on one part of an object without taking it apart. The agent's library tools make independent copies by default too.
+  Autora 3D's parts pane (Shapes, Objects and the Library, down the left on a desktop) is now a slim column instead of a
+  wide one, and has a search box that narrows the list by name. Before this: you can rename shapes and objects by
+  double-clicking the name, keep either in the Library, add independent copies from it, and open a group to edit inside it.

@@ -4,7 +4,7 @@
  */
 
 import React, { memo, useEffect, useRef, useState } from 'react';
-import { BookmarkPlus, Globe, LogIn, PanelLeftClose, Trash2 } from 'lucide-react';
+import { BookmarkPlus, Globe, LogIn, PanelLeftClose, Search, Trash2 } from 'lucide-react';
 import { Body3D, ShapeGroup } from '../types';
 import { thumbnailDataUrl } from '../utils/thumbnail';
 import { groupChain } from '../utils/groups';
@@ -135,6 +135,14 @@ export default function LeftPane(props: LeftPaneProps) {
   const objects = groups.filter((g) => !g.joined && !g.instanceOf && !groupChain(groups, g.parentId).some((x) => x.joined));
   const picked = (ids: string[]) => ids.length > 0 && ids.length === selectedBodyIds.length && ids.every((i) => selectedBodyIds.includes(i));
 
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const hit = (name: string) => !q || name.toLowerCase().includes(q);
+  const shownShapes = shapes.filter((x) => hit(x.name));
+  const shownObjects = objects.filter((g) => hit(g.name));
+  const shownLibrary = props.library.filter((i) => hit(i.name));
+  const none = (what: string) => <p className="px-2 py-4 text-xs text-slate-400">{`No ${what} match “${query.trim()}”.`}</p>;
+
   const tabs: { id: PaneTab; label: string; count: number }[] = [
     { id: 'shapes', label: 'Shapes', count: shapes.length },
     { id: 'objects', label: 'Objects', count: objects.length },
@@ -142,8 +150,8 @@ export default function LeftPane(props: LeftPaneProps) {
   ];
 
   return (
-    <aside aria-label="Parts" className="w-64 shrink-0 min-h-0 flex flex-col bg-slate-900/70 border-r border-white/8">
-      <div className="flex items-center gap-1 p-2">
+    <aside aria-label="Parts" className="w-48 shrink-0 min-h-0 flex flex-col bg-slate-900/70 border-r border-white/8">
+      <div className="flex items-center gap-0.5 p-1.5">
         <div role="tablist" aria-label="Parts" className="flex-1 flex gap-1 p-0.5 rounded-full bg-white/6">
           {tabs.map((t) => (
             <button
@@ -152,21 +160,37 @@ export default function LeftPane(props: LeftPaneProps) {
               role="tab"
               aria-selected={tab === t.id}
               onClick={() => props.onTab(t.id)}
-              className={`flex-1 h-7 rounded-full text-[12px] font-medium transition-colors ${tab === t.id ? 'bg-accent-500 text-white' : 'text-slate-300 hover:text-white'}`}
+              className={`flex-1 h-7 rounded-full text-[11px] font-medium transition-colors ${tab === t.id ? 'bg-accent-500 text-white' : 'text-slate-300 hover:text-white'}`}
             >
-              {t.label} <span className="opacity-70">{t.count}</span>
+              {t.label}<span className="ml-0.5 opacity-60 text-[10px]">{t.count}</span>
             </button>
           ))}
         </div>
         <IconBtn label="Hide the parts pane" onClick={props.onClose}><PanelLeftClose size={15} /></IconBtn>
       </div>
 
+      <div className="px-2 pb-2">
+        <label className="flex items-center gap-1.5 h-8 rounded-full bg-white/6 border border-white/8 px-2.5 text-slate-400 focus-within:border-accent-400">
+          <Search size={13} className="shrink-0" />
+          <input
+            type="search"
+            value={query}
+            aria-label="Search by name"
+            placeholder="Search by name"
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') setQuery(''); }}
+            className="flex-1 min-w-0 bg-transparent text-[12px] text-slate-100 placeholder:text-slate-500 focus:outline-none"
+          />
+        </label>
+      </div>
+
       <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-3">
         {tab === 'shapes' && (
           shapes.length === 0
             ? <p className="px-2 py-4 text-xs text-slate-400">No shapes yet. Add one from Shape.</p>
-            : <div className="grid grid-cols-2 gap-2">
-                {shapes.map((s) => (
+            : shownShapes.length === 0 ? none('shapes')
+            : <div className="grid grid-cols-2 gap-1.5">
+                {shownShapes.map((s) => (
                   <Card key={s.id} label={`Pick ${s.name}`} selected={picked(s.ids)} onPick={() => props.onPickShapes(s.ids)}>
                     <Thumb bodies={s.bodies} name={s.name} />
                     <Name value={s.name} label={s.name} onCommit={(n) => props.onRename(s.group ? 'object' : 'shape', s.group ?? s.id, n)} />
@@ -182,8 +206,9 @@ export default function LeftPane(props: LeftPaneProps) {
         {tab === 'objects' && (
           objects.length === 0
             ? <p className="px-2 py-4 text-xs text-slate-400">No objects yet. Select two or more shapes and press Group to make one.</p>
-            : <div className="grid grid-cols-2 gap-2">
-                {objects.map((g) => {
+            : shownObjects.length === 0 ? none('objects')
+            : <div className="grid grid-cols-2 gap-1.5">
+                {shownObjects.map((g) => {
                   const inside = bodies.filter((b) => g.bodyIds.includes(b.id));
                   return (
                     <Card key={g.id} label={`Pick ${g.name}`} selected={picked(g.bodyIds)} onPick={() => props.onPickShapes(g.bodyIds)}>
@@ -205,8 +230,9 @@ export default function LeftPane(props: LeftPaneProps) {
         {tab === 'library' && (
           props.library.length === 0
             ? <p className="px-2 py-4 text-xs text-slate-400">Nothing saved yet. Use the bookmark on a shape or an object to keep it here for every project.</p>
-            : <div className="grid grid-cols-2 gap-2">
-                {props.library.map((item) => (
+            : shownLibrary.length === 0 ? none('library objects')
+            : <div className="grid grid-cols-2 gap-1.5">
+                {shownLibrary.map((item) => (
                   <Card key={item.id} label={`Add a copy of ${item.name}`} onPick={() => props.onPlaceItem(item.id)}>
                     <img src={item.thumb} alt="" aria-hidden="true" className="w-full aspect-square rounded-xl bg-slate-950/70" draggable={false} />
                     <Name value={item.name} label={item.name} onCommit={(n) => props.onRename('item', item.id, n)} />

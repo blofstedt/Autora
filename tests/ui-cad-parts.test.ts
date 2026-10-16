@@ -70,6 +70,20 @@ async function main() {
       assert.ok(await pane.getByText("Pair", { exact: true }).count());
     });
 
+    await test("the search box narrows the list by name, and the pane is a slim column", async () => {
+      const pane = f().locator('aside[aria-label="Parts"]');
+      await pane.getByRole("tab", { name: /Shapes/ }).click();
+      const width = (await pane.boundingBox())!.width;
+      assert.ok(width <= 200, `the pane is ${width}px wide`);
+      await pane.getByLabel("Search by name").fill("peg");
+      assert.equal(await pane.locator("img").count(), 1);
+      await pane.getByLabel("Search by name").fill("zzz");
+      assert.equal(await pane.locator("img").count(), 0);
+      assert.ok(await pane.getByText(/No shapes match/).count());
+      await pane.getByLabel("Search by name").fill("");
+      assert.equal(await pane.locator("img").count(), 3);
+    });
+
     await test("a shape and an object are named by double-clicking the name", async () => {
       const pane = f().locator('aside[aria-label="Parts"]');
       await pane.getByRole("tab", { name: /Shapes/ }).click();
