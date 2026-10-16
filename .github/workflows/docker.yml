@@ -22,14 +22,39 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# One build per branch, and a newer push cancels the older one.
+#
+# Without this, a second push to main waited behind the first: the two builds
+# shared the repository's 10 GB Actions cache and evicted each other's layers,
+# so each one rebuilt the Rust stages from scratch (the photo stage alone is
+# 2 minutes with its layers cached and 21 without) and both ran hours apart.
+# A build whose commit has already been superseded is worth nothing -- the
+# release it was going to offer is no longer the newest one -- so it is stopped
+# rather than left to finish, and the whole of the cache goes to the build that
+# will actually be released.
+#
+# `github.workflow` + `github.ref` gives main one group and each pull request
+# its own (`refs/pull/<n>/merge`), so a pull request can never cancel a release
+# build on main, however many are open at once.
+concurrency:
+  group: docker-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     # A fork's pull request cannot push to this registry.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    # A normal build is under ten minutes. One that hangs should fail where
-    # it can be seen rather than hold the release back for hours.
-    timeout-minutes: 40
+    # Measured over the last twenty runs on main: 17 minutes when every layer
+    # is cached, 33-42 when the Rust stages (photo, office-engine) have to be
+    # compiled again, which is what happens whenever the cache has been
+    # evicted. The old 40 minutes therefore cut off exactly the runs that were
+    # working, and left the release without its "Offer this version on Umbrel"
+    # commit -- an image in the registry that no Umbrel was ever offered, which
+    # is what a timeout looks like from the outside. 60 leaves room for a cold
+    # build with the cache export behind it, and the concurrency block above is
+    # what keeps the queue from growing.
+    timeout-minutes: 60
     permissions:
       # write: to commit the version bump that offers the update.
       contents: write
