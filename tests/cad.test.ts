@@ -166,6 +166,22 @@ await test("a change made in the window is the agent's to see, and is marked as 
   assert.equal(cad.cadState(S).by, "agent", "and the agent's next change is the agent's again");
 });
 
+await test("Save keeps the model in Artifacts as a GLB, and the next Save replaces that copy", async () => {
+  const { getArtifact, listArtifacts } = await import("../server/artifacts");
+  const before = cad.cadState(S).rev;
+  const first = await call("POST", `/api/cad/${S}/keep`);
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.match(first.body.name, /\.glb$/);
+  const art = getArtifact(first.body.artifact)!;
+  assert.equal(art.origin, "user");
+  assert.equal(art.session, S);
+  assert.equal(art.mime, "model/gltf-binary");
+  const again = await call("POST", `/api/cad/${S}/keep`);
+  assert.equal(again.body.artifact, first.body.artifact);
+  assert.equal(listArtifacts().filter((a) => a.name === first.body.name).length, 1);
+  assert.equal(cad.cadState(S).rev, before, "saving changed nothing in the model");
+});
+
 await test("a model that is not one is refused and nothing changes", async () => {
   const before = cad.cadState(S).rev;
   assert.equal((await call("PUT", `/api/cad/${S}/doc`, { doc: { nope: 1 } })).status, 400);

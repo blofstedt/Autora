@@ -783,7 +783,7 @@ const groupOf = (doc: Doc, id: unknown): ShapeGroup => {
  * Saves a group (or one shape) to the library, and makes it the first placed copy. A group that was opened for editing
  * (`object_unlink`) updates its item instead, so every copy follows.
  */
-export function saveToLibrary(doc: Doc, ids: IdGen, a: { group?: string; id?: string; name?: string }): OpResult<{ item: string; group: string; updated: boolean }> {
+export function saveToLibrary(doc: Doc, ids: IdGen, a: { group?: string; id?: string; name?: string; linked?: boolean }): OpResult<{ item: string; group: string; updated: boolean }> {
   let group: ShapeGroup | null = null;
   let single: Body3D | undefined;
   if (a.group !== undefined) {
@@ -792,13 +792,17 @@ export function saveToLibrary(doc: Doc, ids: IdGen, a: { group?: string; id?: st
     if (group.instanceOf) return fail('That group is inside a linked library object.');
   } else {
     single = editable(doc, a.id);
-    if (single.groupId) return fail(`"${single.id}" is in a group.`, `Save the group (${single.groupId}) instead, or ungroup it first.`);
+    if (single.groupId && a.linked) return fail(`"${single.id}" is in a group.`, `Save the group (${single.groupId}) instead, or ungroup it first.`);
   }
   const made = templateOf(doc.bodies, doc.groups, group, single);
   if (typeof made === 'string') return fail(made);
   const existing = group?.libraryId ? doc.library.find((i) => i.id === group!.libraryId) : undefined;
   const name = (a.name ?? existing?.name ?? group?.name ?? single?.name ?? 'Object').trim() || 'Object';
   const item: LibraryItem = { id: existing?.id ?? ids('item'), name, shared: existing?.shared, rev: Date.now(), ...made.item };
+  if (!a.linked && !existing) {
+    // Independent (the default): the library keeps its own copy and the shapes stay exactly as they are.
+    return { doc: { ...doc, library: [...doc.library, item] }, result: { item: item.id, group: group?.id ?? single!.id, updated: false } };
+  }
   const gone = new Set((group ? group.bodyIds : [single!.id]));
   const innerGroups = new Set(group ? descendantGroups(doc.groups, group.id).map((g) => g.id) : []);
   const gid = group?.id ?? ids('group');
@@ -822,6 +826,8 @@ export interface PlaceArgs {
   /** Put it on the top of this shape. */
   onTopOf?: string;
   name?: string;
+  /** Keep the copy following its library object. Default: an independent copy, ordinary shapes that nothing follows. */
+  linked?: boolean;
 }
 
 /** Places a linked copy of a library object: beside what is there by default, or on top of a shape. */
@@ -852,7 +858,11 @@ export function placeFromLibrary(doc: Doc, ids: IdGen, a: PlaceArgs): OpResult<{
   const gid = ids('group');
   const group: ShapeGroup = { id: gid, name: a.name ?? item.name, bodyIds: [], libraryId: item.id, place: { x: round2(x), y: round2(y), z: round2(z), angle: (num(a.angle, 'angle', 0) * Math.PI) / 180 } };
   const next = settle({ ...doc, groups: [...doc.groups, group] });
-  return { doc: next, result: { group: gid, shapes: next.bodies.filter((b) => b.instanceOf === gid).map((b) => b.id) } };
+  const placed = { doc: next, result: { group: gid, shapes: next.bodies.filter((b) => b.instanceOf === gid).map((b) => b.id) } };
+  if (a.linked) return placed;
+  // Independent: let it go at once, so the copy is plain shapes in a plain group.
+  const loose = unlinkObject(next, ids, { group: gid, forget: true });
+  return { doc: settle(loose.doc), result: { group: gid, shapes: loose.result.shapes } };
 }
 
 /**
@@ -874,6 +884,17 @@ export function unlinkObject(doc: Doc, ids: IdGen, a: { group: string; forget?: 
     groups: doc.groups.map((x) => (inside(x) ? { ...x, id: re(x.id)!, parentId: re(x.parentId), instanceOf: undefined } : x.id === g.id ? { ...x, place: undefined, libraryId: a.forget ? undefined : x.libraryId } : x)),
   };
   return { doc: next, result: { group: g.id, shapes: [...fresh.entries()].filter(([k]) => doc.bodies.some((b) => b.id === k)).map(([, v]) => v), editing: !a.forget } };
+}
+
+/**
+ * Opening a group for editing from the inside is something the person's window shows, not part of the model: the model
+ * does not change. This only checks the group can be opened, and says what the window does with it.
+ */
+export function enterGroup(doc: Doc, a: { group: string }): OpResult<{ group: string; name: string; note: string }> {
+  const g = groupOf(doc, a.group);
+  if (g.joined) return fail(`"${g.name}" is a joined shape, one solid: there is nothing inside it to edit.`);
+  if (g.place || g.instanceOf) return fail(`"${g.name}" is a linked library object, one piece.`, 'Open it for editing with object_unlink, or make it separate.');
+  return { doc, result: { group: g.id, name: g.name, note: 'Editing inside is a view in the person\'s window: with Visible work on the window opens the group (only its shapes show, each picked on its own); otherwise nothing is shown. The model is the same either way.' } };
 }
 
 export function renameLibraryItem(doc: Doc, a: { item: string; name: string }): OpResult<{ item: string; name: string }> {

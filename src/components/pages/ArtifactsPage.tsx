@@ -4,10 +4,11 @@ import {
 } from "react";
 import type { SessionRow } from "../Sessions";
 import { LibraryPicker } from "../LibraryPicker";
+import { FolderPicker, type Folder, type FolderChoice } from "../FolderPicker";
 import { addToNotebook, type Notebook } from "../../lib/notebooks";
 import { ArtThumb, canPicture, kindOf, type Artifact } from "../ArtThumb";
 import {
-  IconCheck, IconDownload, IconMark, IconNotebook, IconSearch, IconTrash,
+  IconCheck, IconDownload, IconEdit, IconFolder, IconMark, IconNotebook, IconSearch, IconTrash,
   IconUpload, IconUser, IconX,
 } from "../Icons";
 import { every } from "../../lib/poll";
@@ -87,12 +88,18 @@ function dayLabel(ts: number): string {
   return then.toLocaleDateString([], { month: "long", year: then.getFullYear() === new Date().getFullYear() ? undefined : "numeric", day: "numeric" });
 }
 
-type Group = { key: string; title: string; sub?: string; icon?: ReactNode; list: Artifact[] };
+type Group = {
+  key: string; title: string; sub?: string; icon?: ReactNode; list: Artifact[];
+  /** A real folder (one project, maybe several chats), not one chat's own. */
+  folder?: Folder;
+};
 
 /**
  * Artifacts: every file of the workspace on one page, arranged so that a
- * hundred of them can be read instead of scrolled past. Files are grouped by
- * the conversation they came out of (or by date, or by kind), searched by name,
+ * hundred of them can be read instead of scrolled past. Files are grouped in
+ * folders, one per project (a chat's own until another chat works on its
+ * files, then one folder for both: server/folders.ts), or by date, or by
+ * kind; searched by name,
  * note or session, filtered by what they are and by who made them, and drawn
  * as themselves -- a PDF's first page, a document's first lines, a tile whose
  * colour says what kind of file it is -- rather than as a wall of grey.
@@ -118,6 +125,11 @@ export function ArtifactsPage({
   const [removing, setRemoving] = useState(false);
   const [filing, setFiling] = useState(false);
   const [filed, setFiled] = useState<string | null>(null);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [chatFolders, setChatFolders] = useState<Record<string, string>>({});
+  const [moving, setMoving] = useState(false);
+  /** The folder being renamed, and the name typed so far. */
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<Kind>("all");
   const [who, setWho] = useState<Who>("all");
@@ -135,6 +147,8 @@ export function ArtifactsPage({
   const load = useCallback(() => {
     fetch("/api/artifacts").then((r) => r.json()).then((d) => {
       setItems(d.artifacts ?? []);
+      setFolders(Array.isArray(d.folders) ? d.folders : []);
+      setChatFolders(d.chats && typeof d.chats === "object" ? d.chats : {});
       if (d.max) setMax(d.max);
     }).catch(() => setError("Could not load artifacts."));
   }, []);
@@ -273,7 +287,64 @@ export function ArtifactsPage({
     }
   };
 
+  const send = async (url: string, method: string, body?: unknown) => {
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error ?? "That did not work.");
+    return data;
+  };
+
+  /** The picked files go in a folder; with `chats`, so do the chats they
+      came from, and what those make next. */
+  const move = async (choice: FolderChoice) => {
+    setMoving(false);
+    setError(null);
+    const files = [...picked];
+    const chats = choice.chats
+      ? [...new Set(all.filter((a) => files.includes(a.id) && a.session).map((a) => a.session!))]
+      : [];
+    try {
+      if (choice.name) await send("/api/folders", "POST", { name: choice.name, files, chats });
+      else await send("/api/folders/move", "POST", { folder: choice.folder, files, chats });
+      leaveSelect();
+    } catch (err: any) {
+      setError(err?.message ?? "Could not move them.");
+    }
+    load();
+  };
+
+  const rename = async () => {
+    const r = renaming;
+    setRenaming(null);
+    if (!r || !r.name.trim()) return;
+    try {
+      await send(`/api/folders/${r.id}`, "PATCH", { name: r.name });
+    } catch (err: any) {
+      setError(err?.message ?? "Could not rename the folder.");
+    }
+    load();
+  };
+
+  const unfold = async (f: Folder) => {
+    if (!(await sure(`Remove the folder “${f.name}”? Its files stay, each back in the chat it came from.`, "Remove"))) return;
+    try {
+      await send(`/api/folders/${f.id}`, "DELETE");
+    } catch (err: any) {
+      setError(err?.message ?? "Could not remove the folder.");
+    }
+    load();
+  };
+
   const all = useMemo(() => items ?? [], [items]);
+  const folderOf = useCallback((a: Artifact): Folder | null => {
+    const id = (a.folder && folders.some((f) => f.id === a.folder) ? a.folder : null) ??
+      (a.session ? chatFolders[a.session] : undefined);
+    return (id && folders.find((f) => f.id === id)) || null;
+  }, [folders, chatFolders]);
   const titleOf = useCallback(
     (id?: string) => sessions.find((s) => s.id === id)?.title?.trim() || null,
     [sessions],
@@ -294,9 +365,9 @@ export function ArtifactsPage({
   const shown = useMemo(() => order(all.filter((a) => {
     if (who !== "all" && a.origin !== who) return false;
     if (kind !== "all" && kindOfArtifact(a) !== kind) return false;
-    if (search && !`${a.name} ${a.note ?? ""} ${titleOf(a.session) ?? ""}`.toLowerCase().includes(search)) return false;
+    if (search && !`${a.name} ${a.note ?? ""} ${titleOf(a.session) ?? ""} ${folderOf(a)?.name ?? ""}`.toLowerCase().includes(search)) return false;
     return true;
-  }), sort), [all, who, kind, search, sort, titleOf]);
+  }), sort), [all, who, kind, search, sort, titleOf, folderOf]);
 
   const groups = useMemo((): Group[] => {
     if (grouping === "none") return [{ key: "all", title: "", list: shown }];
@@ -317,10 +388,10 @@ export function ArtifactsPage({
       }
       return out;
     }
-    // Session: the conversation a file came out of, newest first.
+    // Project: the folder a file is in, else the chat it came out of; newest first.
     const byKey = new Map<string, Artifact[]>();
     for (const a of shown) {
-      const key = a.session || "none";
+      const key = folderOf(a)?.id ?? (a.session || "none");
       const list = byKey.get(key);
       if (list) list.push(a);
       else byKey.set(key, [a]);
@@ -328,7 +399,18 @@ export function ArtifactsPage({
     return [...byKey.entries()]
       .map(([key, list]) => ({ key, list, newest: list.reduce((t, a) => Math.max(t, a.ts), 0) }))
       .sort((a, b) => b.newest - a.newest)
-      .map(({ key, list, newest }): Group => ({
+      .map(({ key, list, newest }): Group => {
+        const folder = folders.find((f) => f.id === key);
+        if (folder) {
+          const chats = new Set(list.map((a) => a.session).filter(Boolean)).size;
+          return {
+            key, list, folder,
+            title: folder.name,
+            sub: `${chats > 1 ? `${chats} chats · ` : ""}${date(newest)} · ${list.length} ${list.length === 1 ? "file" : "files"}`,
+            icon: <IconFolder size={14} />,
+          };
+        }
+        return {
         key,
         // Most files came out of conversations the session list no longer
         // holds, and every one of those used to read as the same title. With
@@ -340,8 +422,9 @@ export function ArtifactsPage({
           : `${date(newest)} · ${list.length} ${list.length === 1 ? "file" : "files"}`,
         icon: <IconMark size={14} />,
         list,
-      }));
-  }, [shown, grouping, titleOf]);
+        };
+      });
+  }, [shown, grouping, titleOf, folderOf, folders]);
 
   const shownIds = shown.map((a) => a.id);
   const allPicked = shownIds.length > 0 && shownIds.every((id) => picked.includes(id));
@@ -349,7 +432,7 @@ export function ArtifactsPage({
   const fold = (key: string, list: string[], set: (v: string[]) => void) =>
     set(list.includes(key) ? list.filter((k) => k !== key) : [...list, key]);
 
-  const grid = (list: Artifact[]) => (
+  const grid = (list: Artifact[], inFolder = false) => (
     <div className="art-grid">
       {list.map((a) => {
         const on = picked.includes(a.id);
@@ -391,14 +474,14 @@ export function ArtifactsPage({
               <em className="art-sub">
                 <span
                   className={`art-owner is-${a.origin}`}
-                  title={a.origin === "agent" ? "Made by Autora" : "Uploaded by you"}
+                  title={a.origin === "agent" ? "Made by Autora" : "Yours: uploaded or saved by you"}
                 >
                   {a.origin === "agent" ? <IconMark size={11} /> : <IconUser size={11} />}
                 </span>
                 {size(a.size)} · {date(a.ts)}
               </em>
               {a.note && <span className="art-note" title={a.note}>{a.note}</span>}
-              {!selecting && grouping !== "session" && a.session && titleOf(a.session) && (
+              {!selecting && (grouping !== "session" || inFolder) && a.session && titleOf(a.session) && (
                 <button className="art-session" onClick={() => onOpenSession(a.session!)}>
                   in “{titleOf(a.session)}”
                 </button>
@@ -445,9 +528,10 @@ export function ArtifactsPage({
       <div className="page-inner">
         <p className="jf-hint page-lede">
           Everything Autora makes for you and everything you give it: generated
-          images, documents it writes, and the files and photos you upload. Grouped
-          by the conversation they came out of, with each file drawn as itself. Press
-          and hold a file to select.
+          images, documents it writes, and the files and photos you upload. Each chat&apos;s
+          files are in a folder of their own; when another chat carries on with them, both
+          chats share one project folder. Press and hold a file to select it, then move it
+          to another folder.
         </p>
         {error && <p className="set-warn">{error}</p>}
         {filed && <p className="jf-hint art-filed" role="status">{filed}</p>}
@@ -459,6 +543,15 @@ export function ArtifactsPage({
             allowNew
             onClose={() => setFiling(false)}
             onPick={({ notebooks }) => void file(notebooks)}
+          />
+        )}
+
+        {moving && (
+          <FolderPicker
+            folders={folders}
+            count={picked.length}
+            onClose={() => setMoving(false)}
+            onPick={(choice) => void move(choice)}
           />
         )}
 
@@ -485,6 +578,15 @@ export function ArtifactsPage({
               {allPicked ? "Clear" : "Select all"}
             </button>
             <div className="spacer" />
+            <button
+              className="btn ghost art-act"
+              disabled={picked.length === 0 || removing}
+              onClick={() => setMoving(true)}
+              aria-label="Move to folder"
+              title="Move to folder"
+            >
+              <IconFolder size={15} /> <span className="art-act-word">Move to folder</span>
+            </button>
             <button
               className="btn ghost art-act"
               disabled={picked.length === 0 || removing}
@@ -560,7 +662,7 @@ export function ArtifactsPage({
               <label className="art-select">
                 <span>Grouped by</span>
                 <select value={grouping} onChange={(e) => setGrouping(e.target.value as Grouping)}>
-                  <option value="session">Conversation</option>
+                  <option value="session">Project</option>
                   <option value="date">Date</option>
                   <option value="kind">Kind of file</option>
                   <option value="none">Nothing</option>
@@ -602,21 +704,56 @@ export function ArtifactsPage({
             const list = wide ? g.list : g.list.slice(0, PREVIEW);
             return (
               <section className="art-section" key={g.key}>
-                {g.title && (
-                  <button
-                    className="art-head art-toggle"
-                    aria-expanded={!shut}
-                    onClick={() => fold(g.key, closed, setClosed)}
-                  >
-                    {g.icon && <span className="tool-icon">{g.icon}</span>}
-                    <h3>{g.title}</h3>
-                    <span className="art-count">{g.list.length}</span>
-                    <div className="spacer" />
-                    {g.sub && <span className="art-when">{g.sub}</span>}
-                    <span className="art-caret" aria-hidden="true">{shut ? "▸" : "▾"}</span>
-                  </button>
+                {g.title && renaming && g.folder && renaming.id === g.folder.id ? (
+                  <form className="art-head art-rename" onSubmit={(e) => { e.preventDefault(); void rename(); }}>
+                    <span className="tool-icon">{g.icon}</span>
+                    <input
+                      autoFocus
+                      value={renaming.name}
+                      maxLength={80}
+                      onChange={(e) => setRenaming({ id: renaming.id, name: e.target.value })}
+                      onBlur={() => void rename()}
+                      onKeyDown={(e) => { if (e.key === "Escape") setRenaming(null); }}
+                      aria-label="Folder name"
+                    />
+                  </form>
+                ) : g.title && (
+                  <div className="art-head-row">
+                    <button
+                      className="art-head art-toggle"
+                      aria-expanded={!shut}
+                      onClick={() => fold(g.key, closed, setClosed)}
+                    >
+                      {g.icon && <span className="tool-icon">{g.icon}</span>}
+                      <h3>{g.title}</h3>
+                      <span className="art-count">{g.list.length}</span>
+                      <div className="spacer" />
+                      {g.sub && <span className="art-when">{g.sub}</span>}
+                      <span className="art-caret" aria-hidden="true">{shut ? "▸" : "▾"}</span>
+                    </button>
+                    {g.folder && !selecting && (
+                      <>
+                        <button
+                          className="btn icon ghost"
+                          onClick={() => setRenaming({ id: g.folder!.id, name: g.folder!.name })}
+                          title="Rename folder"
+                          aria-label={`Rename the folder ${g.folder.name}`}
+                        >
+                          <IconEdit size={14} />
+                        </button>
+                        <button
+                          className="btn icon ghost"
+                          onClick={() => void unfold(g.folder!)}
+                          title="Remove folder (keeps the files)"
+                          aria-label={`Remove the folder ${g.folder.name}`}
+                        >
+                          <IconX size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 )}
-                {!shut && grid(list)}
+                {!shut && grid(list, Boolean(g.folder))}
                 {!shut && g.list.length > PREVIEW && (
                   <button className="btn ghost art-more" onClick={() => fold(g.key, opened, setOpened)}>
                     {wide ? "Show fewer" : `Show all ${g.list.length}`}

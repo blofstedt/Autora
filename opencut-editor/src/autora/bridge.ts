@@ -113,3 +113,11 @@ window.addEventListener("message", (e: MessageEvent) => {
 export function ready(): void {
   if (inWindow) window.parent.postMessage({ type: "autora:opencut:ready" }, "*");
 }
+
+/** Tell the window the editor could not start, and why (once per reason). */
+let told = "";
+export function trouble(message: string): void {
+  if (!inWindow || !message || message === told) return;
+  told = message;
+  window.parent.postMessage({ type: "autora:opencut:problem", message: message.slice(0, 300) }, "*");
+}

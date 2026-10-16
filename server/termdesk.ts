@@ -13,8 +13,11 @@
  * What the agent shares with it:
  *   - the working directory: the shell's own (read from /proc where there is one), which is where the agent's next
  *     command starts, so a `cd` here carries over;
- *   - what the agent runs with its `terminal` tool is printed into the scrollback in a dim colour, marked as the agent's
- *     (it is not typed into the shell: the agent's tool still runs its own command, with its own output and exit code);
+ *   - with Visible work on and someone watching, what the agent runs with its `terminal` tool is typed into this shell, at
+ *     a person's pace, and runs here (`termAgentRun`): its output and exit code are read back from the shell, between the
+ *     marks the shell's prompt makes (`RC`, the OSC 133 marks terminals use for this; xterm.js draws nothing for them).
+ *     Otherwise (Visible off, nobody watching, the shell busy or the person mid-line) it runs in a process of its own,
+ *     at speed, and is printed into the scrollback in a dim colour, marked as the agent's;
  *   - what the person ran is told to the agent once (`termNews`), best-effort, from the lines they sent with Enter.
  *
  * Everything is in memory and per chat (`dropTerm` ends the shell with the chat). A terminal can show a secret, so
@@ -26,7 +29,10 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import fs from "node:fs";
+import path from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
+import { allSecrets, stateDir } from "./state";
+import { identityEnv } from "./credentials";
 import { redactForModel, terminalDir, toolSettings } from "./tools";
 import { typingDelays } from "../src/lib/humanPath";
 
@@ -35,6 +41,7 @@ const PTY_HELPER = String.raw`
 import os, pty, sys, select, fcntl, termios, struct, signal
 cols, rows = int(sys.argv[1]), int(sys.argv[2])
 shell, cwd = sys.argv[3], sys.argv[4]
+args = sys.argv[5:]
 pid, fd = pty.fork()
 if pid == 0:
     try:
@@ -45,7 +52,7 @@ if pid == 0:
     env["TERM"] = "xterm-256color"
     env["COLORTERM"] = "truecolor"
     env["SHELL"] = shell
-    os.execvpe(shell, [shell, "-l", "-i"] if os.path.basename(shell) in ("bash", "zsh", "fish") else [shell, "-i"], env)
+    os.execvpe(shell, [shell] + args, env)
 def size(c, r):
     try:
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", r, c, 0, 0))
@@ -105,6 +112,14 @@ interface Shell {
   scrollback: string;
   /** The line being typed, as far as keystrokes can tell: what the person ran, for the agent. */
   typing: string;
+  /** Whether the shell makes the prompt marks (bash, with `RC`): only then can the agent type into it. */
+  marked: boolean;
+  /** At its prompt, waiting for a command: the last mark was the end of one (or the first prompt). */
+  atPrompt: boolean;
+  /** The tail of the output, for a mark split between two reads. */
+  carry: string;
+  /** The agent's command running here: what it printed so far, and who to tell when it ends. */
+  capture: { started: boolean; sent: boolean; out: string; onOutput: (text: string) => void; done: (exit: number) => void } | null;
 }
 
 interface Desk {
@@ -222,22 +237,31 @@ function shellFor(session: string, cols: number, rows: number): { shell: Shell }
   if (desk.shell) return { shell: desk.shell };
   const cwd = liveCwd(desk);
   let child: ChildProcess;
+  const program = shellProgram();
+  const base = path.basename(program);
+  const rc = base === "bash" ? rcFile() : null;
+  const args = rc ? ["--rcfile", rc, "-i"] : ["bash", "zsh", "fish"].includes(base) ? ["-l", "-i"] : ["-i"];
   try {
-    child = spawn("python3", ["-I", "-c", PTY_HELPER, String(cols), String(rows), shellProgram(), cwd], {
+    child = spawn("python3", ["-I", "-c", PTY_HELPER, String(cols), String(rows), program, cwd, ...args], {
       stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
-      env: process.env,
+      // The agent types its commands here too: the same secrets and identity its own commands have, and no pager to get
+      // stuck in (a person's `git log` scrolls by too).
+      env: { ...process.env, ...allSecrets(), ...identityEnv(), PAGER: "cat", GIT_PAGER: "cat" },
     });
   } catch (err) {
     return { error: `The terminal could not start: ${err instanceof Error ? err.message : String(err)}` };
   }
-  const shell: Shell = { child, pid: null, decoder: new StringDecoder("utf8"), watchers: new Set(), scrollback: "", typing: "" };
+  const shell: Shell = {
+    child, pid: null, decoder: new StringDecoder("utf8"), watchers: new Set(), scrollback: "", typing: "",
+    marked: Boolean(rc), atPrompt: false, carry: "", capture: null,
+  };
   desk.shell = shell;
   const note = child.stdio[4] as NodeJS.ReadableStream | null;
   note?.on("data", (chunk: Buffer) => {
     const m = /P (\d+)/.exec(chunk.toString());
     if (m) shell.pid = Number(m[1]);
   });
-  child.stdout?.on("data", (chunk: Buffer) => emit(shell, shell.decoder.write(chunk)));
+  child.stdout?.on("data", (chunk: Buffer) => { const text = shell.decoder.write(chunk); marks(shell, text); emit(shell, text); });
   child.stderr?.on("data", (chunk: Buffer) => emit(shell, shell.decoder.write(chunk)));
   const over = (code: number | null, why?: string) => {
     if (desk.shell !== shell) return;
@@ -253,6 +277,94 @@ function shellFor(session: string, cols: number, rows: number): { shell: Shell }
   desk.rev += 1;
   changed(session);
   return { shell };
+}
+
+/**
+ * What bash reads at the start instead of its login files (which it reads itself, first): a mark when a command starts
+ * (PS0) and one with its exit code when it ends (before each prompt), the OSC 133 marks a terminal uses to tell commands
+ * apart. Nothing is shown for them.
+ */
+const RC = [
+  "if [ -f /etc/profile ]; then . /etc/profile; fi",
+  "__autora_login=",
+  "for __autora_f in ~/.bash_profile ~/.bash_login ~/.profile; do",
+  '  if [ -f "$__autora_f" ]; then . "$__autora_f"; __autora_login=1; break; fi',
+  "done",
+  'if [ -z "$__autora_login" ] && [ -f ~/.bashrc ]; then . ~/.bashrc; fi',
+  "unset __autora_f __autora_login",
+  // A "!" in a command is a "!", as it is in a script: no history expansion.
+  "set +H",
+  "__autora_mark() { local s=$?; printf '\\033]133;D;%s\\007' \"$s\"; return $s; }",
+  'PROMPT_COMMAND="__autora_mark${PROMPT_COMMAND:+; $PROMPT_COMMAND}"',
+  "PS0=\"${PS0}\"$'\\033]133;C\\007'",
+  "",
+].join("\n");
+
+let rcPath: string | null = null;
+function rcFile(): string | null {
+  if (rcPath && fs.existsSync(rcPath)) return rcPath;
+  try {
+    const dir = path.join(stateDir(), "term");
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    rcPath = path.join(dir, "rc.bash");
+    fs.writeFileSync(rcPath, RC, { mode: 0o600 });
+    return rcPath;
+  } catch {
+    return null;
+  }
+}
+
+const MARK = /\x1b\]133;([CD])(?:;(-?\d+))?\x07/g;
+
+/** Read the prompt marks in what the shell printed: where the agent's command starts and ends, and its exit code. */
+function marks(shell: Shell, text: string) {
+  if (!shell.marked) return;
+  let all = shell.carry + text;
+  shell.carry = "";
+  // An escape at the very end may be the start of a mark: held back until the rest of it comes.
+  const open = all.lastIndexOf("\x1b");
+  if (open >= 0 && all.length - open < 24 && !all.slice(open).includes("\x07")) {
+    shell.carry = all.slice(open);
+    all = all.slice(0, open);
+  }
+  let last = 0;
+  for (const m of all.matchAll(MARK)) {
+    const at = m.index ?? 0;
+    if (shell.capture?.started) take(shell.capture, all.slice(last, at));
+    last = at + m[0].length;
+    if (m[1] === "C") {
+      shell.atPrompt = false;
+      if (shell.capture && !shell.capture.started) shell.capture.started = true;
+    } else {
+      shell.atPrompt = true;
+      // Started, or refused before it could start (a syntax error makes no start mark).
+      const cap = shell.capture;
+      if (cap && (cap.started || cap.sent)) cap.done(Number(m[2] ?? 0));
+    }
+  }
+  if (shell.capture?.started) take(shell.capture, all.slice(last));
+}
+
+function take(cap: NonNullable<Shell["capture"]>, raw: string) {
+  if (!raw) return;
+  cap.out += raw;
+  const clean = plain(raw);
+  if (clean) cap.onOutput(clean);
+}
+
+/** What a terminal shows, as text: escape sequences out, a line rewritten with \r kept at what it ended as. */
+function plain(raw: string): string {
+  const text = raw
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b[()][0-9A-Za-z]/g, "")
+    .replace(/\x1b[=>78DEHMc]/g, "")
+    .replace(/\r\n/g, "\n");
+  return text.split("\n").map((line) => {
+    let out = line.includes("\r") ? line.slice(line.lastIndexOf("\r") + 1) || line.split("\r").filter(Boolean).pop() || "" : line;
+    while (/[^\x08]\x08/.test(out)) out = out.replace(/[^\x08]\x08/, "");
+    return out.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+  }).join("\n");
 }
 
 function resize(shell: Shell, cols: number, rows: number) {
@@ -388,6 +500,85 @@ export function termAgentBegin(session: string, command: string, _cwd: string, w
   }).catch(() => undefined);
   return id;
 }
+
+/** What the agent's command did in the shell: its exit code and what it printed, as text. */
+export type ShellRun = { exit: number; output: string; timedOut: boolean; stopped: boolean };
+
+/**
+ * The agent's command, typed into the shell in the window and run there (Visible work, with someone watching): at a
+ * person's pace, a key at a time, or pasted when it is several lines (as a person pastes a script); then Enter. Its output
+ * is read from the shell until the prompt comes back, with its exit code. Too long, or Stop: Ctrl+C, as a person does.
+ *
+ * Null when it cannot be done there, and the caller runs it as before: the window shut or nobody watching, a shell that
+ * makes no marks (not bash), a command already running in it, or the person in the middle of typing a line.
+ */
+export async function termAgentRun(
+  session: string,
+  command: string,
+  opts: { cwd?: string; timeoutMs: number; who?: TermWho; onOutput: (text: string) => void; onCancel: (fn: () => void) => void },
+): Promise<ShellRun | null> {
+  const desk = desks.get(session);
+  const shell = desk?.shell;
+  if (!desk?.open || !shell || !shell.marked || !shell.atPrompt || shell.capture || shell.typing.trim() || shell.watchers.size === 0) return null;
+  const write = (text: string) => (shell.child.stdin as NodeJS.WritableStream | null)?.write(text);
+  /** One line, typed and run, and waited for. */
+  const run = (line: string, timeoutMs: number, onOutput: (text: string) => void) => new Promise<ShellRun>((resolve) => {
+    let timedOut = false;
+    let stopped = false;
+    let timer: NodeJS.Timeout | null = null;
+    shell.capture = {
+      started: false, sent: false, out: "", onOutput,
+      done: (exit) => {
+        if (timer) clearTimeout(timer);
+        const cap = shell.capture;
+        shell.capture = null;
+        resolve({ exit, output: plain(cap?.out ?? ""), timedOut, stopped });
+      },
+    };
+    const cap = shell.capture;
+    const interrupt = (why: "time" | "stop") => {
+      if (shell.capture !== cap) return;
+      if (why === "time") timedOut = true; else stopped = true;
+      write("\x03");
+      // A program that does not stop for Ctrl+C: let go of it after a moment, so the turn is not held.
+      setTimeout(() => { if (shell.capture === cap) { shell.capture = null; resolve({ exit: 130, output: plain(cap.out), timedOut, stopped }); } }, 4000);
+    };
+    opts.onCancel(() => interrupt("stop"));
+    void (async () => {
+      const text = redactForModel(line);
+      // Several lines, a tab (which would complete) or a very long one: pasted, as a person pastes.
+      if (/[\n\t]/.test(text) || text.length > TYPED_CHARS) {
+        await nap(350);
+        write(`\x1b[200~${line}\x1b[201~`);
+      } else {
+        const gaps = typingDelays(line, Math.min(2600, 90 * line.length + 300));
+        for (let i = 0; i < line.length; i++) {
+          write(line[i]!);
+          await nap(Math.max(25, gaps[i] ?? 60));
+        }
+      }
+      await nap(220);
+      cap.sent = true;
+      write("\r");
+      timer = setTimeout(() => interrupt("time"), timeoutMs);
+    })();
+  });
+  typing(shell, true, opts.who);
+  try {
+    // A directory asked for that is not where the shell is: cd there first, as a person would.
+    if (opts.cwd && path.resolve(opts.cwd) !== liveCwd(desk)) {
+      const moved = await run(`cd -- ${quote(opts.cwd)}`, 10_000, () => undefined);
+      if (moved.exit !== 0) return { ...moved, output: moved.output || `cd: ${opts.cwd}: no such directory` };
+    }
+    return await run(command, opts.timeoutMs, opts.onOutput);
+  } finally {
+    typing(shell, false, opts.who);
+    desk.rev += 1;
+    changed(session);
+  }
+}
+
+const quote = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`);
 
 export function termAgentChunk(session: string, _id: number, text: string) {
   const desk = desks.get(session);

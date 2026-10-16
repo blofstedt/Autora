@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SaveButton, settle } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { useCollab } from "../lib/collab";
 import { TakeControl } from "./TakeControl";
-import { useDeskState } from "../lib/pdfdesk";
-import { useAgentCursor } from "../lib/agentCursor";
+import { onDeskHand, useDeskState, type DeskHand } from "../lib/pdfdesk";
 import { useBootWatch } from "../lib/bootWatch";
-import { pointerGo, pointerRest, pointerType } from "../lib/pointer";
+import { clearCursor, reportCursor } from "../lib/cursorPos";
+import { getCursorWho, whoColors } from "../lib/cursorWho";
 import { onSpectraEvent } from "../lib/spectra";
 import { useFrameTheme } from "../lib/frameTheme";
 import { IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
@@ -25,8 +27,17 @@ import { IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
  * events the frame asked for. That is the whole of the wire between them; the
  * editor's own state, its UI and its history are its own.
  */
-/** A page as the frame places it on its own screen. */
-type Located = { x: number; y: number; w: number; h: number };
+/** How long an edit waits for an editor that is still starting before the server does it instead. */
+const EDITOR_START_MS = 45_000;
+
+/** The cursor's colour as #rrggbb, which the frame draws with: the chat's agent's own, else the theme's accent. */
+function cursorColor(): string {
+  const own = whoColors()?.accent;
+  if (own && /^#[0-9a-f]{6}$/i.test(own)) return own;
+  const rgb = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").split(",").map((v) => Number(v.trim()));
+  if (rgb.length !== 3 || rgb.some((v) => !Number.isFinite(v))) return "#6e5bff";
+  return `#${rgb.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("")}`;
+}
 
 export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: boolean }) {
   const desk = useDeskState();
@@ -53,62 +64,31 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
   }, []);
   useFrameTheme(frame);
 
-  /* The agent's cursor: where the agent just worked on a page (the server's cues), shown as the pointer going there,
-     pressing, and typing the words. The frame says where a page is on the screen -- and nothing is shown for a page it
-     cannot place, since a place that is not confirmed is never pointed at. */
-  const [cursorOn] = useAgentCursor();
-  const cursorRef = useRef(cursorOn);
-  cursorRef.current = cursorOn;
-  const placed = useRef(new Map<number, (r: Located | null) => void>());
-  const placeSeq = useRef(1);
-  const played = useRef(desk.cueSeq ?? 0);
-  const locate = useCallback((page: number, fy?: number) => new Promise<Located | null>((resolve) => {
-    const id = placeSeq.current++;
-    const timer = window.setTimeout(() => { placed.current.delete(id); resolve(null); }, 2500);
-    placed.current.set(id, (r) => { window.clearTimeout(timer); resolve(r); });
-    post({ type: "autora:spectra:locate", id, page, fy });
-  }), [post]);
-  useEffect(() => {
-    const seq = desk.cueSeq ?? 0;
-    if (seq <= played.current) return;
-    played.current = seq;
-    const cues = (desk.cues ?? []).filter((c) => c.pw && c.ph).slice(0, 4);
-    if (!cursorRef.current || cues.length === 0) return;
-    void (async () => {
-      for (const cue of cues) {
-        if (!cursorRef.current) return;
-        // The frame may still be loading the file the agent just changed: ask until it can say where the page is.
-        let at: Located | null = null;
-        for (let i = 0; i < 20 && !at; i++) {
-          at = await locate(cue.page, cue.ph ? (cue.y + cue.h / 2) / cue.ph : undefined);
-          if (!at) await new Promise((r) => setTimeout(r, 400));
-        }
-        const box = frame.current?.getBoundingClientRect();
-        if (!at || !box) return;
-        const there = (x: number, y: number) => ({ x: box.left + at.x + (x / cue.pw!) * at.w, y: box.top + at.y + (y / cue.ph!) * at.h });
-        const into = (p: { x: number; y: number }) => p.x >= box.left && p.x <= box.right && p.y >= box.top && p.y <= box.bottom;
-        if (cue.act === "draw" && cue.points && cue.points.length > 1) {
-          const step = Math.max(1, Math.ceil(cue.points.length / 14));
-          for (let i = 0; i < cue.points.length; i += step) {
-            const p = there(cue.points[i].x, cue.points[i].y);
-            if (into(p)) await pointerGo(p, false);
-          }
-        } else if (cue.act === "drag") {
-          const a = there(cue.x, cue.y);
-          const b = there(cue.x + cue.w, cue.y + cue.h);
-          if (into(a)) await pointerGo(a, false);
-          if (into(b)) await pointerGo(b, true);
-        } else {
-          const p = there(cue.x + Math.min(cue.w / 2, 40), cue.y + cue.h / 2);
-          if (into(p)) {
-            await pointerGo(p, true);
-            if ((cue.act === "type" || cue.act === "retype") && cue.to) await pointerType(cue.to);
-          }
-        }
-      }
-      pointerRest();
-    })();
-  }, [desk.cueSeq, desk.cues, locate]);
+  /* The agent's hand (Visible work on): its pdf_edit is done in the editor, live, with the editor's own tools
+     (spectra-editor/src/autora/hand.ts), and saved there. The window only carries it: the first window of the chat to
+     claim it hands it to its frame -- once the editor is up, which it waits for -- and tells the server what was done.
+     Nothing is played over a file the server changed: that would be a recording of work already done. */
+  const handing = useRef(new Map<string, (answer: { results?: unknown; saved?: unknown; error?: unknown }) => void>());
+  const byHand = useCallback(async (hand: DeskHand) => {
+    const q = `/api/pdfdesk/${encodeURIComponent(sessionId)}/hand`;
+    const claim = await fetch(`${q}/claim?id=${encodeURIComponent(hand.id)}`, { method: "POST" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ won?: boolean }>) : { won: false }))
+      .catch(() => ({ won: false }));
+    if (!claim.won) return;
+    const reply = (body: Record<string, unknown>) => fetch(`${q}/reply?id=${encodeURIComponent(hand.id)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }).catch(() => undefined);
+    for (let waited = 0; !booted.current && waited < EDITOR_START_MS; waited += 250) await new Promise((r) => setTimeout(r, 250));
+    if (!booted.current) { await reply({ results: [], saved: false, error: "the editor did not start" }); return; }
+    const answer = await new Promise<{ results?: unknown; saved?: unknown; error?: unknown }>((resolve) => {
+      handing.current.set(hand.id, resolve);
+      post({ type: "autora:spectra:hand", id: hand.id, job: hand.job, who: { name: getCursorWho().name, color: cursorColor() } });
+    });
+    handing.current.delete(hand.id);
+    clearCursor();
+    await reply({ results: answer.results ?? [], saved: answer.saved === true, ...(typeof answer.error === "string" ? { error: answer.error } : {}) });
+  }, [post, sessionId]);
+  useEffect(() => onDeskHand((hand) => { void byHand(hand); }), [byHand]);
 
   /** One command from the editor, answered by Autora's server. */
   const invoke = useCallback(
@@ -135,6 +115,20 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
     [post, sessionId],
   );
 
+  /** Save: the editor's own Save, pressed now; the file in Artifacts follows it a moment later (server/pdfdesk.ts). */
+  const savedNow = useRef<((ok: boolean) => void) | null>(null);
+  const keep = useCallback(async () => {
+    const ok = await new Promise<boolean>((resolve) => {
+      const t = setTimeout(() => done(false), 12_000);
+      function done(v: boolean) { clearTimeout(t); savedNow.current = null; resolve(v); }
+      savedNow.current = done;
+      post({ type: "autora:spectra:save" });
+    });
+    if (!ok) throw new Error("The editor did not finish saving");
+    await settle(800);
+    return desk.name ? `Kept in Artifacts as ${desk.name}` : "Saved";
+  }, [desk.name, post]);
+
   // What the frame says: it is up, it wants an event, or it is closing.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -143,6 +137,8 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
       if (!msg || typeof msg !== "object") return;
       if (msg.type === "autora:spectra:invoke") {
         void invoke(msg);
+      } else if (msg.type === "autora:spectra:saved") {
+        savedNow.current?.(msg.ok !== false);
       } else if (msg.type === "autora:spectra:asset" && typeof msg.id === "number" && typeof msg.path === "string") {
         // pdf.js's data files for the frame, fetched here, where the request carries what a login proxy wants.
         const id = msg.id;
@@ -156,10 +152,12 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
         void fetch(path)
           .then(async (res) => answer(res.status, res.headers.get("content-type"), res.ok ? await res.arrayBuffer() : null))
           .catch(() => answer(502, null, null));
-      } else if (msg.type === "autora:spectra:located" && typeof msg.id === "number") {
-        const done = placed.current.get(msg.id);
-        placed.current.delete(msg.id);
-        done?.(msg.rect && typeof msg.rect === "object" ? (msg.rect as Located) : null);
+      } else if (msg.type === "autora:spectra:handed" && typeof msg.id === "string") {
+        handing.current.get(msg.id)?.(msg);
+      } else if (msg.type === "autora:spectra:cursor" && typeof msg.x === "number" && typeof msg.y === "number") {
+        // The agent's cursor in the editor, for the few words beside it (AgentThought).
+        const r = frame.current.getBoundingClientRect();
+        reportCursor(r.left + msg.x, r.top + msg.y);
       } else if (msg.type === "autora:spectra:listen" && typeof msg.event === "string") {
         wanted.current.add(msg.event);
       } else if (msg.type === "autora:spectra:error" && typeof msg.message === "string") {
@@ -203,6 +201,8 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
         <span className="pdf-bar-name" title={desk.name ?? undefined}>{desk.name ?? "PDF"}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
+        <LoadButton app="pdf" session={sessionId} phone={phone} />
+        <SaveButton onSave={keep} phone={phone} disabled={!desk.name} />
         <TakeControl sessionId={sessionId} surface="pdf" mine={mine} phone={phone} thing="PDF" />
         {desk.working && (
           <a

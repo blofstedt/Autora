@@ -139,8 +139,10 @@ description: >-
   say yes.
 
 
-  • Schedules and watchers — run a task on a cron schedule, or whenever a web
-  page, a file or a command's output changes, with a history of every run.
+  • Schedules and watchers — run a script on a cron schedule for free, or ask
+  the agent to do a task on a schedule or whenever a web page, a file or a
+  command's output changes (you set those; agents only make scripts), with a
+  history of every run.
 
 
   • Proactive — a new chat suggests what it can do for you from what is really
@@ -186,6 +188,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
+  The agent now works the 3D parts pane the way you do when Visible work is on: its cursor goes to a thumbnail to pick a
+  shape or an object (Shift for more), types a name into the Search box to find one in a long list, double-clicks a name
+  to rename it, presses the bookmark to keep something in the Library, and adds, renames, shares or removes library
+  objects in the Library tab, each by the right thumbnail even when two share a name. It can also open a group with Edit
+  inside and leave it again (two new tools, cad_group_enter and cad_group_exit), so you can watch it work on one part of an
+  object. Renaming a library object is now done by hand too.
   Autora now caps itself at 4 GiB of memory and 4 GiB of swap in its app definition, so a runaway render can no longer
   take the whole server down with it. On 15 October 2026 the app peaked at 4.6 GB on a 7.7 GB box and wedged the host;
   that cap had been applied to the running container by hand, and was lost every time the app was recreated. It is part

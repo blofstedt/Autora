@@ -25,7 +25,7 @@ export const filesSPECS: ToolSpec[] = [
       "not save a picture you downloaded or found online -- it can be fetched " +
       "again from its own address and the thread already shows it. Check " +
       "artifact_list first when you are unsure. Saving a name that is already " +
-      "there replaces that artifact's contents in place, so save again only " +
+      "in this chat's folder replaces that artifact's contents in place, so save again only " +
       "when the file itself is different. If the person asks you to keep " +
       "something, save it.",
     parameters: {
@@ -50,9 +50,10 @@ export const filesSPECS: ToolSpec[] = [
     name: "artifact_list",
     group: "files",
     description:
-      "List the artifacts in the workspace: files the person uploaded for you " +
-      "(documents, photos, spreadsheets) and files you made earlier. When the " +
-      "person mentions something they uploaded, look here first.",
+      "List the artifacts: files the person uploaded (documents, photos, " +
+      "spreadsheets) and files you made. When the person mentions an upload, " +
+      "look here first. Files are in one folder per project; working on another " +
+      "chat's file puts this chat in its folder.",
     parameters: {
       type: "object",
       properties: {

@@ -992,6 +992,32 @@ export const cadSPECS: ToolSpec[] = [
     }
   },
   {
+    "name": "cad_group_enter",
+    "group": "files",
+    "description": "Open a group for editing from the inside, as the person does with Edit inside: the window shows only its shapes, and each is picked on its own. It changes nothing in the model and is only a view, shown when Visible work is on. Leave with cad_group_exit.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "group"
+      ]
+    }
+  },
+  {
+    "name": "cad_group_exit",
+    "group": "files",
+    "description": "Leave the group opened with cad_group_enter (a view in the person's window; the model does not change).",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
     "name": "cad_group_rename",
     "group": "files",
     "description": "Rename a group (e.g. \"head\"). Find group ids with cad_scene_get.",
@@ -1024,7 +1050,7 @@ export const cadSPECS: ToolSpec[] = [
   {
     "name": "cad_library_save",
     "group": "files",
-    "description": "Save a group (or one ungrouped shape) to the project library under its name. It stays in the scene as the first linked copy. If the group was opened with cad_object_unlink it updates its library object instead, and every linked copy follows.",
+    "description": "Save a group (or one ungrouped shape) to the project library under its name. The library keeps its own copy and the shapes stay as they are. With linked:true the group instead becomes the first linked copy. If the group was opened with cad_object_unlink it updates its library object instead, and every linked copy follows.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -1037,6 +1063,10 @@ export const cadSPECS: ToolSpec[] = [
         },
         "name": {
           "type": "string"
+        },
+        "linked": {
+          "type": "boolean",
+          "description": "Make the saved group a linked copy. Default false."
         }
       },
       "required": []
@@ -1045,7 +1075,7 @@ export const cadSPECS: ToolSpec[] = [
   {
     "name": "cad_library_place",
     "group": "files",
-    "description": "Place a linked copy of a library object (default: beside the scene; or on top of a shape). A linked copy moves, turns and deletes as one piece and follows its library object; to change the object use cad_object_unlink then cad_library_save.",
+    "description": "Place a copy of a library object (default: beside the scene; or on top of a shape). The copy is independent: ordinary shapes in a group that nothing follows, free to edit. With linked:true it is a linked copy instead: it moves, turns and deletes as one piece and follows its library object (to change the object use cad_object_unlink then cad_library_save).",
     "parameters": {
       "type": "object",
       "properties": {
@@ -1070,6 +1100,9 @@ export const cadSPECS: ToolSpec[] = [
         },
         "name": {
           "type": "string"
+        },
+        "linked": {
+          "type": "boolean"
         }
       },
       "required": [

@@ -10,7 +10,7 @@ export function Mixer({ project, edit, sendPrompt }: { project: Project; edit: E
       {project.tracks.map((t) => {
         const quiet = t.mute || (soloed && !t.solo);
         return (
-          <div key={t.id} className={`st-strip${quiet ? " is-quiet" : ""}`} style={{ ["--tc" as string]: t.color }}>
+          <div key={t.id} data-track={t.id} className={`st-strip${quiet ? " is-quiet" : ""}`} style={{ ["--tc" as string]: t.color }}>
             <b className="st-strip-name" title={t.name}>{t.name}</b>
             <span className="st-inst">{instrumentOf(t.instrument).name}</span>
             <label className="st-knob">Pan

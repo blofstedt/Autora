@@ -212,6 +212,22 @@ await test("a change made in the window is the agent's to see, and is marked as 
   assert.equal(photo.photoState(S).by, "agent", "and the agent's next change is the agent's again");
 });
 
+await test("Save keeps a PNG of the picture in Artifacts, and the next Save replaces that copy", async () => {
+  const { getArtifact } = await import("../server/artifacts");
+  const before = photo.photoState(S).rev;
+  const first = await call("POST", `/api/photo/${S}/keep`);
+  const said = await first.json() as { artifact: string; name: string };
+  assert.equal(first.status, 200, JSON.stringify(said));
+  assert.match(said.name, /\.png$/);
+  const art = getArtifact(said.artifact)!;
+  assert.equal(art.mime, "image/png");
+  assert.equal(art.session, S);
+  const again = await (await call("POST", `/api/photo/${S}/keep`)).json() as { artifact: string };
+  assert.equal(again.artifact, said.artifact);
+  assert.equal(photo.photoState(S).rev, before, "saving changed nothing in the picture");
+  assert.equal((await call("POST", "/api/photo/phototest3/keep")).status, 404, "no picture, nothing to keep");
+});
+
 await test("a file that is not a PhotoCraft picture is refused and nothing changes", async () => {
   const before = photo.photoState(S).rev;
   assert.equal((await call("PUT", `/api/photo/${S}/doc`, Buffer.from("nope"))).status, 400);

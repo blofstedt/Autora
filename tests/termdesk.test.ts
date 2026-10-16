@@ -178,6 +178,74 @@ await test("a page on another site is refused, and so is a session that does not
   await assert.rejects(new Promise<void>((res, rej) => { nobody.on("open", res); nobody.on("error", rej); nobody.on("close", () => rej(new Error("closed"))); }));
 });
 
+const noStop = () => undefined;
+
+await test("with Visible work on, the agent's command is typed into the shell itself, runs there, and its output and exit code come back", async () => {
+  const p = page();
+  await p.open;
+  await new Promise((r) => setTimeout(r, 600)); // the first prompt
+  const heard: string[] = [];
+  const started = Date.now();
+  const ran = await term.termAgentRun(S, "echo typed-$((40+2)); printf 'two\\nlines\\n'; false", { timeoutMs: 10_000, onOutput: (t) => heard.push(t), onCancel: noStop });
+  assert.ok(ran, "it ran in the shell");
+  assert.equal(ran!.exit, 1);
+  assert.match(ran!.output, /typed-42\ntwo\nlines/);
+  assert.doesNotMatch(ran!.output, /echo typed/, "the command line itself is not its output");
+  assert.ok(heard.join("").includes("typed-42"), "the output streamed as it came");
+  assert.ok(Date.now() - started > 700, "typed at a person's pace, not dropped in");
+  const seen = p.text();
+  assert.match(seen, /echo typed-\$\(\(40\+2\)\)/, "the person saw it typed at the prompt");
+  assert.doesNotMatch(seen, /\[Autora\] \$ echo typed/, "in the shell itself, not printed beside it");
+  // The shell is the person's: what the agent did there is there, in its history and in its variables.
+  await term.termAgentRun(S, "AUTORA_SAW=yes", { timeoutMs: 5000, onOutput: noStop, onCancel: noStop });
+  p.type("echo saw-$AUTORA_SAW\r");
+  await p.until(/saw-yes/);
+  p.ws.close();
+});
+
+await test("a directory asked for is cd'd into first; several lines are pasted; a ! is a !", async () => {
+  const p = page();
+  await p.open;
+  await new Promise((r) => setTimeout(r, 300));
+  const at = await term.termAgentRun(S, "pwd", { cwd: work, timeoutMs: 5000, onOutput: noStop, onCancel: noStop });
+  assert.equal(at!.output.trim(), work);
+  assert.match(p.text(), /cd -- /);
+  const many = await term.termAgentRun(S, "for i in 1 2 3; do\n  echo n$i\ndone\necho \"wow!\"", { timeoutMs: 5000, onOutput: noStop, onCancel: noStop });
+  assert.match(many!.output, /n1\nn2\nn3\nwow!/);
+  const bad = await term.termAgentRun(S, "echo (", { timeoutMs: 5000, onOutput: noStop, onCancel: noStop });
+  assert.notEqual(bad!.exit, 0, "a line bash refuses still comes back, with its error");
+  p.ws.close();
+});
+
+await test("too long is stopped with Ctrl+C, and Stop does the same", async () => {
+  const p = page();
+  await p.open;
+  await new Promise((r) => setTimeout(r, 300));
+  const slow = await term.termAgentRun(S, "echo begun; sleep 30", { timeoutMs: 1500, onOutput: noStop, onCancel: noStop });
+  assert.equal(slow!.timedOut, true);
+  assert.match(slow!.output, /begun/);
+  let stop: (() => void) | null = null;
+  const pending = term.termAgentRun(S, "sleep 30", { timeoutMs: 60_000, onOutput: noStop, onCancel: (fn) => { stop = fn; } });
+  await new Promise((r) => setTimeout(r, 1500));
+  stop!();
+  const stopped = await pending;
+  assert.equal(stopped!.stopped, true);
+  p.ws.close();
+});
+
+await test("not into the person's half-typed line, and not with nobody watching: then it is not the shell's", async () => {
+  const p = page();
+  await p.open;
+  await new Promise((r) => setTimeout(r, 300));
+  p.type("echo half");
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(await term.termAgentRun(S, "echo no", { timeoutMs: 5000, onOutput: noStop, onCancel: noStop }), null);
+  p.type("\x15"); // the person clears their line
+  p.ws.close();
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(await term.termAgentRun(S, "echo no", { timeoutMs: 5000, onOutput: noStop, onCancel: noStop }), null, "nobody watching");
+});
+
 await test("putting the window away ends the shell", async () => {
   const p = page();
   await p.open;

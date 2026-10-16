@@ -29,7 +29,6 @@ import type { LedgerResult } from "./ledger";
 import type { RequirementResult } from "./requirements";
 import { checkEntry } from "./mindrules";
 import { checkArgs } from "./argcheck";
-import { nextRun } from "./scheduler";
 import { officeDir, runOfficeTool } from "./office";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
@@ -48,7 +47,7 @@ import path from "node:path";
 import { GoogleGenAI } from "@google/genai";
 import { MANUAL_IDS, manualText, windowsOverview, type ManualId } from "./handbook";
 import { lookColors, readLook } from "../src/lib/agentlook";
-import { termAgentBegin, termAgentChunk, termAgentEnd, termCwd, termNews } from "./termdesk";
+import { termAgentBegin, termAgentChunk, termAgentEnd, termAgentRun, termCwd, termNews, type ShellRun } from "./termdesk";
 import { mergeTools, save, state, allSecrets, keyFor, secretFor, stateDir, redactSecrets as redactStored } from "./state";
 import {
   STATUSES, checkoutFolder, findCheckout, listEntries, moveInto, recordFinding, setStatus, type Status,
@@ -66,11 +65,14 @@ import { relayAction, relayConnected, relayStatus } from "./desktop";
 import { CONTEXT_CONFIG, readVault } from "./context";
 import {
   artifactPath, cleanName, deleteArtifact, formatSize, getArtifact, isText, listArtifacts,
-  readArtifact, saveArtifact, MAX_ARTIFACT_BYTES,
+  readArtifact, sameArtifact, saveArtifact, claimArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
+import { folderOfFile, getFolder, joinWork } from "./folders";
 import { checkWidget } from "./widgets";
 import { deskHooks } from "./pdfdesk";
+import { handToWindow } from "./pdfhand";
 import { officeHooks } from "./officedesk";
+import { handToWindow as officeHandToWindow } from "./officehand";
 import { runPdfTool } from "./pdf";
 import { runVideoTool } from "./opencut";
 import { runStudioTool, studioBriefing } from "./studio";
@@ -170,6 +172,7 @@ export function updateToolSettings(patch: any): ToolSettings {
 
 import { terminalSPECS } from "./specs/terminal";
 import { scheduleSPECS } from "./specs/schedule";
+import { makesTimerOrWake } from "./guard";
 import { browserSPECS } from "./specs/browser";
 import { computerSPECS } from "./specs/computer";
 import { personSPECS } from "./specs/person";
@@ -555,6 +558,8 @@ export interface AgentJob {
   name: string;
   cron: string;
   prompt: string;
+  /** A script job's command: it runs without a model. Null for one that wakes a model. */
+  command: string | null;
   enabled: boolean;
   watch: { kind: string; target: string } | null;
   next_run: number | null;
@@ -569,6 +574,7 @@ export interface AgentJobInput {
   name?: string;
   cron?: string;
   prompt?: string;
+  command?: string;
   watch?: { kind: string; target: string } | null;
   enabled?: boolean;
 }
@@ -656,7 +662,7 @@ export interface ToolContext {
   /** The Schedule page's jobs, so the agent can set up its own. */
   jobs?: {
     list: () => AgentJob[];
-    create: (input: AgentJobInput & { name: string; cron: string; prompt: string }) =>
+    create: (input: AgentJobInput & { name: string; cron: string; command: string }) =>
       { id: string | null; error: string | null };
     update: (id: string, patch: AgentJobInput) => { ok: boolean; error: string | null };
     remove: (id: string) => boolean;
@@ -971,6 +977,25 @@ function runCommand(
   return tryShell(0);
 }
 
+/** What a command typed into the window's shell did, said the way runCommand says it: its start and end if it is long. */
+function shellOutcome(ran: ShellRun, timeoutSeconds: number): ToolOutcome {
+  const HEAD = 8_000;
+  const TAIL = 16_000;
+  const all = redactForModel(ran.output).replace(/^\n+/, "");
+  const body = (all.length > HEAD + TAIL
+    ? `${all.slice(0, HEAD)}\n\n[... ${(all.length - HEAD - TAIL).toLocaleString("en-US")} characters of output omitted here ...]\n\n${all.slice(-TAIL)}`
+    : all).trim();
+  const note = ran.timedOut
+    ? `\n\n[stopped with Ctrl+C after ${timeoutSeconds}s -- it had not finished]`
+    : ran.stopped ? "\n\n[stopped by the person watching]" : "";
+  return {
+    ok: !ran.timedOut && !ran.stopped && ran.exit === 0,
+    exitCode: ran.exit,
+    summary: `Exit code ${ran.exit}${ran.timedOut ? " (timed out)" : ""}\n\n${body || "(no output)"}${note}`,
+    preview: body.split("\n").slice(-1)[0]?.slice(0, 120) || `exit ${ran.exit}`,
+  };
+}
+
 /**
  * A command run with nobody watching: for a watcher checking a command's
  * output. Same shell, secrets and working directory as the terminal tool.
@@ -1241,10 +1266,12 @@ function slug(text: string): string {
   return words.join("-").slice(0, 60) || "image";
 }
 
-function artifactLine(a: { id: string; origin: string; name: string; mime: string; size: number; ts: number; note?: string }) {
+function artifactLine(a: { id: string; origin: string; name: string; mime: string; size: number; ts: number; note?: string; session?: string; folder?: string }) {
   const who = a.origin === "user" ? "uploaded by the person" : "made by you";
   const when = new Date(a.ts).toISOString().slice(0, 16).replace("T", " ");
-  return `- ${a.id}  ${a.name}  (${a.mime}, ${formatSize(a.size)}, ${who}, ${when})${
+  const folder = folderOfFile(a);
+  const where = folder ? `, in the folder "${getFolder(folder)?.name ?? folder}"` : "";
+  return `- ${a.id}  ${a.name}  (${a.mime}, ${formatSize(a.size)}, ${who}, ${when}${where})${
     a.note ? ` -- ${a.note.replace(/\s+/g, " ").slice(0, 120)}` : ""}`;
 }
 
@@ -1805,8 +1832,11 @@ export const AGENT_RUN_CAP_MS = 600_000;
 /** Chains: an agent may hand on to more, and each of those is capped too. */
 const CAP_AGENT_MS = AGENT_RUN_CAP_MS * 3 + 60_000;
 
-/** The closest two runs of a task without a watcher may be, when the agent sets it up. */
-const MIN_PLAIN_JOB_MS = 15 * 60_000;
+/** Why a timer made some other way is refused, and what to do instead. */
+const TIMER_REFUSAL = (what: string) =>
+  `That would make ${what}. A recurring job is the schedule tool's: give it a cron time and the shell command to run, and it ` +
+  "runs by itself, shows on the Schedule page and can be paused. A job that has to wake a model each time spends tokens " +
+  "for nothing and is the person's to set up on the Schedule page, not yours.";
 /** How long the second attempt waits before it goes. */
 const RETRY_BACKOFF_MS = 1_500;
 
@@ -1865,6 +1895,9 @@ export function capFor(spec: ToolSpec, args: Record<string, any>): number {
     return Math.max(CAP_TERMINAL_MS, toolSettings().terminal.timeout * 1000 + 10_000);
   }
   if (LONG_TOOLS.has(spec.name)) return CAP_LONG_MS;
+  /* The video window's editor may have to start first (a first start on a small machine fetches and compiles a lot, and
+     the server waits for it: START_MS in server/opencut.ts): even a look waits for that, then does its work. */
+  if (spec.name.startsWith("video_")) return Math.max(isRead(spec, args) ? CAP_READ_MS : CAP_DEFAULT_MS, 150_000);
   /* Somebody else's tool. The person's own scripts and a server's tools may
      take as long as they take, and nothing here knows which is quick. */
   if (spec.name.startsWith("my_") || spec.name.startsWith("mcp__")) return CAP_LONG_MS;
@@ -1974,6 +2007,7 @@ export async function runTool(
   let outcome = first.outcome;
 
   if (first.gaveUp) outcome = await afterGivingUp(spec, args, ctx, cap, attemptTool);
+  if (outcome.ok && !ctx.memory?.incognito) joinProjects(ctx.session, args);
 
   /* Whatever the tool read -- a page that now shows the address it was
      given, a form echoing a username -- goes back to the model with the
@@ -1983,6 +2017,30 @@ export async function runTool(
     summary: redactForModel(outcome.summary),
     ...(outcome.preview !== undefined ? { preview: redactForModel(outcome.preview) } : {}),
   };
+}
+
+/**
+ * A tool worked on files the arguments name by id: this chat is part of
+ * those files' project from now on (./folders.ts), and an upload it worked
+ * on is this chat's. Only ids, because a name can be anyone's file.
+ */
+export function joinProjects(session: string, args: unknown) {
+  let text: string;
+  try {
+    text = JSON.stringify(args ?? null);
+  } catch {
+    return;
+  }
+  const ids = new Set(text.match(/file_[0-9a-f]{16}/g) ?? []);
+  for (const id of ids) {
+    const art = getArtifact(id);
+    if (!art) continue;
+    if (!art.session) {
+      claimArtifact(id, session);
+      continue;
+    }
+    joinWork(session, art);
+  }
 }
 
 /**
@@ -2042,6 +2100,8 @@ async function runToolUnredacted(
         const settings = toolSettings().terminal;
         const command = String(args.command ?? "").trim();
         if (!command) return { ok: false, summary: "No command was given." };
+        const timer = makesTimerOrWake(command);
+        if (timer) return { ok: false, summary: TIMER_REFUSAL(timer) };
         const asked = String(args.cwd ?? "").trim();
         // A relative directory is taken from the terminal's own, like `cd`; once the Terminal window is open, its own.
         const base = termCwd(ctx.session) ?? terminalDir();
@@ -2050,7 +2110,23 @@ async function runToolUnredacted(
         const self = ctx.agents ? findAgent(ctx.agents.self.id) : null;
         const look = readLook(self?.look);
         const rgb = look ? (lookColors(look).css["--accent-rgb"].split(",").map((n) => Number(n)) as [number, number, number]) : undefined;
-        const shown = termAgentBegin(ctx.session, command, cwd, self && !self.builtin ? { name: self.name, rgb } : undefined);
+        const who = self && !self.builtin ? { name: self.name, rgb } : undefined;
+        // Visible work, someone watching: typed into the shell in the window and run there, as a person would.
+        if (state.agentCursor) {
+          const ran = await termAgentRun(ctx.session, command, {
+            cwd: asked ? cwd : undefined,
+            timeoutMs: settings.timeout * 1000,
+            who,
+            onOutput: (text) => ctx.onOutput(redactForModel(text)),
+            onCancel: (fn) => ctx.onCancel(fn),
+          });
+          if (ran) {
+            const outcome = shellOutcome(ran, settings.timeout);
+            const news = termNews(ctx.session);
+            return { ...outcome, summary: `${outcome.summary}\n\n(Typed into the shell in the Terminal window, where the person watched it run.)${news ? `\n\n${news}` : ""}` };
+          }
+        }
+        const shown = termAgentBegin(ctx.session, command, cwd, who);
         const outcome = await runCommand(command, cwd, settings.timeout, {
           ...ctx,
           onOutput: (chunk: string) => { ctx.onOutput(chunk); termAgentChunk(ctx.session, shown, chunk); },
@@ -2116,6 +2192,8 @@ async function runToolUnredacted(
       case "run_background": {
         const command = String(args.command ?? "").trim();
         if (!command) return { ok: false, summary: "No command was given." };
+        const timer = makesTimerOrWake(command);
+        if (timer) return { ok: false, summary: TIMER_REFUSAL(timer) };
         const asked = String(args.cwd ?? "").trim();
         const cwd = asked ? path.resolve(terminalDir(), asked) : terminalDir();
         const started = startJob({ command, cwd, note: String(args.note ?? ""), session: ctx.session });
@@ -2192,53 +2270,58 @@ async function runToolUnredacted(
         if (!jobs) return { ok: false, summary: "Scheduled tasks are not available here." };
         const name = String(args.name ?? "").trim();
         const cron = String(args.cron ?? "").trim();
-        const prompt = String(args.prompt ?? "").trim();
+        const command = String(args.command ?? "").trim();
         const id = String(args.id ?? "").trim();
-        if (!prompt) return { ok: false, summary: "A task needs a prompt: what to do when it runs." };
+        /* What an agent may set is a script: a command the console runs on its own clock, with no model. A task that
+           wakes a model each time it fires spends tokens whether or not there is anything to do, and an agent
+           reaching for one is almost always polling, so it is the person's to make on the Schedule page. */
+        if ((args.prompt !== undefined && String(args.prompt).trim()) || args.watch) {
+          return {
+            ok: false,
+            summary:
+              "You cannot set up a task that wakes a model: every run is a full turn, and it costs tokens whether or not there is anything " +
+              "to do. Give `command` instead -- a shell command, run on the cron by the console itself with no model -- and make the " +
+              "script do the checking (a script can look at a page, a file or a command's output, and print only when something is " +
+              "worth saying). If it really needs a model each time, tell the person, who can make that task on the Schedule page.",
+          };
+        }
         if (!id && !name) return { ok: false, summary: "Give it a name, so the person knows what it is." };
         if (!cron && !id) return { ok: false, summary: "Give it a time: a five-field cron expression." };
-        const watch = args.watch && typeof args.watch === "object"
-          ? {
-            kind: String((args.watch as any).kind ?? ""),
-            target: String((args.watch as any).target ?? "").trim(),
-          }
-          : null;
-        if (watch && !watch.target) return { ok: false, summary: "A watcher needs something to watch." };
-        /* A task with no watcher is a whole model turn every time it fires, tools and context included.
-           An agent polling for something every few minutes burns a turn per look; a watcher costs one
-           only when the thing changed. */
-        if (cron && !watch) {
-          const first = nextRun(cron, new Date());
-          const second = first ? nextRun(cron, first) : null;
-          if (first && second && second.getTime() - first.getTime() < MIN_PLAIN_JOB_MS) {
-            return {
-              ok: false,
-              summary: `"${cron}" runs the task more often than every ${MIN_PLAIN_JOB_MS / 60_000} minutes, and each run is a full model turn. ` +
-                "To wait for something to change, use a watcher (watch: a command, page or file): it costs a turn only when what it sees differs. " +
-                `Otherwise pick a time at least ${MIN_PLAIN_JOB_MS / 60_000} minutes apart.`,
-            };
-          }
+        if (!command && !id) return { ok: false, summary: "Give it a `command`: the shell command to run at that time." };
+        if (command) {
+          const why = makesTimerOrWake(command, true);
+          if (why) return { ok: false, summary: `A script may not contain ${why}. A scheduled script runs by itself; it does not start a model.` };
         }
         const enabled = args.enabled === undefined ? true : Boolean(args.enabled);
         if (id) {
-          const changed = jobs.update(id, { name: name || undefined, cron: cron || undefined, prompt, watch, enabled });
+          const mine = jobs.list().find((j) => j.id === id);
+          if (!mine) return { ok: false, summary: `There is no job ${id}.` };
+          // A task the person made that wakes a model is theirs: an agent may pause it, not change what it does.
+          if (!mine.command && (name || cron || command)) {
+            return {
+              ok: false,
+              summary: `${id} wakes a model each time it runs, so it is the person's: change it on the Schedule page. ` +
+                "You can pause it with unschedule and keep: true.",
+            };
+          }
+          const changed = jobs.update(id, { name: name || undefined, cron: cron || undefined, command: command || undefined, enabled });
           if (!changed.ok) return { ok: false, summary: changed.error ?? `There is no job ${id}.` };
           return {
             ok: !changed.error,
             summary: changed.error
               ? `Saved, but its time is not valid: ${changed.error}`
-              : `Changed ${id}. It runs "${prompt}" on ${cron || "its time"}.`,
+              : `Changed ${id}. It runs on ${cron || mine.cron}${command ? `: ${command}` : ""}.`,
             preview: `schedule ${id} changed`,
           };
         }
-        const made = jobs.create({ name, cron, prompt, watch, enabled });
+        const made = jobs.create({ name, cron, command, enabled });
         if (!made.id) return { ok: false, summary: made.error ?? "It could not be created." };
         return {
           ok: !made.error,
           summary: made.error
             ? `Made ${made.id}, but its time is not valid: ${made.error}. Change the cron or remove it.`
-            : `Made ${made.id}${watch ? ` watching the ${watch.kind} ${watch.target}` : ""}. ` +
-              "It runs in a session of its own and what it says appears there; you do not have to wait for it.",
+            : `Made ${made.id}: it runs \`${command}\` on ${cron}, by itself, with no model. ` +
+              "Its runs and what it printed are on the Schedule page; a failure is told to the person. You do not have to wait for it.",
           preview: `schedule ${made.id}`,
         };
       }
@@ -2258,6 +2341,7 @@ async function runToolUnredacted(
             "Scheduled tasks and watchers:",
             ...list.map((j) =>
               `- ${j.id} "${j.name}" -- ${j.cron}, next ${when(j.next_run)}, last ${when(j.last_run)}` +
+              `${j.command ? `, script: ${j.command}` : ", wakes a model each time (the person's: you may only pause it)"}` +
               `${j.watch ? `, watching the ${j.watch.kind} ${j.watch.target}` : ""}` +
               `${j.enabled ? "" : ", PAUSED"}${j.running ? ", running now" : ""}` +
               `${j.cron_error ? ` -- its time is not valid: ${j.cron_error}` : ""}` +
@@ -3136,7 +3220,7 @@ async function runToolUnredacted(
         }
         // Saving a name that is already up there rewrites that artifact, so
         // say which happened: "saved" reads as a new card beside the old one.
-        const had = listArtifacts().find((a) => a.origin === "agent" && a.name === cleanName(name));
+        const had = sameArtifact(name, ctx.session);
         const art = saveArtifact({
           origin: "agent", name, data, session: ctx.session,
           note: String(args.note ?? "").trim() || undefined,
@@ -3251,7 +3335,7 @@ async function runToolUnredacted(
           onCancel: ctx.onCancel,
           // The PDF window shows the work; an incognito chat keeps nothing on
           // disk, so it works on files without one.
-          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session) }),
+          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session), hand: (job: Parameters<typeof handToWindow>[1], label: string) => handToWindow(ctx.session, job, label) }),
           ...(ctx.held ? { held: (id: string) => ctx.held!("pdf", id) } : {}),
         });
 
@@ -3311,7 +3395,10 @@ async function runToolUnredacted(
           showFile: ctx.showFile,
           putBlob: ctx.putBlob,
           showImage: ctx.showImage,
-          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session), win: officeHooks(ctx.session) }),
+          ...(ctx.memory.incognito ? {} : {
+            desk: deskHooks(ctx.session), win: officeHooks(ctx.session),
+            hand: (kind: Parameters<typeof officeHandToWindow>[1], steps: Parameters<typeof officeHandToWindow>[2]) => officeHandToWindow(ctx.session, kind, steps),
+          }),
           ...(ctx.held ? { held: (_surface: "office", subject: string) => ctx.held!("office", subject) } : {}),
           off: (["docx", "xlsx", "pptx"] as const).filter((k) => !toolSettings()[{ docx: "pages", xlsx: "sheets", pptx: "slides" }[k] as "pages" | "sheets" | "slides"].enabled),
           cancelled: ctx.cancelled,
@@ -3641,11 +3728,10 @@ export async function capabilityBriefing(): Promise<string> {
       "live voice on, your replies are already read aloud; do not repeat them with speak.",
   );
   lines.push(
-    "- Work that happens later: always available. Tools: schedule, schedules, unschedule. A scheduled job is a task and a " +
-      "cron time, run as a turn of its own in a new session; a watcher looks at a page, a file or a command and runs its task " +
-      "only when what it sees changed. Set one whenever what you were asked for is not due yet or has to be checked again -- " +
-      "instead of a sleep, a poll, or saying you cannot. Nothing runs while the machine is off. Say that you set it, and what it " +
-      "will do.",
+    "- Work that happens later: always available. Tools: schedule, schedules, unschedule. What you set is a script: a cron time " +
+      "and a shell command run with no model, so it costs nothing (a failure is told to the person). You cannot set a task that " +
+      "wakes a model, or a timer another way (crontab, at, systemd); if it needs a model, tell the person (the Schedule page). " +
+      "Nothing runs while the machine is off. Say that you set it, and what it will do.",
   );
   lines.push(
     "- Work that outlives the turn: always available. Tools: run_background, background_jobs, background_output, " +

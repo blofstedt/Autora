@@ -16,11 +16,13 @@
  * geometry kernel), built by the autora-3d sub-project, and the server is typechecked without it. Without the build the
  * tools are simply not offered (`cadAvailable`).
  */
+import crypto from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { saveArtifact } from "./artifacts";
+import { keepCopy, saveArtifact } from "./artifacts";
+import { chatTitle } from "./folders";
 import { stateDir } from "./state";
 import { readDoc, saveDoc } from "./store";
 import { staticDir } from "./staticfiles";
@@ -47,7 +49,7 @@ interface CadResponse {
 
 /** A model, as the app saves it: shapes, groups, repeats and the project library. */
 interface CadDoc {
-  bodies: Array<{ repeatOf?: unknown }>;
+  bodies: Array<{ id: string; repeatOf?: unknown }>;
   groups: unknown[];
   repeats: unknown[];
   library: unknown[];
@@ -83,6 +85,8 @@ interface Entry {
   shapes: number;
   /** What the agent is doing, for the window to show the cursor doing it: the tool, and a number that goes up per call. */
   cue: { seq: number; tool: string } | null;
+  /** The agent's hand is at work in the window: what the window sends up meanwhile is its hand's steps, not the person's. */
+  handing?: number;
 }
 
 const entries = new Map<string, Entry>();
@@ -241,6 +245,193 @@ const EXPORT_MIME: Record<string, string> = {
 /** The most a tool result may say, in characters: a whole scene can be large and the agent can ask for less. */
 const MOST = 24_000;
 
+// --------------------------------------------------------------- by hand --
+
+/** Calls that only read: nothing to watch, so never by hand. */
+const READS = new Set([
+  "scene_get", "shape_get", "shape_faces", "shape_edges", "shape_measure", "library_list", "library_thumbnail", "library_export", "doc_get", "export",
+]);
+/** Calls the window has no control for: done here, and the agent is told so. */
+const NO_CONTROL: Record<string, string> = {
+  doc_set: "the window has no control that puts in a whole model",
+  library_import: "the window has no control that imports library objects",
+};
+/** Undo and redo: done in the window with its own buttons, on the history the model already has. */
+const HISTORY = new Set(["history_undo", "history_redo"]);
+/** How long a window has to take the call before it is done here instead: nobody watching counts as Visible work off. */
+const CLAIM_MS = 4000;
+
+let pushTo: (session: string, message: Record<string, unknown>) => void = () => undefined;
+let visible: () => boolean = () => false;
+let watched: (session: string) => boolean = () => true;
+
+type HandReply = { did?: string[]; skipped?: string; doc?: unknown };
+type Handing = { session: string; claimed: boolean; goal: unknown; need: string[]; resolve: (r: HandReply | null) => void };
+const handing = new Map<string, Handing>();
+
+/**
+ * Hand one call to the open window and wait for what its hand did; null when no window took it. `goal` is the model as the
+ * call leaves it, which the window is given when it takes the call, so its hand knows what each number should end up as.
+ */
+async function handToWindow(session: string, name: string, args: Record<string, unknown>, goal: unknown, need: string[] = []): Promise<HandReply | null> {
+  const id = crypto.randomBytes(6).toString("hex");
+  return await new Promise<HandReply | null>((resolve) => {
+    const entry: Handing = { session, claimed: false, goal, need, resolve: () => undefined };
+    const send = () => pushTo(session, { type: "cad.hand", session, id, name, args });
+    const again = setInterval(() => { if (!entry.claimed) send(); }, 1000);
+    const done = (r: HandReply | null) => {
+      clearInterval(again);
+      clearTimeout(unclaimed);
+      clearTimeout(slow);
+      handing.delete(id);
+      resolve(r);
+    };
+    entry.resolve = done;
+    handing.set(id, entry);
+    send();
+    const unclaimed = setTimeout(() => { if (!entry.claimed) done(null); }, CLAIM_MS);
+    const slow = setTimeout(() => done(null), 150_000);
+  });
+}
+
+/** The shapes and groups of the model a call names: the window waits for them before its hand starts. */
+function namedIn(doc: { bodies: Array<{ id: string }>; groups: unknown[] }, args: unknown): string[] {
+  const known = new Set([...doc.bodies.map((b) => b.id), ...doc.groups.map((g) => String((g as { id?: unknown }).id))]);
+  const out = new Set<string>();
+  const walk = (v: unknown, depth: number) => {
+    if (depth > 4) return;
+    if (typeof v === "string" && known.has(v)) out.add(v);
+    else if (Array.isArray(v)) v.forEach((x) => walk(x, depth + 1));
+    else if (v && typeof v === "object") Object.values(v).forEach((x) => walk(x, depth + 1));
+  };
+  walk(args, 0);
+  return [...out];
+}
+
+/** Whether the agent's calls in this chat are done by hand in its window now. */
+const handsOn = (session: string) => visible() && entryFor(session).open && watched(session);
+
+/** The commands of a batch, as single calls. */
+const commandsOf = (given: Record<string, unknown>): Array<{ tool: string; args: Record<string, unknown> }> =>
+  (Array.isArray(given.commands) ? given.commands : [])
+    .filter((c): c is { tool: string; args?: unknown } => Boolean(c) && typeof (c as { tool?: unknown }).tool === "string")
+    .map((c) => ({ tool: c.tool, args: c.args && typeof c.args === "object" ? (c.args as Record<string, unknown>) : {} }));
+
+/**
+ * With Visible work on, a call that changes the model is done in the window, live, while this waits: the result is worked
+ * out on a copy of the model first, the window's hand does the call with the modeller's own controls, and then the finished
+ * model goes in without a cursor played over it, keeping the ids the window gave what the hand made. A batch is done one
+ * command at a time. Null when it is not done that way (Visible work off, nobody watching, a call that only reads, one the
+ * window has no control for, or one that fails): then as before.
+ */
+async function byHand(session: string, engine: CadEngine, name: string, given: Record<string, unknown>): Promise<{ res: CadResponse; said: string } | { notBy: string } | null> {
+  const entry = entryFor(session);
+  if (!handsOn(session) || READS.has(name) || NO_CONTROL[name]) return null;
+  if (HISTORY.has(name)) return await historyByHand(session, engine, name);
+  const c = await loadCore();
+  const before = engine.getDoc();
+  const fresh = () => new c.Engine(c.parseDoc(JSON.parse(JSON.stringify(engine.toJSON()))) ?? c.emptyDoc());
+  const copy = fresh();
+  const res = await copy.execute(name, given);
+  if (!res.ok) return null;
+  // One call at a time, each with the model as it leaves it; a batch's commands one after another.
+  const steps = name === "batch" ? commandsOf(given) : [{ tool: name, args: given }];
+  const did: string[] = [];
+  const skipped: string[] = [];
+  let reply: HandReply | null = null;
+  entry.handing = (entry.handing ?? 0) + 1;
+  try {
+    const running = fresh();
+    for (const step of steps) {
+      if (HISTORY.has(step.tool) || READS.has(step.tool)) continue;
+      if (NO_CONTROL[step.tool]) { skipped.push(`${step.tool}: ${NO_CONTROL[step.tool]}`); continue; }
+      const need = namedIn(running.getDoc(), step.args);
+      const out = await running.execute(step.tool, step.args);
+      if (!out.ok) break;
+      const r = await handToWindow(session, step.tool, step.args, running.toJSON(), need);
+      if (!r) break;
+      reply = r;
+      did.push(...(r.did ?? []));
+      if (r.skipped) skipped.push(r.skipped);
+    }
+    // Nothing done by hand: done here as before, and the agent is told why.
+    if (!did.length || !reply) return skipped.length ? { notBy: skipped.join("; ") } : null;
+    // What the hand made has the window's ids: the finished model takes them, and so does what the agent is told.
+    const was = new Set(before.bodies.map((b) => b.id));
+    const theirs = (c.parseDoc(reply.doc)?.bodies ?? []).filter((b) => !was.has(b.id) && !b.repeatOf).map((b) => b.id);
+    const ours = copy.getDoc().bodies.filter((b) => !was.has(b.id) && !b.repeatOf).map((b) => b.id);
+    let text = JSON.stringify(copy.toJSON());
+    let answer = JSON.stringify({ result: res.result, shapes: res.shapes, changed: res.changed, revision: res.revision });
+    if (theirs.length === ours.length) {
+      ours.forEach((from, i) => {
+        const to = theirs[i]!;
+        if (!/^[\w-]{1,64}$/.test(to)) return;
+        text = text.split(`"${from}"`).join(`"${to}"`);
+        answer = answer.split(from).join(to);
+      });
+    }
+    // The window's last change is on its way up: the finished model goes in after it, not under it.
+    await new Promise((r) => setTimeout(r, 400));
+    const after = c.parseDoc(JSON.parse(text)) ?? copy.getDoc();
+    entry.by = "agent";
+    entry.cue = null;
+    engine.setDoc(after);
+    const parsed = JSON.parse(answer) as { result?: unknown; shapes?: unknown[]; changed: boolean; revision?: number };
+    const said = `Done by hand in the 3D window, where the person watched: ${did.join("; ")}.` +
+      (skipped.length ? ` Not by hand (${skipped.join("; ")}): that went in with the finished model.` : "");
+    return { res: { ok: true, result: parsed.result, shapes: parsed.shapes, changed: parsed.changed, revision: parsed.revision } as CadResponse, said };
+  } finally {
+    entry.handing = Math.max(0, (entry.handing ?? 1) - 1);
+  }
+}
+
+/** Undo or redo: the window's own button pressed, then the model's own history stepped, so both agree on where they are. */
+async function historyByHand(session: string, engine: CadEngine, name: string): Promise<{ res: CadResponse; said: string } | null> {
+  const entry = entryFor(session);
+  entry.handing = (entry.handing ?? 0) + 1;
+  let reply: HandReply | null;
+  // Where the step leads, read from the model's own history without taking it yet, so the hand presses until it is there.
+  const kept = engine as unknown as { past?: unknown[]; future?: unknown[] };
+  const stack = name === "history_undo" ? kept.past : kept.future;
+  const goal = Array.isArray(stack) && stack.length ? stack[stack.length - 1] : null;
+  try {
+    reply = await handToWindow(session, name, {}, goal);
+    await new Promise((r) => setTimeout(r, 400));
+  } finally {
+    entry.handing = Math.max(0, (entry.handing ?? 1) - 1);
+  }
+  entry.by = "agent";
+  entry.cue = null;
+  const res = await engine.execute(name, {});
+  if (!res.ok) return { res, said: "" };
+  if (!reply?.did?.length) return { res, said: reply?.skipped ? `Not by hand (${reply.skipped}): the window shows it.` : "" };
+  return { res, said: `Done by hand in the 3D window, where the person watched: ${reply.did.join("; ")}.` + (reply.skipped ? ` (${reply.skipped})` : "") };
+}
+
+/**
+ * The person loads a model they kept (`.model.json`, or a document exported as JSON): it becomes the chat's model, as one
+ * step of its history, and the window shows it.
+ */
+export async function loadModel(session: string, data: Buffer): Promise<{ ok: boolean; error?: string; shapes?: number }> {
+  if (!validSession(session)) return { ok: false, error: "Autora 3D needs a chat to work in." };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(data.toString("utf8"));
+  } catch {
+    return { ok: false, error: "That is not a model Autora 3D kept (a .model.json file)." };
+  }
+  const c = await loadCore();
+  const doc = c.parseDoc(raw);
+  if (!doc) return { ok: false, error: "That file is not an Autora 3D model." };
+  const engine = await engineOf(session);
+  const entry = entryFor(session);
+  setOpen(session, true);
+  entry.by = "agent";
+  entry.cue = null;
+  engine.setDoc(doc);
+  return { ok: true, shapes: countShapes(engine.getDoc()) };
+}
+
 interface CadToolHooks {
   /** Show a saved file in the thread. */
   showFile?: (file: { id: string; name: string; mime: string; size: number }) => void;
@@ -270,10 +461,23 @@ export async function runCadTool(
     const exportArgs = name === "export" ? { name: given.name } : null;
     if (exportArgs) delete given.name;
     const mine = entryFor(session);
+    setOpen(session, true);
+    const tried = exportArgs ? null : await byHand(session, engine, name, given);
+    const hand = tried && "res" in tried ? tried : null;
+    if (hand && !hand.res.ok) {
+      const hint = hand.res.hint ? ` ${asAgentSees(hand.res.hint)}` : "";
+      return { ok: false, summary: `${asAgentSees(hand.res.error ?? "That did not work.")}${hint}`, preview: name };
+    }
+    if (hand) {
+      let summary = asAgentSees(JSON.stringify({ result: hand.res.result, shapes: hand.res.shapes, changed: hand.res.changed, revision: hand.res.revision }));
+      if (summary.length > MOST) summary = `${summary.slice(0, MOST)}\n[cut: the answer was ${summary.length} characters. Ask for less (cad_scene_get lists shapes; cad_shape_get takes one id).]`;
+      return { ok: true, summary: hand.said ? `${summary}\n${hand.said}` : summary, preview: name };
+    }
+    const notBy = tried && "notBy" in tried ? tried.notBy : NO_CONTROL[name] && handsOn(session) ? NO_CONTROL[name] : "";
+    const noControl = notBy ? `\nNot by hand (${notBy}): the model changed and the window shows it.` : "";
     mine.by = "agent";
     // Said before the change lands: the window is told the model moved a moment later, and asks for this with it.
     mine.cue = { seq: (mine.cue?.seq ?? 0) + 1, tool: name };
-    setOpen(session, true);
     const res = await engine.execute(name, given);
     if (!res.ok) {
       const hint = res.hint ? ` ${asAgentSees(res.hint)}` : "";
@@ -298,7 +502,7 @@ export async function runCadTool(
     if (summary.length > MOST) {
       summary = `${summary.slice(0, MOST)}\n[cut: the answer was ${summary.length} characters. Ask for less (cad_scene_get lists shapes; cad_shape_get takes one id).]`;
     }
-    return { ok: true, summary, preview: name };
+    return { ok: true, summary: summary + noControl, preview: name };
   } catch (err) {
     return { ok: false, summary: `Autora 3D could not do that: ${err instanceof Error ? err.message : String(err)}` };
   }
@@ -324,7 +528,20 @@ export function cadBriefing(on: boolean): string {
 const bigJson = express.json({ limit: "64mb" });
 
 /** The window's side of the wire: its state, its model, and opening and putting it away. */
-export function cadRoutes(app: Express, opts: { exists: (session: string) => boolean; incognito: (session: string) => boolean; off: () => boolean }) {
+export function cadRoutes(app: Express, opts: {
+  exists: (session: string) => boolean;
+  incognito: (session: string) => boolean;
+  off: () => boolean;
+  /** A message to the chat's open pages (the agent's hand, `cad.hand`). */
+  push?: (session: string, message: Record<string, unknown>) => void;
+  /** Whether Visible work is on. */
+  visible?: () => boolean;
+  /** Whether a page has the chat open: with none, no call waits for a window to take it. */
+  watched?: (session: string) => boolean;
+}) {
+  if (opts.push) pushTo = opts.push;
+  if (opts.visible) visible = opts.visible;
+  if (opts.watched) watched = opts.watched;
   const known = (req: Request, res: Response): string | null => {
     const id = String(req.params.session);
     if (!validSession(id) || !opts.exists(id)) {
@@ -368,6 +585,8 @@ export function cadRoutes(app: Express, opts: { exists: (session: string) => boo
       if (!doc) return res.status(400).json({ error: "That is not an Autora 3D model." });
       const engine = await engineOf(id);
       const entry = entryFor(id);
+      // The agent's hand is at work: these are its steps, and the call puts in the finished model itself, as one change.
+      if (entry.handing) return res.json({ rev: entry.rev });
       // Stays "person" until the agent's next tool call says otherwise: that is who made the latest change.
       entry.by = "person";
       engine.setDoc(doc);
@@ -375,6 +594,56 @@ export function cadRoutes(app: Express, opts: { exists: (session: string) => boo
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
+  });
+
+  /* The person pressed Save: the model as it is now, kept in Artifacts as a GLB (colours and groups kept; it opens in
+     most 3D viewers). The agent is not asked and not woken. */
+  app.post("/api/cad/:session/keep", async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    if (opts.off()) return res.status(403).json({ error: "Autora 3D is switched off on the Tools page." });
+    try {
+      const engine = await engineOf(id);
+      const out = await engine.execute("export", { format: "glb" });
+      if (!out.ok) return res.status(400).json({ error: asAgentSees(out.error ?? "There is nothing to save.") });
+      const r = out.result as { data?: string };
+      const art = keepCopy({
+        session: id, title: chatTitle(id), fallback: "Model", ext: "glb",
+        data: Buffer.from(r.data ?? "", "base64"), mime: EXPORT_MIME.glb, note: "Saved from Autora 3D",
+      });
+      // The model itself too, as JSON: a GLB opens in other programs, this is what Load takes back in.
+      keepCopy({
+        session: id, title: chatTitle(id), fallback: "Model", ext: "model.json",
+        data: Buffer.from(JSON.stringify(engine.toJSON(), null, 2), "utf8"), mime: "application/json", note: "Saved from Autora 3D (the model, to load again)",
+      });
+      res.json({ artifact: art.id, name: art.name });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  /* The agent's call, done by hand in the window: the first window to ask takes it, then says what its hand did. */
+  app.post("/api/cad/:session/hand/claim", (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const h = handing.get(String(req.query.id ?? ""));
+    const won = Boolean(h && h.session === id && !h.claimed);
+    if (won && h) h.claimed = true;
+    res.json(won && h ? { won, goal: h.goal, need: h.need } : { won });
+  });
+
+  app.post("/api/cad/:session/hand/reply", bigJson, (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const h = handing.get(String(req.query.id ?? ""));
+    if (!h || h.session !== id || !h.claimed) return res.status(404).json({ error: "No such call." });
+    const b = req.body as { did?: unknown; skipped?: unknown; doc?: unknown } | null;
+    h.resolve({
+      did: Array.isArray(b?.did) ? b.did.filter((x): x is string => typeof x === "string").slice(0, 40).map((x) => x.slice(0, 160)) : [],
+      skipped: typeof b?.skipped === "string" ? b.skipped.slice(0, 200) : undefined,
+      doc: b?.doc,
+    });
+    res.json({ ok: true });
   });
 
   /* The person opens it from the toolbox: a block to start from, so there is something to hold. */

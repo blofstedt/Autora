@@ -32,11 +32,6 @@ async function editorIn(page: Page, app: string): Promise<Frame> {
   throw new Error(`the ${app} editor's frame never appeared`);
 }
 
-/** What the shim inside an editor frame was asked and did: the counters it keeps for tests. */
-const shimCounters = (frame: Frame) => frame.evaluate(() => {
-  const c = (window as unknown as { __autoraCursor?: { located: number; clicked: number; typed: number } }).__autoraCursor;
-  return c ? { located: c.located, clicked: c.clicked, typed: c.typed } : null;
-});
 
 async function until<T>(what: string, fn: () => Promise<T | null | false>, ms = 30_000): Promise<T> {
   const end = Date.now() + ms;
@@ -126,52 +121,25 @@ try {
     assert.ok(pane!.y >= strip!.height, "the window starts below the tabs");
   });
 
-  await test("the agent's cursor works in the editor, where the work is", async () => {
-    // The Pages window is on screen (the test above picked it): the agent changes the document and the cursor plays.
-    await app.turn(s, "move the launch to Monday in the document");
+  /** What the agent was told by its last tool call. */
+  const lastTold = () => JSON.stringify(app.seen.flatMap((r) => r.messages).filter((m: { role: string }) => m.role === "tool").slice(-1));
+
+  await test("with Visible work on, the agent's change is typed by its hand in the Pages window, where the document is open", async () => {
+    await app.turn(s, "move the launch to Monday in the document", 120_000);
+    assert.match(lastTold(), /Typed by hand in the Autora Pages window/, lastTold().slice(-800));
     const docs = await editorIn(page, "docs");
-    /* What the shim in the editor was asked and did: it found the changed words, and clicked there. A click made by
-       script cannot move the browser's own caret (only a person's pointer does that), so what is asserted is the
-       click landing at the place the editor confirmed -- and that the document was not typed into, which would be a
-       second edit on top of the one the agent's tool already made. */
-    const did = await until("the cursor to work in the editor", async () => {
-      const counters = await shimCounters(docs).catch(() => null);
-      return counters && counters.located > 0 && counters.clicked > 0 ? counters : null;
-    }, 30_000).catch(() => null);
-    console.log("CURSOR " + JSON.stringify(did));
-    if (!did) {
-      /* The cursor is only played while the cue is fresh (under six seconds) and the window is on screen, which a test
-         cannot guarantee on a loaded machine: the run says what happened rather than failing over it. What is
-         asserted whenever it did play is below. */
-      console.log("  note  the cue was not played in time in this run (the editor's own counters never moved)");
-    } else {
-      assert.equal(did.typed, 0, "a document is never typed into: that would edit the file a second time");
-    }
-    const layer = await page.locator("[data-office-cursor]").count();
-    assert.ok(layer >= 0, "the cursor layer is the window's own (it may have finished playing by now)");
+    await until("the new day in the editor", async () => /Monday/.test(await docs.evaluate(() => document.body.innerText)), 30_000);
   });
 
-  await test("a place the editor cannot confirm is not pointed at", async () => {
+  await test("each window's change is typed in that window: the cell goes to the Sheets window, not the Pages one", async () => {
     await page.locator('.pane-pick-tab[data-pane="sheets"]').click();
     await sleep(400);
-    const sheets = await editorIn(page, "sheets");
-    const nameBox = await sheets.evaluate(() => {
-      for (const el of Array.from(document.querySelectorAll("input, textarea, span, b, i, div")) as HTMLElement[]) {
-        if (el.children.length > 0) continue;
-        if (/^\$?[A-Z]{1,3}\$?\d{1,7}$/.test(String(el.textContent || el.getAttribute("value") || "").trim().toUpperCase())) return true;
-      }
-      return false;
-    });
-    await app.turn(s, "change the weight in the spreadsheet");
-    await sleep(9000);
-    // The cursor of the window on screen, still being played: a finished one (Pages', from the turn before, kept in its
-    // own tab) is not the workbook's.
-    const cursor = await page.locator('.app-pane:not([hidden]) [data-office-cursor="on"]').count();
-    if (nameBox) {
-      console.log("  note  the workbook's editor shows a name box: the cell is confirmed by it, and the cursor is sent there");
-    } else {
-      assert.equal(cursor, 0, "the workbook's editor cannot say where a cell is, so the cursor is not sent to a guess");
-    }
+    const shots = process.env.OFFICE_SHOT;
+    const shooting = (async () => { for (let i = 0; i < 8 && shots; i++) { await sleep(1500); await page.screenshot({ path: `${shots}-win-${i}.png` }); } })();
+    await app.turn(s, "change the weight in the spreadsheet", 120_000);
+    await shooting;
+    assert.match(lastTold(), /Typed by hand in the Autora Sheets window/, lastTold().slice(-800));
+    assert.match(lastTold(), /B2 = 11/);
   });
 
   console.log(`\n  ${passed} passed`);

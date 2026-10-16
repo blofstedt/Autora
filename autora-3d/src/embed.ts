@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { runHand, type HandApi } from './agentHand';
 import { useEffect, useRef } from 'react';
 import { Doc, parseDoc } from './core/doc';
 import { setWho, show, type Cue, type Who } from './agentCursor';
@@ -18,6 +19,10 @@ import { setWho, show, type Cue, type Who } from './agentCursor';
  *   parent → frame   { autora3d: 'theme', vars }   Autora's current colours (see `themeStyle`)
  *   frame → parent   { autora3d: 'ready' }         booted: send the model
  *   frame → parent   { autora3d: 'changed', doc }  the person changed the model
+ *   parent → frame   { autora3d: 'hand', id, name, args, goal, need }  with Visible work on: do this tool call by hand
+ *                    (agentHand.ts); `goal` is the model as the call leaves it, worked out by Autora, and `need` the
+ *                    shapes and groups it names, which the hand waits for
+ *   frame → parent   { autora3d: 'handed', id, did, skipped?, doc }  what the hand did, and the model as it now is
  *
  * Everything else (the tools, the geometry, the gestures) is the same app as on its own.
  */
@@ -70,7 +75,13 @@ const SEND_AFTER_MS = 250;
  * Connects the app to Autora when it is a frame. `apply` shows a model the agent changed (as one undo step);
  * the document is sent up whenever the person changes it. A model that came down is never sent back up.
  */
-export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (before: Doc, after: Doc) => { x: number; y: number } | null): void {
+export function useAutoraEmbed(
+  doc: Doc,
+  apply: (doc: Doc) => void,
+  where?: (before: Doc, after: Doc) => { x: number; y: number } | null,
+  /** What the agent's hand needs from the app (agentHand.ts): with it, the agent's tool calls can be done here by hand. */
+  hand?: HandApi,
+): void {
   const on = useRef(embedded()).current;
   const known = useRef<Doc | null>(null);
   /** Nothing goes up before the first model came down: the empty one this page starts with is not the person's work. */
@@ -79,6 +90,8 @@ export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (bef
   applyRef.current = apply;
   const whereRef = useRef(where);
   whereRef.current = where;
+  const handRef = useRef(hand);
+  handRef.current = hand;
 
   useEffect(() => {
     if (!on) return;
@@ -105,6 +118,17 @@ export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (bef
         const w = m.who as Partial<Who> | null;
         setWho(w && typeof w.name === 'string' && typeof w.color === 'string' && typeof w.rgb === 'string' && /^#[0-9a-f]{6}$/i.test(w.color) && /^[\d, ]+$/.test(w.rgb)
           ? { name: w.name.slice(0, 24), color: w.color, rgb: w.rgb, sides: Number(w.sides) || 3 } : null);
+      } else if (m.autora3d === 'hand') {
+        // Autora's agent, with Visible work on: its tool call done here with this app's own controls, then answered with
+        // what was done and the model as it now is (its changes go up as a person's do, a moment after each).
+        const h = m as { id?: unknown; name?: unknown; args?: unknown; goal?: unknown; need?: unknown };
+        const api = handRef.current;
+        if (typeof h.id !== 'string' || typeof h.name !== 'string' || !api) return;
+        const id = h.id;
+        void runHand(h.name, (h.args ?? {}) as Record<string, unknown>, api, h.goal ? parseDoc(h.goal) : null, Array.isArray(h.need) ? h.need.filter((x): x is string => typeof x === 'string') : []).then(async (result) => {
+          await new Promise((r) => setTimeout(r, SEND_AFTER_MS + 150));
+          window.parent.postMessage({ autora3d: 'handed', id, ...result, doc: api.doc() }, origin);
+        });
       } else if (m.autora3d === 'theme') {
         for (const [prop, value] of Object.entries(themeStyle(m.vars))) document.documentElement.style.setProperty(prop, value);
       }
@@ -116,6 +140,13 @@ export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (bef
 
   useEffect(() => {
     if (!on || !loaded.current || doc === known.current) return;
+    // The model that came down, as the app keeps it, is not a change of the person's: sent back late it would undo a
+    // change the agent made after it.
+    const content = (d: Doc | null) => (d ? JSON.stringify([d.bodies, d.groups, d.repeats, d.library]) : '');
+    if (content(doc) === content(known.current)) {
+      known.current = doc;
+      return;
+    }
     const id = window.setTimeout(() => {
       known.current = doc;
       window.parent.postMessage({ autora3d: 'changed', doc }, window.location.origin);

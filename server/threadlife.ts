@@ -27,7 +27,7 @@ type Act =
   | { action: "like"; post: string; comment: string | null };
 
 /** One rating: a post (th_...) or a comment (cm_...), up for well written and useful, down for noise. */
-export interface Vote { id: string; dir: "up" | "down" }
+interface Vote { id: string; dir: "up" | "down" }
 
 /** What to do, plus what an agent decides for itself alongside it: a note worth keeping, how long until it looks again, and its ratings of what it read. */
 type LifeChoice = Act & { note?: string; again?: number; wonder?: string; votes?: Vote[] };

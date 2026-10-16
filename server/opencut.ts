@@ -132,8 +132,12 @@ export function listProjects(): Array<{ id: string; name: string; duration: numb
 
 type Win = {
   open: boolean;
-  /** The frame has said it is up and can take commands. */
-  ready: boolean;
+  /** When a window last said its editor is up and can take commands (0: none has). It says so every few seconds while it
+      is, so a server that restarted, or a window that came back, is up to date again at once; one that stops saying so
+      has gone. */
+  readyAt: number;
+  /** Why the editor in the window could not start, when it said. */
+  problem: string | null;
   projectId: string | null;
   name: string | null;
   since: number;
@@ -141,9 +145,38 @@ type Win = {
 
 const wins = new Map<string, Win>();
 
+/* Which chats have the window open, and on which project, kept on disk: a server that restarts (an update) must not tell
+   the page its window is shut, which took the editor down and opened it again on a new, empty project. */
+const WINS_FILE = () => path.join(STORE(), "windows.json");
+let winsLoaded = false;
+function loadWins() {
+  if (winsLoaded) return;
+  winsLoaded = true;
+  try {
+    const raw = JSON.parse(fs.readFileSync(WINS_FILE(), "utf8")) as Record<string, Partial<Win>>;
+    for (const [session, w] of Object.entries(raw)) {
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(session) || !w?.open) continue;
+      wins.set(session, {
+        open: true, readyAt: 0, problem: null, since: Number(w.since) || Date.now(),
+        projectId: typeof w.projectId === "string" ? w.projectId : null, name: typeof w.name === "string" ? w.name : null,
+      });
+    }
+  } catch { /* none kept yet */ }
+}
+function saveWins() {
+  const out: Record<string, Pick<Win, "open" | "projectId" | "name" | "since">> = {};
+  for (const [session, w] of wins) if (w.open) out[session] = { open: true, projectId: w.projectId, name: w.name, since: w.since };
+  try {
+    fs.mkdirSync(STORE(), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(`${WINS_FILE()}.tmp`, JSON.stringify(out));
+    fs.renameSync(`${WINS_FILE()}.tmp`, WINS_FILE());
+  } catch { /* the window still works; it is only not remembered */ }
+}
+
 type OpencutState = { open: boolean; projectId?: string | null; name?: string | null; since?: number };
 
 export function opencutState(session: string): OpencutState {
+  loadWins();
   const w = wins.get(session);
   return w?.open ? { open: true, projectId: w.projectId, name: w.name, since: w.since } : { open: false };
 }
@@ -157,8 +190,9 @@ export function onOpencutChange(fn: (session: string) => void) {
 let pushed: (session: string, message: Record<string, unknown>) => void = () => undefined;
 
 function win(session: string): Win {
+  loadWins();
   let w = wins.get(session);
-  if (!w) wins.set(session, (w = { open: false, ready: false, projectId: null, name: null, since: Date.now() }));
+  if (!w) wins.set(session, (w = { open: false, readyAt: 0, problem: null, projectId: null, name: null, since: Date.now() }));
   return w;
 }
 
@@ -166,9 +200,11 @@ function setOpen(session: string, on: boolean) {
   const w = win(session);
   if (w.open === on) return;
   w.open = on;
-  w.ready = false;
+  w.readyAt = 0;
+  w.problem = null;
   if (on) w.since = Date.now();
   else rejectAll(session, "The video window was closed.");
+  saveWins();
   changed(session);
 }
 
@@ -188,13 +224,22 @@ function rejectAll(session: string, why: string) {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** How long a window's word that its editor is up holds: it repeats it every 5 s. */
+const READY_FOR_MS = 15_000;
+const isReady = (w: Win) => w.readyAt > 0 && Date.now() - w.readyAt < READY_FOR_MS;
+/** How long a command waits for an editor to come up: a first start on a small machine fetches and compiles a lot. */
+const START_MS = 90_000;
+
 /** Ask the open editor to do something, and wait for what it says. */
 export async function command(session: string, name: string, args: Record<string, unknown> = {}, timeoutMs = 60_000): Promise<unknown> {
   setOpen(session, true);
   const w = win(session);
-  // The frame loads after the window opens: give it time to say it is up.
-  for (let waited = 0; !w.ready && waited < 40_000; waited += 150) await sleep(150);
-  if (!w.ready) {
+  // The frame loads after the window opens: give it time to say it is up, unless it has said why it cannot.
+  for (let waited = 0; !isReady(w) && !w.problem && waited < START_MS; waited += 150) await sleep(150);
+  if (w.problem && !isReady(w)) {
+    throw new Error(`The video editor could not start: ${w.problem}. The window tries again by itself; if it keeps failing, ask the person to reload the page.`);
+  }
+  if (!isReady(w)) {
     throw new Error("The video editor did not start. It opens in the browser tab for this chat; if no tab is open, open Autora there and try again.");
   }
   const id = crypto.randomBytes(6).toString("hex");
@@ -306,8 +351,15 @@ export function opencutRoutes(app: Express, opts: OpencutOptions): void {
     const session = known(req, res);
     if (!session) return;
     const w = win(session);
-    // A window that has just mounted says false: its frame is not up, whatever an earlier one said.
-    w.ready = req.body?.ready !== false;
+    // A window that has just mounted says false: its frame is not up, whatever an earlier one said. One that is up says
+    // so again every few seconds.
+    if (req.body?.ready === false) {
+      w.readyAt = 0;
+      w.problem = typeof req.body?.problem === "string" ? req.body.problem.slice(0, 300) : null;
+    } else {
+      w.readyAt = Date.now();
+      w.problem = null;
+    }
     res.json({ ok: true });
   });
 
@@ -320,6 +372,7 @@ export function opencutRoutes(app: Express, opts: OpencutOptions): void {
     if (w.projectId !== id || w.name !== name) {
       w.projectId = id;
       w.name = name;
+      saveWins();
       changed(session);
     }
     res.json({ ok: true });
@@ -430,7 +483,8 @@ export function serveOpencut(app: Express, dist: string): void {
 /** The chat was deleted: nothing of the window is kept for it. */
 export function dropOpencut(session: string): void {
   rejectAll(session, "The chat was closed.");
-  wins.delete(session);
+  loadWins();
+  if (wins.delete(session)) saveWins();
   for (const [token, s] of sources) if (s.session === session) sources.delete(token);
 }
 

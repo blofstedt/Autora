@@ -39,7 +39,7 @@ export interface Target {
   baseUrl: string;
 }
 
-export interface RoleModels {
+interface RoleModels {
   /** The main model, which builds, and its provider. */
   provider: string;
   model: string;
@@ -106,7 +106,7 @@ export function conversationTargets(r: RoleModels, work: WorkMode, voice?: strin
 export const MAX_ESCALATIONS = 2;
 
 /** Project-check failures in a row, after an item was finished, that count as stuck. */
-export const CHECK_FAILS_TO_ESCALATE = 2;
+const CHECK_FAILS_TO_ESCALATE = 2;
 
 /**
  * The stuck signals of one turn, and whether they hand the work to the planner.

@@ -27,10 +27,133 @@
  * anyone can see.
  */
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { EngineProblem, type SpectraEngine } from "./engine";
+
+/** Whether a path is the document the window is showing. */
+function isShown(ctx: SpectraContext, file: string): boolean {
+  const shown = ctx.documentPath();
+  return !!shown && path.resolve(shown) === path.resolve(file);
+}
+
+/** The editor's working copy of the document the window is showing (create_working_copy names it so). */
+function workingCopyOf(ctx: SpectraContext): string | null {
+  const shown = ctx.documentPath();
+  if (!shown) return null;
+  const ext = path.extname(shown) || ".pdf";
+  return path.resolve(path.join(ctx.root, ".spectra", `${path.basename(shown, path.extname(shown))}-working${ext}`));
+}
+
+/* ------------------------------------------------------------ page commits -- */
+
+/* Spectra applies a page edit (Apply changes, Fill N fields...) as a transaction over its working copies
+   (src-tauri/src/page_commit.rs): each staged file replaces its working copy, the original kept as a snapshot for
+   undo, all or none; abort puts the originals back; acknowledge lets the snapshots go. The renderer reads the reply's
+   status and refuses to go on without "committed", so this is that transaction, here. It changes working copies only:
+   the document itself changes when the person (or the agent's hand) saves. */
+type CommitEntry = { workingPath: string; stagedPath: string; expectedWorkingSha256?: string; expectedStagedSha256?: string };
+type CommitReply = { status: "committed" | "rolledBack" | "recoveryRequired"; snapshots: string[]; detail: string };
+type Commit = { entries: CommitEntry[]; backups: string[]; attempted: number; reply: CommitReply };
+const commits = new Map<string, Commit>();
+const sealedCommits = new Set<string>();
+
+const sha256 = (file: string) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const rolledBack = (detail: string): CommitReply => ({ status: "rolledBack", snapshots: [], detail });
+
+function rollback(tx: Commit): void {
+  const failures: string[] = [];
+  for (let i = 0; i < tx.attempted; i++) {
+    try {
+      fs.copyFileSync(tx.backups[i], tx.entries[i].workingPath);
+    } catch (err) {
+      failures.push(`${tx.entries[i].workingPath}: ${(err as Error).message}`);
+    }
+  }
+  if (failures.length === 0) {
+    tx.attempted = 0;
+    tx.reply.status = "rolledBack";
+  } else {
+    tx.reply.status = "recoveryRequired";
+    tx.reply.detail = `Originals retained; restoration required: ${failures.join("; ")}`;
+  }
+}
+
+function publishPageCommit(ctx: SpectraContext, id: string, raw: unknown[]): CommitReply {
+  const key = `${ctx.session}:${id}`;
+  const entries: CommitEntry[] = raw.map((e: any) => ({
+    workingPath: String(e?.workingPath ?? ""), stagedPath: String(e?.stagedPath ?? ""),
+    ...(typeof e?.expectedWorkingSha256 === "string" ? { expectedWorkingSha256: e.expectedWorkingSha256 } : {}),
+    ...(typeof e?.expectedStagedSha256 === "string" ? { expectedStagedSha256: e.expectedStagedSha256 } : {}),
+  }));
+  const live = commits.get(key);
+  // A repeated delivery never publishes twice.
+  if (live) return JSON.stringify(live.entries) === JSON.stringify(entries) ? live.reply : { status: "recoveryRequired", snapshots: [], detail: "transaction id reused with different entries" };
+  if (!id || sealedCommits.has(key)) return rolledBack("transaction id was sealed");
+  /* An earlier transaction of this window that was never acknowledged: the editor that published it is gone (the
+     window reloads its frame when the document changes under it). Committed or rolled back, it is settled, and is let go;
+     only one that still needs its originals put back stands in the way. */
+  for (const [k, old] of commits) {
+    if (!k.startsWith(`${ctx.session}:`)) continue;
+    if (old.reply.status === "recoveryRequired") {
+      sealedCommits.add(key);
+      return rolledBack("another page commit still needs acknowledgment or recovery");
+    }
+    sealedCommits.add(k);
+    commits.delete(k);
+    if (old.reply.status === "rolledBack") for (const b of old.backups) fs.rmSync(b, { force: true });
+  }
+  const tx: Commit = { entries, backups: [], attempted: 0, reply: rolledBack("") };
+  try {
+    if (entries.length === 0) throw new Error("nothing to commit");
+    for (const e of entries) {
+      e.workingPath = inside(ctx.root, e.workingPath);
+      e.stagedPath = inside(ctx.root, e.stagedPath);
+      if (!fs.statSync(e.workingPath).isFile() || !fs.statSync(e.stagedPath).isFile()) throw new Error("page commit path is not a file");
+    }
+    entries.forEach((e, i) => {
+      const snapshot = `${e.workingPath}.${Date.now()}-${i}.snapshot`;
+      fs.copyFileSync(e.workingPath, snapshot);
+      tx.backups.push(snapshot);
+    });
+    entries.forEach((e, i) => {
+      if (e.expectedWorkingSha256 && sha256(tx.backups[i]) !== e.expectedWorkingSha256) throw new Error("file bytes no longer match the selected revision");
+      if (e.expectedStagedSha256 && sha256(e.stagedPath) !== e.expectedStagedSha256) throw new Error("file bytes no longer match the selected revision");
+    });
+    entries.forEach((e, i) => {
+      tx.attempted = i + 1;
+      fs.renameSync(e.stagedPath, e.workingPath);
+    });
+    tx.reply.status = "committed";
+  } catch (err) {
+    tx.reply.detail = (err as Error).message;
+    rollback(tx);
+  }
+  tx.reply.snapshots = tx.backups.slice();
+  commits.set(key, tx);
+  return { ...tx.reply, snapshots: tx.reply.snapshots.slice() };
+}
+
+function abortPageCommit(ctx: SpectraContext, id: string): CommitReply {
+  const key = `${ctx.session}:${id}`;
+  sealedCommits.add(key);
+  const tx = commits.get(key);
+  if (!tx) return rolledBack("transaction did not publish");
+  rollback(tx);
+  return { ...tx.reply, snapshots: tx.reply.snapshots.slice() };
+}
+
+function acknowledgePageCommit(ctx: SpectraContext, id: string): void {
+  const key = `${ctx.session}:${id}`;
+  const tx = commits.get(key);
+  if (tx?.reply.status === "recoveryRequired") throw new Error("cannot discard originals while recovery is required");
+  sealedCommits.add(key);
+  commits.delete(key);
+  // Committed snapshots are undo history now; a rolled-back one has served its turn.
+  if (tx?.reply.status === "rolledBack") for (const b of tx.backups) fs.rmSync(b, { force: true });
+}
 
 /* ------------------------------------------------------------------ paths -- */
 
@@ -213,7 +336,8 @@ export async function runCommand(
       const base64 = str(args, "base64");
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, Buffer.from(base64, "base64"));
-      ctx.documentSaved(file);
+      // Only the document itself: the editor writes scratch files here too (a form's policy check, a stage).
+      if (isShown(ctx, file)) ctx.documentSaved(file);
       return undefined;
     }
     case "write_action_file":
@@ -250,6 +374,9 @@ export async function runCommand(
       fs.mkdirSync(path.dirname(to), { recursive: true });
       if (command === "move_file_creating_dirs") fs.renameSync(from, to);
       else fs.copyFileSync(from, to);
+      /* Save ends here: the working copy goes over the document. Edits that are not pages (a form's values) reach the
+         file only this way, so it is a save of the document like the others. */
+      if (isShown(ctx, to)) ctx.documentSaved(to);
       return command === "move_file_creating_dirs" ? undefined : to;
     }
     case "free_output_path": {
@@ -483,8 +610,6 @@ export async function runCommand(
     case "tabdrag_release":
     case "tabdrag_reserve":
     case "tabdrag_reserve_new_window":
-    case "acknowledge_page_commit":
-    case "abort_page_commit":
     case "downgrade_document_to_read":
     case "open_new_window":
     case "focus_app_window":
@@ -496,10 +621,30 @@ export async function runCommand(
       DROPPED.add(command);
       return command === "prompt_turn_begin" ? null : undefined;
 
-    case "publish_page_commit":
-      /* The engine has written the pages into the document. Hand the file back
-         to the desk, so the agent's own PDF tools see the person's work. */
-      ctx.documentSaved(ctx.documentPath() ?? "");
+    case "publish_page_commit": {
+      const reply = publishPageCommit(ctx, str(args, "id"), Array.isArray(args?.entries) ? args.entries : []);
+      /* Applied changes (Apply changes, Fill N fields) are the document as the window now has it: the desk follows the
+         working copy, so the agent's tools see them without waiting for Save ("Saved as you go"). */
+      if (reply.status === "committed") {
+        const working = workingCopyOf(ctx);
+        const hit = (Array.isArray(args?.entries) ? args.entries : []).map((e: any) => String(e?.workingPath ?? "")).find((w: string) => working && path.resolve(w) === working);
+        if (hit) ctx.documentSaved(hit);
+      }
+      return reply;
+    }
+    case "save_as": {
+      // Save: the working copy over the document (or wherever Save As was pointed).
+      const from = inside(ctx.root, str(args, "workingPath", "from", "path"));
+      const to = inside(ctx.root, str(args, "destPath", "to", "dest"));
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      if (path.resolve(from) !== path.resolve(to)) fs.copyFileSync(from, to);
+      if (isShown(ctx, to)) ctx.documentSaved(to);
+      return undefined;
+    }
+    case "abort_page_commit":
+      return abortPageCommit(ctx, str(args, "id"));
+    case "acknowledge_page_commit":
+      acknowledgePageCommit(ctx, str(args, "id"));
       return undefined;
 
     case "engine_writes_in_flight":

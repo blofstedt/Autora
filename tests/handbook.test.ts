@@ -44,9 +44,16 @@ await test("the Music manual teaches the tool bar and not the toolbar it replace
   }
 });
 
+await test("the Games manual teaches the tool bar, Play in the window and the Advanced rules", () => {
+  const game = manualText("game");
+  for (const needle of ["All tools", "Add object", "Abilities", "pin any tool", "inside the window", "Advanced", "Back to the scene", "whatever is shown"]) {
+    assert.ok(game.includes(needle), `the Games manual lacks "${needle}"`);
+  }
+});
+
 await test("the 3D manual teaches the tool bar and not the bottom bar it replaced", () => {
   const cad = manualText("cad");
-  for (const needle of ["All tools", "Size & position", "Pick edges", "Push & pull", "pin any tool", "no bottom bar", "whatever is shown"]) {
+  for (const needle of ["All tools", "Size & position", "Pick edges", "Push & pull", "pin any tool", "no bottom bar", "whatever is shown", "parts pane", "Edit inside", "independent copy", "cad_group_enter", "Search by name"]) {
     assert.ok(cad.includes(needle), `the 3D manual lacks "${needle}"`);
   }
 });
@@ -68,6 +75,70 @@ await test("the Video manual teaches the tool bar and not the tab strip and tool
 await test("the Photo manual teaches the tool bar and not the menu bar and toolbox it replaced", () => {
   const photo = manualText("photo");
   for (const needle of ["All tools", "no menu bar, no toolbox", "pin any tool or command", "keyboard shortcuts work", "whatever is shown"]) {
+    assert.ok(photo.includes(needle), `the Photo manual lacks "${needle}"`);
+  }
+});
+
+await test("the Office manual says that with Visible work on office_edit's words are typed in the window by hand", () => {
+  const office = manualText("office");
+  for (const needle of ["With Visible work on", "typed there by your hand, live", "name box", "formula bar's tick", "box is opened on its slide", "With Visible work off"]) {
+    assert.ok(office.includes(needle), `the Office manual lacks "${needle}"`);
+  }
+});
+
+await test("every window's manual says where its Save is and what it keeps; the overview says how folders work", () => {
+  const kept: Record<string, string> = {
+    pdf: "kept in Artifacts", office: "Saved by you", studio: ".song.json", cad: "GLB", game: "GDevelop project", photo: "PNG", video: "writes the project now",
+  };
+  for (const [id, needle] of Object.entries(kept)) {
+    const text = manualText(id as Parameters<typeof manualText>[0]);
+    assert.ok(text.includes("has Save") || text.includes("also has Save"), `the ${id} manual does not say it has Save`);
+    assert.ok(text.includes(needle), `the ${id} manual lacks "${needle}"`);
+  }
+  const overview = windowsOverview();
+  for (const needle of ["its top bar has Save", "without waking you", "folders, one per project", "share one folder"]) {
+    assert.ok(overview.includes(needle), `the overview lacks "${needle}"`);
+  }
+});
+
+await test("the Terminal manual says that with Visible work on the command is typed into the person's own shell", () => {
+  const t = manualText("terminal");
+  for (const needle of ["With Visible work on", "typed by your hand", "runs in their shell", "Typed into the shell", "Ctrl+C", "with Visible work off"]) {
+    assert.ok(t.includes(needle), `the Terminal manual lacks "${needle}"`);
+  }
+});
+
+await test("the Video manual says which edits are done in the window by hand with Visible work on", () => {
+  const v = manualText("video");
+  for (const needle of ["With Visible work on", "by your hand, live", "the ruler clicked at the cut", "Delete pressed", "dragged along the timeline", "Default text", "With Visible work off"]) {
+    assert.ok(v.includes(needle), `the Video manual lacks "${needle}"`);
+  }
+});
+
+await test("the 3D manual says every changing call is done in the window by hand with Visible work on, and what has no control", () => {
+  const cad = manualText("cad");
+  for (const needle of ["With Visible work on", "every call that changes the model is done there", "by your hand, live", "Shape tray", "with Draw", "Size & position", "Shift for each after the first", "dragging the ring", "Curved edge", "Undo and Redo in the top bar", "one command at a time", "Done by hand in the 3D window", "Not by hand", "cad_doc_set", "With Visible work off"]) {
+    assert.ok(cad.includes(needle), `the 3D manual lacks "${needle}"`);
+  }
+});
+
+await test("the Music manual says that with Visible work on the studio tools are done in the window by hand", () => {
+  const music = manualText("studio");
+  for (const needle of ["With Visible work on", "by your hand, live", "Song tray", "Add track", "piano roll", "drum grid", "finished song goes in", "With Visible work off"]) {
+    assert.ok(music.includes(needle), `the Music manual lacks "${needle}"`);
+  }
+});
+
+await test("the PDF manual says that with Visible work on pdf_edit is done in the window by hand, and what is not", () => {
+  const pdf = manualText("pdf");
+  for (const needle of ["With Visible work on", "by your hand, live", "Fill N fields", "Ctrl+S", "done on the file afterwards", "With Visible work off"]) {
+    assert.ok(pdf.includes(needle), `the PDF manual lacks "${needle}"`);
+  }
+});
+
+await test("the Photo manual says that with Visible work on the edit is done in the window by hand", () => {
+  const photo = manualText("photo");
+  for (const needle of ["Visible work on", "by your hand", "clicks its tile", "command's own dialog", "Visible work off"]) {
     assert.ok(photo.includes(needle), `the Photo manual lacks "${needle}"`);
   }
 });
@@ -117,6 +188,13 @@ await test("tool_manual returns a manual, and refuses a window that does not exi
   const bad = await runTool(spec, { window: "nope" }, ctx);
   assert.equal(bad.ok, false);
   assert.ok(bad.summary.includes("browser, creator"));
+});
+
+await test("the general manual says every window has Load, and what the composer's Artifacts button attaches", () => {
+  const text = windowsOverview();
+  for (const needle of ["has Load", "opens in that window", "you did not open", "the Artifacts button beside the notebook", "project folder", "up to 20"]) {
+    assert.ok(text.includes(needle), `the windows overview lacks "${needle}"`);
+  }
 });
 
 console.log(`\n${passed} passed`);

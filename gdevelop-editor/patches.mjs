@@ -245,6 +245,19 @@ export const themes = {
       hasUnsavedChanges,
       saving: isSavingProject,
       project: state.currentProject,
+      // The rail's hands (Autora/rail.js): what the person's tool bar does, with the editor's own members.
+      rail: {
+        openLayout,
+        toggleProjectManager,
+        projectManagerOpen,
+        openResources,
+        openShareDialog,
+        launchNewPreview,
+        onSceneAdded,
+        itemModified: _onProjectItemModified,
+        // The scene or events editor the person is looking at (null on any other tab).
+        activeTab: () => getCurrentTabForPane(state.editorTabs, 'center'),
+      },
     };
   });
 
@@ -296,5 +309,73 @@ import {
     file: SRC + "ResourcesList/FileToCloudProjectResourceUploader.js",
     find: `              newResource.setOrigin('cloud-project-resource', url || '');`,
     replace: `              newResource.setOrigin('url', url || '');`,
+  },
+  // ---- The "New object" dialog: no Asset Store (Autora has no connection to it; it only showed an error). ----
+  {
+    file: SRC + "AssetStore/NewObjectDialog.js",
+    find: `  const [currentTab, setCurrentTab] = React.useState(
+    getNewObjectDialogDefaultTab()
+  );`,
+    replace: `  void getNewObjectDialogDefaultTab;
+  const [currentTab, setCurrentTab] = React.useState('new-object');`,
+  },
+  {
+    file: SRC + "AssetStore/NewObjectDialog.js",
+    find: `            fixedContent={
+              <Tabs
+                value={currentTab}
+                onChange={setCurrentTab}
+                options={[
+                  {
+                    label: <Trans>Asset Store</Trans>,
+                    value: 'asset-store',
+                    id: 'asset-store-tab',
+                  },
+                  {
+                    label: <Trans>New object from scratch</Trans>,
+                    value: 'new-object',
+                    id: 'new-object-from-scratch-tab',
+                  },
+                ]}
+                // Enforce scroll on mobile, because the tabs have long names.
+                variant={isMobile ? 'scrollable' : undefined}
+              />
+            }`,
+    replace: `            fixedContent={void Tabs}`,
+  },
+  {
+    // Bitmap text, 3D cube and Tile map would send the person to the store's pack results (the same error).
+    file: SRC + "AssetStore/NewObjectDialog.js",
+    find: `      if (enumeratedObjectMetadata.assetStoreTag) {
+        // When the object is from an asset store, display the objects from the pack
+        // so that the user can either pick a similar object or skip to create a new one.
+        setSelectedCustomObjectEnumeratedMetadata(enumeratedObjectMetadata);
+      } else if (enumeratedObjectMetadata.requiredExtensions) {`,
+    replace: `      if (enumeratedObjectMetadata.requiredExtensions) {`,
+  },
+  // The effect dialog has a store tab of its own: off, so it opens on "from scratch" with no tabs.
+  {
+    file: SRC + "EffectsList/NewEffectDialog.js",
+    find: `  const canAddEffectFromStore = target === 'layer';`,
+    replace: `  const canAddEffectFromStore = false;`,
+  },
+  // ---- The window's tool bar takes the place of the toolbar and the phone's bottom row (autora.css hides them). ----
+  {
+    file: SRC + "UI/Toolbar.js",
+    find: `        className="almost-invisible-scrollbar"
+        style={{
+          ...styles.toolbar,`,
+    replace: `        className="almost-invisible-scrollbar autora-toolbar"
+        style={{
+          ...styles.toolbar,`,
+  },
+  {
+    file: SRC + "SceneEditor/SwipeableDrawerEditorsDisplay/BottomToolbar.js",
+    find: `      <Paper background="medium" square style={styles.container}>`,
+    replace: `      <Paper
+        background="medium"
+        square
+        style={{ ...styles.container, display: 'none' }}
+      >`,
   },
 ];

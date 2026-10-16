@@ -10,8 +10,11 @@
 
 import { type Express, type Request, type RequestHandler, type Response } from "express";
 import {
-  MAX_ARTIFACT_BYTES, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
+  MAX_ARTIFACT_BYTES, deleteArtifact, getArtifact, listArtifacts, moveArtifact, readArtifact, saveArtifact,
 } from "../artifacts";
+import {
+  createFolder, deleteFolder, getFolder, listFolders, renameFolder, setChatFolder,
+} from "../folders";
 import { forgetThumb, previewOf, thumbOf } from "../thumbs";
 import { forgetArtifact } from "../notebooks";
 
@@ -23,8 +26,49 @@ export function artifactRoutes(app: Express, deps: {
 }) {
   const { log } = deps;
   app.get("/api/artifacts", (_req: Request, res: Response) => {
-    res.json({ artifacts: listArtifacts(), max: MAX_ARTIFACT_BYTES });
+    res.json({ artifacts: listArtifacts(), max: MAX_ARTIFACT_BYTES, ...listFolders() });
   });
+
+  /** A new folder, with the files and the chats to put in it. */
+  app.post("/api/folders", (req: Request, res: Response) => {
+    const name = String(req.body?.name ?? "").trim();
+    if (!name) return res.status(400).json({ error: "A folder needs a name." });
+    const folder = createFolder(name);
+    place(folder.id, req.body);
+    res.json({ folder });
+  });
+
+  app.patch("/api/folders/:id", (req: Request, res: Response) => {
+    const folder = renameFolder(req.params.id, String(req.body?.name ?? ""));
+    if (!folder) return res.status(404).json({ error: "No such folder" });
+    res.json({ folder });
+  });
+
+  /** The folder goes, never a file: they go back to their chats' folders. */
+  app.delete("/api/folders/:id", (req: Request, res: Response) => {
+    if (!deleteFolder(req.params.id)) return res.status(404).json({ error: "No such folder" });
+    res.json({ ok: true });
+  });
+
+  /** Move files and chats into a folder, or with folder null back out. */
+  app.post("/api/folders/move", (req: Request, res: Response) => {
+    const to = req.body?.folder === null ? null : String(req.body?.folder ?? "");
+    if (to !== null && !getFolder(to)) return res.status(404).json({ error: "No such folder" });
+    place(to, req.body);
+    res.json({ ok: true });
+  });
+
+  function place(folder: string | null, body: any) {
+    const files: unknown[] = Array.isArray(body?.files) ? body.files : [];
+    const chats: unknown[] = Array.isArray(body?.chats) ? body.chats : [];
+    for (const id of files) if (typeof id === "string") moveArtifact(id, folder);
+    for (const chat of chats) {
+      if (typeof chat !== "string" || !chat) continue;
+      setChatFolder(chat, folder);
+      // A chat moved is all of its files, the ones moved by hand included.
+      for (const a of listArtifacts()) if (a.session === chat && a.folder) moveArtifact(a.id, null);
+    }
+  }
 
   /** The body is the file itself, sent as octet-stream so the JSON parser
       above leaves it alone; its name and type ride in headers, so there is no

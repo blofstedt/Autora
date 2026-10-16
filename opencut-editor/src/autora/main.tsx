@@ -8,7 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Editor from "@/app/editor/[project_id]/page";
 import { EditorCore } from "@/core";
-import { announce, onTheme, ready, store } from "./bridge";
+import { announce, onTheme, ready, store, trouble } from "./bridge";
 import { installCommands } from "./commands";
 import { preferences, watchPreferences } from "./storage-shim";
 import { openProject, useCurrentProject, whenMoved } from "./shims/navigation";
@@ -46,7 +46,14 @@ onTheme((vars) => {
 async function firstProject(): Promise<string> {
   const asked = new URLSearchParams(location.search).get("project");
   if (asked) return asked;
-  const all = await store<{ id: string; updatedAt?: string }[]>({ op: "all", ns: "video-editor-projects/projects" }).catch(() => []);
+  /* A list that could not be read is not an empty one: asked again a few times (the server may be restarting) before
+     anything is decided. Starting a new project on a hiccup left the person's work behind a stray "Untitled Project". */
+  let all: { id: string; updatedAt?: string }[] | null = null;
+  for (let tries = 0; tries < 6 && all === null; tries++) {
+    all = await store<{ id: string; updatedAt?: string }[]>({ op: "all", ns: "video-editor-projects/projects" }).catch(() => null);
+    if (all === null) await new Promise((r) => setTimeout(r, 1000 * (tries + 1)));
+  }
+  if (all === null) throw new Error("the list of video projects could not be read");
   const latest = [...all].sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))[0];
   return latest?.id ?? "new";
 }
@@ -63,6 +70,10 @@ function App() {
   );
 }
 
+/* A start that fails is said to the window, which shows it, and the agent waiting on it hears it at once instead of
+   waiting out the time. (The editor's own "Failed to load project" says so too: components/providers/editor-provider.tsx
+   in the overlay.) Stray errors in the page are not reported: a harmless one would stop the agent waiting for an editor
+   that is about to come up. */
 async function start(): Promise<void> {
   await restorePreferences();
   const editor = EditorCore.getInstance();
@@ -90,4 +101,4 @@ async function start(): Promise<void> {
   );
 }
 
-void start();
+start().catch((err: unknown) => trouble(err instanceof Error ? err.message : String(err)));

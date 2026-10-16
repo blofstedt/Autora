@@ -69,6 +69,30 @@ function segments(command: string): string[] {
     .filter(Boolean);
 }
 
+/* ---- timers outside the schedule ------------------------------------------
+
+   An agent's own recurring work is the `schedule` tool, and what it may set there is a script that runs by itself. A
+   timer made some other way -- the machine's crontab, `at`, a systemd timer -- is a recurring job nobody can see on the
+   Schedule page or pause, and one that starts a model turn each time is the one thing that must not exist unseen: it
+   spends tokens for nothing. So the terminal does not make them, and a script that starts a turn is not a script. This
+   reads the text of a command, so it is a check on honest mistakes and on the easy way round, not a lock. */
+
+/** Why a command may not be run by an agent: it makes a timer of its own, or calls Autora to start a model turn. */
+export function makesTimerOrWake(command: string, scheduled = false): string | null {
+  for (const segment of segments(command)) {
+    const w = words(segment).filter((x) => !/^(sudo|env|nice|nohup|time|exec)$/.test(x) && !/^\w+=/.test(x));
+    const first = (w[0] ?? "").replace(/^.*\//, "");
+    if (first === "crontab" && !w.slice(1).every((x) => x === "-l")) return "a crontab of the machine's own";
+    if (first === "at" || first === "batch") return "an `at` job";
+    if (first === "systemd-run" || (first === "systemctl" && /\.timer\b/.test(segment))) return "a systemd timer";
+  }
+  if (!scheduled) return null;
+  if (/\b(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|host\.docker\.internal)(:\d+)?\/(api|ws)\b/i.test(command)) return "a call to Autora's own API, which could start a chat";
+  if (/\b(api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai|api\.mistral\.ai|api\.groq\.com)\b/i.test(command)) return "a call to a model's API";
+  if (/(^|[\s;&|])(claude|codex|gemini|ollama)\s/.test(command)) return "a model's command line";
+  return null;
+}
+
 /** Where a recursive delete stops being a tidy-up. */
 const WHOLE = new Set([
   "/", "/*", "/.", "/*/", "~", "~/", "~/*", "$HOME", "${HOME}", "$HOME/",

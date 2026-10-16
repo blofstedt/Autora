@@ -27,7 +27,7 @@ export interface JobWatch {
 export interface JobRun {
   at: number;
   finished: number | null;
-  reason: "schedule" | "manual" | "change";
+  reason: "schedule" | "manual" | "change" | "script";
   session: string | null;
   ok: boolean;
   error: string | null;
@@ -39,7 +39,14 @@ export interface Job {
   id: string;
   name: string;
   cron: string;
+  /** What a model is told when the job runs. Empty for a script job. */
   prompt: string;
+  /**
+   * A script job: a shell command run on the cron by the console itself, with no model and no session. It costs nothing
+   * to run, which is what lets an agent set one up without asking; a job with a prompt wakes a model every time and is
+   * for the person to make (the Schedule page).
+   */
+  command?: string | null;
   enabled: boolean;
   created: number;
   last_run: number | null;
@@ -202,6 +209,8 @@ interface SchedulerHooks {
   }>;
   /** Look at what a watcher watches, as text. */
   observe: (watch: JobWatch) => Promise<string>;
+  /** Run a script job's command: no model. `output` is the tail of what it printed. */
+  script?: (job: Job, command: string) => Promise<{ ok: boolean; output: string }>;
   save: () => void;
   /** A run finished: tell whoever is looking. */
   notify: (job: Job, run: JobRun) => void;
@@ -269,12 +278,43 @@ export class Scheduler {
       for (const job of due) this.plan(job);
       if (due.length > 0) this.hooks.save();
       for (const job of due) {
-        if (job.watch) await this.check(job);
+        if (job.command) await this.runScript(job, "schedule");
+        else if (job.watch) await this.check(job);
         else await this.fire(job, job.prompt, "schedule");
       }
     } finally {
       this.ticking = false;
     }
+  }
+
+  /** Run a script job's command now. No model, no session; the run is recorded, and a failure is told. */
+  async runScript(job: Job, reason: "schedule" | "manual"): Promise<boolean> {
+    if (!job.command || this.inFlight.has(job.id)) return false;
+    this.inFlight.add(job.id);
+    const run: JobRun = {
+      at: Math.floor(this.now() / 1000), finished: null, reason: reason === "manual" ? "manual" : "script", session: null, ok: false, error: null, summary: "",
+    };
+    job.runs = [...(job.runs ?? []), run].slice(-MAX_RUNS);
+    job.last_run = run.at;
+    this.hooks.save();
+    try {
+      const out = this.hooks.script
+        ? await this.hooks.script(job, job.command)
+        : { ok: false, output: "This console cannot run scripts." };
+      run.ok = out.ok;
+      run.error = out.ok ? null : out.output.trim().split("\n").slice(-3).join(" ").slice(0, 280) || "It failed.";
+      run.summary = out.output.trim().replace(/\s+/g, " ").slice(-280);
+    } catch (err: any) {
+      run.error = err?.message ?? String(err);
+    } finally {
+      run.finished = Math.floor(this.now() / 1000);
+      job.last_error = run.error;
+      this.inFlight.delete(job.id);
+      this.hooks.save();
+      // A script that works is not news every time it runs; one that fails is.
+      if (!run.ok) this.hooks.notify(job, run);
+    }
+    return run.ok;
   }
 
   /** Look at a watcher's target; run its prompt if what is there changed. */

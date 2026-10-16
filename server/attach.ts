@@ -14,7 +14,8 @@
  * every turn for the rest of the session. Reading it again later is a tool
  * call, which is the right price for something already answered.
  */
-import { getArtifact, readArtifact, formatSize, type Artifact } from "./artifacts";
+import { getArtifact, listArtifacts, readArtifact, formatSize, type Artifact } from "./artifacts";
+import { folderOfFile, getFolder } from "./folders";
 import { type ChatImage } from "./llm";
 import { describeNotebook, getNotebook } from "./notebooks";
 
@@ -41,7 +42,7 @@ export function attachmentRefs(raw: unknown): AttachmentRef[] {
   if (!Array.isArray(raw)) return [];
   const out: AttachmentRef[] = [];
   const seen = new Set<string>();
-  for (const item of raw.slice(0, 20)) {
+  for (const item of raw.slice(0, MAX_ATTACHED)) {
     /* An id, as a request sends them -- or a ref already made from one, which
        is what an event carries and what the history is rebuilt from every
        turn. Reading only ids here made every attached file vanish the moment
@@ -55,6 +56,35 @@ export function attachmentRefs(raw: unknown): AttachmentRef[] {
     out.push({ id: meta.id, name: meta.name, mime: meta.mime, size: meta.size });
   }
   return out;
+}
+
+/** A message carries at most this many files; more is a wall of chips nobody reads, and a prompt nobody can afford. */
+const MAX_ATTACHED = 20;
+
+/**
+ * The project folders a message asks for, as the files in them: the newest first, as many as the message has room for.
+ * A folder with more than that says how many were left, so the person is told and the agent can list the rest.
+ */
+export function folderFiles(raw: unknown, already: readonly AttachmentRef[]): { files: AttachmentRef[]; folders: string[]; left: Array<{ name: string; left: number }> } {
+  const out: AttachmentRef[] = [];
+  const have = new Set(already.map((a) => a.id));
+  const folders: string[] = [];
+  const left: Array<{ name: string; left: number }> = [];
+  if (!Array.isArray(raw)) return { files: out, folders, left };
+  for (const id of raw.slice(0, 5)) {
+    const folder = typeof id === "string" ? getFolder(id) : null;
+    if (!folder) continue;
+    folders.push(folder.id);
+    let over = 0;
+    for (const a of listArtifacts()) {
+      if (folderOfFile(a) !== folder.id || have.has(a.id)) continue;
+      if (already.length + out.length >= MAX_ATTACHED) { over += 1; continue; }
+      have.add(a.id);
+      out.push({ id: a.id, name: a.name, mime: a.mime, size: a.size });
+    }
+    if (over) left.push({ name: folder.name, left: over });
+  }
+  return { files: out, folders, left };
 }
 
 /** Ref lookups pass straight through; ids from a request are resolved above. */

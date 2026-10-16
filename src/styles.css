@@ -230,6 +230,7 @@ body::before {
 .nb-new input:focus-visible,
 .nb-new textarea:focus-visible,
 .lib-new input:focus-visible,
+.art-rename input:focus-visible,
 .ask-when-text:focus-visible,
 .trig-input:focus-visible,
 .trig-prompt:focus-visible,
@@ -6749,7 +6750,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .pdf-versions li { display: flex; align-items: center; gap: 6px; padding: 5px 0; }
 .pdf-version-main { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text); display: flex; flex-direction: column; }
 .pdf-version-main small { color: var(--text-3); font-size: var(--fs-xs); }
-/* The editor and, over it, the agent's cursor (components/OfficeCursor.tsx). */
+/* The editor; the agent's cursor styles below are shared with the page's pointer (lib/pointer.ts). */
 .office-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .office-cursor-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
 .office-cursor { position: absolute; left: 0; top: 0; will-change: transform; }
@@ -6786,6 +6787,21 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 @keyframes office-click { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .office-click { animation: none; } }
 .game-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* The tool bar's trays (scenes, zoom): the same chips as Music's add-track tray. */
+.gm-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.gm-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: var(--r-pill); cursor: pointer; white-space: nowrap;
+  background: var(--s2); border: 1px solid var(--border-strong); color: var(--text-2); font: 550 var(--fs-sm) var(--sans);
+}
+.gm-chip:hover:not(:disabled) { color: var(--text); background: var(--s3); border-color: var(--accent-line); }
+.gm-chip.is-on { color: var(--text); background: var(--accent-soft); border-color: var(--accent-line); }
+.gm-chip.is-new { border-style: dashed; }
+/* Over the editor when it shows something other than the scene (the rules, the pictures): the way back, now the tab strip is away. */
+.gm-back {
+  position: absolute; left: 12px; bottom: 12px; z-index: 3; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--r-pill); cursor: pointer;
+  background: var(--s2); border: 1px solid var(--border-strong); color: var(--text); font: 550 var(--fs-sm) var(--sans); box-shadow: var(--shadow-lg);
+}
+.gm-back:hover { border-color: var(--accent-line); background: var(--s3); }
 .pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); display: block; }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */
@@ -8118,3 +8134,23 @@ body.is-resizing iframe { pointer-events: none; }
 .agent-thought.is-below > span { bottom: auto; top: 26px; }
 @keyframes thoughtPop { from { opacity: 0; transform: translateY(3px) scale(0.96); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .agent-thought { transition: none; } .agent-thought > span { animation: none; } }
+
+/* Artifacts: a folder's head carries its rename and remove beside the fold. */
+.art-head-row { display: flex; align-items: center; gap: 4px; }
+.art-head-row .art-toggle { flex: 1 1 auto; min-width: 0; }
+.art-rename input {
+  flex: 1 1 auto; min-width: 0; height: 32px; padding: 0 10px;
+  border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--s2);
+  color: var(--text); font: inherit; font-size: var(--fs-md); font-weight: 600;
+}
+.folder-chats {
+  display: flex; align-items: flex-start; gap: 8px; margin-top: 6px;
+  font-size: var(--fs-sm); color: var(--text-2); cursor: pointer;
+}
+.folder-chats input { margin-top: 3px; }
+
+/* Save, in every tool window's bar (components/SaveButton.tsx). */
+.win-save { gap: 5px; }
+.win-save.is-saved { color: var(--live); border-color: rgba(var(--live-rgb), 0.5); }
+.win-save.is-failed { color: var(--danger); border-color: rgba(var(--danger-rgb), 0.45); }
+.st-save-btn { display: contents; }

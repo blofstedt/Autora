@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useFullscreen } from "../lib/fullscreen";
-import { useAgentCursor } from "../lib/agentCursor";
-import { centreOf, pointerGo, pointerRest } from "../lib/pointer";
 import { onStudioCommand } from "../lib/studio";
 import { bounce, Transport } from "../lib/studio/engine";
 import {
@@ -13,6 +11,10 @@ import { Arrangement, headWidth, type Pick } from "./studio/Arrangement";
 import { Mixer } from "./studio/Mixer";
 import { PianoRoll } from "./studio/PianoRoll";
 import { useSong } from "./studio/useSong";
+import { runStudioHand } from "./studio/hand";
+import type { StudioStep } from "../lib/studio/handsteps";
+import { SaveButton, keptAs } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 import {
   IconCopy, IconDownload, IconMaximize, IconMetronome, IconMinimize, IconMinus, IconMusic, IconPause, IconPlay, IconPlus, IconRepeat, IconRotateCcw,
   IconRotateCw, IconScissors, IconSearch, IconSkipBack, IconSliders, IconTable, IconTrash, IconX,
@@ -42,6 +44,13 @@ const timeText = (project: Project, beat: number): string => {
  */
 export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: boolean }) {
   const song = useSong(sessionId);
+  /** Save (and Ctrl+S): the song written now, and kept in Artifacts. */
+  const saveRef = useRef<HTMLSpanElement>(null);
+  const { saveNow } = song;
+  const keep = useCallback(async () => {
+    await saveNow();
+    return keptAs(await fetch(`/api/studio/${encodeURIComponent(sessionId)}/keep`, { method: "POST" }));
+  }, [saveNow, sessionId]);
   const { project } = song;
   const [pick, setPick] = useState<Pick>({ trackId: null, clipId: null });
   const [zoom, setZoom] = useState(3);
@@ -61,24 +70,9 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
   const bw = ZOOMS[zoom]!;
   const head = headWidth(phone);
 
-  /* The agent's pointer goes to each clip it just made or changed -- the ones lit up -- one after another, and presses
-     it, the way a person would pick them. It points only at clips that are on screen. */
-  const [cursorOn] = useAgentCursor();
-  useEffect(() => {
-    if (!cursorOn || song.flash.size === 0) return;
-    let dead = false;
-    void (async () => {
-      await new Promise((r) => setTimeout(r, 140)); // the lit clips are in the page a frame after the set is
-      const els = Array.from(root.current?.querySelectorAll(".st-clip.is-flash") ?? []).slice(0, 4);
-      for (const el of els) {
-        const at = centreOf(el);
-        if (dead || !at) continue;
-        await pointerGo(at, true, el);
-      }
-      if (!dead) pointerRest();
-    })();
-    return () => { dead = true; };
-  }, [song.flash, cursorOn]);
+  /* No pointer is played over clips the server changed: that would be a recording of work already done. With Visible
+     work on, the agent's edits are done here, live, by its hand (`hand` below, src/components/studio/hand.ts); what the
+     server changes (Visible work off) simply appears, the clips it touched lit for a moment. */
 
   if (!transport.current) transport.current = new Transport(() => song.live.current, { onEnd: () => setPlaying(false) });
   const tp = transport.current;
@@ -156,6 +150,12 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
           } else if (cmd.name === "seek") {
             tp.seek(typeof cmd.args.beat === "number" ? cmd.args.beat : 0);
             await reply(true, {});
+          } else if (cmd.name === "hand") {
+            // The agent's edit, done here by its hand with this window's own controls, while the tool call waits.
+            const el = root.current;
+            if (!el) throw new Error("The music window is not on screen.");
+            const steps = Array.isArray(cmd.args.steps) ? (cmd.args.steps as StudioStep[]) : [];
+            await reply(true, await runStudioHand(steps, { root: el, live: () => song.live.current, saveNow: song.saveNow }));
           } else if (cmd.name === "export") {
             const wav = await bounce(song.live.current);
             const name = typeof cmd.args.name === "string" ? cmd.args.name : "song";
@@ -175,7 +175,7 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
       off();
       void fetch(`${base}/ready`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ready: false }), keepalive: true }).catch(() => undefined);
     };
-  }, [base, tp, song.live]);
+  }, [base, tp, song.live, song.saveNow]);
 
   // Tell the server which clip is open, so "this clip" means something to the agent.
   useEffect(() => {
@@ -235,9 +235,11 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
 
   const onKey = (e: ReactKeyboardEvent) => {
     const target = e.target as HTMLElement;
+    const mod = e.metaKey || e.ctrlKey;
+    // Ctrl+S saves wherever the focus is, the song's name field included, as it does everywhere else.
+    if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveRef.current?.querySelector("button")?.click(); return; }
     const typing = target.closest("input, textarea, select") !== null && !(target instanceof HTMLInputElement && target.type === "range");
     if (typing) return;
-    const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) song.redo(); else song.undo(); }
     else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); song.redo(); }
     // On a focused button Space already means "press it".
@@ -346,6 +348,10 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
         />
         <span className={`pdf-bar-note st-save is-${song.save}`}>{song.save === "saving" ? "Saving…" : song.save === "error" ? "Not saved" : "Saved as you go"}</span>
         <div className="spacer" />
+        <span ref={saveRef} className="st-save-btn">
+          <LoadButton app="studio" session={sessionId} phone={phone} />
+          <SaveButton onSave={keep} phone={phone} />
+        </span>
         <button className="st-tool st-export" onClick={() => void exportWav()} disabled={rendering || empty} title="Save the song as a WAV file" aria-label="Export as WAV"><IconDownload size={13} /><span className="st-export-text">{rendering ? "Rendering…" : "Export"}</span></button>
         {phone && (
           <button className="btn icon ghost pdf-full-btn" onClick={() => setFull(!full)} title={full ? "Back to the conversation" : "Full screen"} aria-label={full ? "Back to the conversation" : "Full screen"} aria-pressed={full}>

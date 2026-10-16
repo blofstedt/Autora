@@ -35,8 +35,23 @@ export type ArtifactInfo = {
   size: number;
   ts: number;
   session?: string;
+  /** The folder it was moved to, if the person moved it (otherwise it is in its chat's folder, if that has one). */
+  folder?: string;
   note?: string;
 };
+
+/** A project folder on the Artifacts page. */
+export type ArtifactFolder = { id: string; name: string; ts: number };
+
+/** Everything the Artifacts page lists: the files, the folders, and which folder each chat's files are in. */
+export type ArtifactLibrary = { artifacts: ArtifactInfo[]; folders: ArtifactFolder[]; chats: Record<string, string> };
+
+/** The folder a file is shown in: the one it was moved to, else its chat's (null: loose, or in its chat's own place). */
+export function folderOfFile(file: ArtifactInfo, lib: Pick<ArtifactLibrary, "folders" | "chats">): string | null {
+  if (file.folder && lib.folders.some((f) => f.id === file.folder)) return file.folder;
+  const chat = file.session ? lib.chats[file.session] : undefined;
+  return chat && lib.folders.some((f) => f.id === chat) ? chat : null;
+}
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -51,6 +66,8 @@ const json = (method: string, body: unknown): RequestInit => ({
 
 export const fetchNotebooks = () => call<{ notebooks: Notebook[] }>("/api/notebooks").then((d) => d.notebooks ?? []);
 export const fetchArtifacts = () => call<{ artifacts: ArtifactInfo[] }>("/api/artifacts").then((d) => d.artifacts ?? []);
+export const fetchLibrary = () => call<Partial<ArtifactLibrary>>("/api/artifacts")
+  .then((d): ArtifactLibrary => ({ artifacts: d.artifacts ?? [], folders: d.folders ?? [], chats: d.chats ?? {} }));
 
 export const createNotebook = (title: string, purpose = "") =>
   call<{ notebook: Notebook }>("/api/notebooks", json("POST", { title, purpose })).then((d) => d.notebook);

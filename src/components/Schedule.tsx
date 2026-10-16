@@ -13,6 +13,8 @@ export type Job = {
   name: string;
   cron: string;
   prompt: string;
+  /** A script job: a shell command the console runs itself, with no model (and so no cost). */
+  command?: string | null;
   enabled: boolean;
   created: number;
   last_run: number | null;
@@ -303,7 +305,11 @@ export function Schedule({
               {describeCron(job.cron) && <span>{job.watch ? "checked " : ""}{describeCron(job.cron)}</span>}
             </div>
 
-            <p className="job-prompt">{job.prompt}</p>
+            {job.command ? (
+              <p className="job-prompt"><span className="kchip on">script</span> <code>{job.command}</code></p>
+            ) : (
+              <p className="job-prompt">{job.prompt}</p>
+            )}
 
             <div className="job-foot">
               {job.cron_error ? (
@@ -417,6 +423,9 @@ function JobForm({
   const [cron, setCron] = useState(job?.cron ?? "0 8 * * *");
   const [recur, setRecur] = useState<Recur>(() => parseRecur(job?.cron ?? "0 8 * * *"));
   const [prompt, setPrompt] = useState(job?.prompt ?? "");
+  // A script runs by itself and costs nothing; an agent task wakes a model every time it runs.
+  const [script, setScript] = useState(Boolean(job?.command));
+  const [command, setCommand] = useState(job?.command ?? "");
   const [watchKind, setWatchKind] = useState<WatchKind | "">(job?.watch?.kind ?? "");
   const [target, setTarget] = useState(job?.watch?.target ?? "");
   const [saving, setSaving] = useState(false);
@@ -430,7 +439,7 @@ function JobForm({
 
   const described = describeCron(cron);
   const ready = (cron.trim().startsWith("@") || cron.trim().split(/\s+/).length === 5) &&
-    prompt.trim().length > 0 && (!watchKind || target.trim().length > 0);
+    (script ? command.trim().length > 0 : prompt.trim().length > 0 && (!watchKind || target.trim().length > 0));
 
   /* The time box only exists for the shapes that have one, so it is asked for
      in the same terms. */
@@ -452,10 +461,9 @@ function JobForm({
         e.preventDefault();
         if (!ready || saving) return;
         setSaving(true);
-        await onSave({
-          name, cron, prompt,
-          watch: watchKind ? { kind: watchKind, target: target.trim() } : null,
-        }, job?.id);
+        await onSave(script
+          ? { name, cron, command: command.trim() }
+          : { name, cron, prompt, watch: watchKind ? { kind: watchKind, target: target.trim() } : null }, job?.id);
         setSaving(false);
       }}
     >
@@ -465,33 +473,69 @@ function JobForm({
                placeholder="Nightly summary" />
       </label>
 
-      <label className="jf-row">
-        <span>Task</span>
-        <textarea
-          value={prompt}
-          rows={3}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="What should the agent do when this runs?"
-        />
-      </label>
-
       <div className="jf-row">
-        <span>{watchKind ? "Looks" : "Runs"}</span>
+        <span>Does</span>
         <div className="jf-presets">
-          {([["", "on a schedule"], ["page", "when a page changes"], ["file", "when a file changes"], ["command", "when a command's output changes"]] as const).map(([kind, label]) => (
+          {([[true, "runs a script"], [false, "asks the agent"]] as const).map(([isScript, label]) => (
             <button
               type="button"
-              key={kind || "cron"}
-              className={`kchip ${watchKind === kind ? "on" : ""}`}
-              onClick={() => setWatchKind(kind)}
+              key={label}
+              className={`kchip ${script === isScript ? "on" : ""}`}
+              disabled={job !== null && Boolean(job.command) !== isScript}
+              onClick={() => setScript(isScript)}
             >
               {label}
             </button>
           ))}
         </div>
       </div>
+      <div className="jf-hint">
+        {script
+          ? "A script is a shell command the console runs by itself: no model, no cost. A failure is told to you."
+          : "The agent wakes up every time this runs, which uses tokens. Agents cannot make these; only you can."}
+      </div>
 
-      {watchKind && (
+      {script ? (
+        <label className="jf-row">
+          <span>Command</span>
+          <input
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder="./backup.sh"
+            spellCheck={false}
+          />
+        </label>
+      ) : (
+        <label className="jf-row">
+          <span>Task</span>
+          <textarea
+            value={prompt}
+            rows={3}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="What should the agent do when this runs?"
+          />
+        </label>
+      )}
+
+      {!script && (
+        <div className="jf-row">
+          <span>{watchKind ? "Looks" : "Runs"}</span>
+          <div className="jf-presets">
+            {([["", "on a schedule"], ["page", "when a page changes"], ["file", "when a file changes"], ["command", "when a command's output changes"]] as const).map(([kind, label]) => (
+              <button
+                type="button"
+                key={kind || "cron"}
+                className={`kchip ${watchKind === kind ? "on" : ""}`}
+                onClick={() => setWatchKind(kind)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!script && watchKind && (
         <>
           <label className="jf-row">
             <span>Watch</span>

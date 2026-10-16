@@ -150,7 +150,7 @@ export function useSong(sessionId: string) {
         if (!now.open || now.rev === undefined) return;
         if (now.by === "agent" && now.rev > known.current) {
           if (holding.current > 0) waiting.current = true;
-          else void load(true);
+          else void load(now.quiet !== now.rev);
         } else known.current = Math.max(known.current, now.rev);
       }),
     [load],
@@ -213,8 +213,15 @@ export function useSong(sessionId: string) {
 
   const dismiss = useCallback(() => setNotice(null), []);
 
+  /** Save now, not in a moment: the window's Save. Done when the server has the song as it is. */
+  const saveNow = useCallback(async () => {
+    if (timer.current) clearTimeout(timer.current);
+    for (let waited = 0; saving.current && waited < 30_000; waited += 100) await new Promise((r) => setTimeout(r, 100));
+    if (dirty.current) await flush();
+  }, [flush]);
+
   return useMemo(
-    () => ({ project, live, ready, save, notice, flash, edit, undo, redo, hold, dismiss, canUndo: depth.undo > 0, canRedo: depth.redo > 0 }),
-    [project, ready, save, notice, flash, edit, undo, redo, hold, dismiss, depth],
+    () => ({ project, live, ready, save, notice, flash, edit, undo, redo, hold, dismiss, saveNow, canUndo: depth.undo > 0, canRedo: depth.redo > 0 }),
+    [project, ready, save, notice, flash, edit, undo, redo, hold, dismiss, saveNow, depth],
   );
 }

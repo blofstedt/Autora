@@ -12,6 +12,9 @@
  * They share one file per chat, `work.pcraft` (PhotoCraft's own layered format), kept on this server:
  *
  *   - the agent's tools open it, change it and save it (`runPhotoTool`), and the window is told, and reloads it;
+ *   - except with Visible work on and the window open: then the agent's edit is done in the window, by hand, as a person
+ *     does it (`byHand`: its cursor goes through All tools and the command's dialog, see photo/overlay/autora.rs), and
+ *     the window sends the picture back when it is done;
  *   - the person works in the window as in the app on its own, and a moment after they stop the editor sends the file
  *     back (`PUT /api/photo/:session/doc`), so the agent's next call sees what they did.
  *
@@ -26,7 +29,8 @@ import crypto from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
-import { saveArtifact } from "./artifacts";
+import { keepCopy, saveArtifact } from "./artifacts";
+import { chatTitle } from "./folders";
 import { readFileRef, FileRefError } from "./fileref";
 import type { ChatImage } from "./llm";
 import { stateDir } from "./state";
@@ -81,6 +85,8 @@ interface PhotoState {
   /** The picture's size and layer count, once there is one. */
   size?: { w: number; h: number };
   layers?: number;
+  /** The revision the window made itself, by the agent's hand: it has it already, so it does not load it again. */
+  hand?: number;
 }
 
 interface Entry {
@@ -90,8 +96,8 @@ interface Entry {
   by: "agent" | "person";
   size?: { w: number; h: number };
   layers?: number;
-  /** What the agent is doing, for the window to show: the tool, and a number that goes up per call. */
-  cue: { seq: number; tool: string } | null;
+  /** The revision the window made by the agent's hand (it has it), or -1. */
+  hand: number;
   /** Calls to the command line for this chat, one at a time. */
   line: Promise<unknown>;
 }
@@ -112,7 +118,7 @@ function entryFor(session: string): Entry {
         // no state yet
       }
     }
-    entry = { open: Boolean(saved.open), since: saved.since ?? 0, rev: 0, by: "agent", size: saved.size, layers: saved.layers, cue: null, line: Promise.resolve() };
+    entry = { open: Boolean(saved.open), since: saved.since ?? 0, rev: 0, by: "agent", size: saved.size, layers: saved.layers, hand: -1, line: Promise.resolve() };
     entries.set(session, entry);
   }
   return entry;
@@ -145,7 +151,10 @@ export function photoState(session: string): PhotoState {
   if (!validSession(session)) return { open: false };
   const e = entryFor(session);
   if (!e.open) return { open: false };
-  return { open: true, since: e.since, rev: e.rev, by: e.by, ...(e.size ? { size: e.size } : {}), ...(e.layers !== undefined ? { layers: e.layers } : {}) };
+  return {
+    open: true, since: e.since, rev: e.rev, by: e.by,
+    ...(e.size ? { size: e.size } : {}), ...(e.layers !== undefined ? { layers: e.layers } : {}), ...(e.hand === e.rev ? { hand: e.hand } : {}),
+  };
 }
 
 /** Told after every change to a chat's window or picture, so the page can be told. */
@@ -259,6 +268,78 @@ function noteChange(session: string, by: "agent" | "person", doc?: Inspected) {
   changed(session);
 }
 
+// ------------------------------------------------------------------ by hand --
+
+/* With Visible work on, the agent's edit is done in the window, by hand (photo/overlay/autora.rs): the window is sent it,
+   the first window of the chat to claim it does it (the same chat open in two tabs must not do it twice), and it sends
+   back the picture and what each command did. No window to claim it (none open, or the editor not started) means nobody
+   is watching: the edit runs here, at speed, as with Visible work off. */
+
+let pushed: (session: string, message: Record<string, unknown>) => void = () => undefined;
+let visible: () => boolean = () => false;
+
+type HandResult = { command?: string; ok?: boolean; error?: string; how?: string };
+type Handed = { results: HandResult[]; bytes: Buffer | null; error?: string };
+type HandPending = { session: string; claimed: boolean; resolve: (v: Handed) => void; reject: (e: Error) => void; timer?: NodeJS.Timeout };
+const hands = new Map<string, HandPending>();
+
+/** How long a window has to take the edit before it is done here instead. */
+const CLAIM_MS = 4_000;
+/** A person's pace: seconds per command (find it, open it, set it, OK), and some for a filter that runs a while. */
+const handTime = (n: number) => 30_000 + n * 20_000;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** The edit, done in the window by the agent's hand; null when no window took it. */
+async function byHand(session: string, commands: Array<{ command: string; params?: unknown }>): Promise<Handed | null> {
+  if (!visible() || !entryFor(session).open) return null;
+  const id = crypto.randomBytes(6).toString("hex");
+  const entry: HandPending = { session, claimed: false, resolve: () => undefined, reject: () => undefined };
+  const done = new Promise<Handed>((resolve, reject) => {
+    entry.resolve = resolve;
+    entry.reject = reject;
+  });
+  hands.set(id, entry);
+  const message = { type: "photodesk.hand", session, id, commands: commands.map((c) => ({ id: c.command, params: c.params ?? {} })) };
+  try {
+    // A window that has only just mounted lets the first one go by: it is sent again until one takes it, or nobody does.
+    for (let waited = 0; !entry.claimed && waited < CLAIM_MS; waited += 1_000) {
+      pushed(session, message);
+      await Promise.race([sleep(1_000), done.then(() => undefined, () => undefined)]);
+    }
+    if (!entry.claimed) return null;
+    entry.timer = setTimeout(() => {
+      hands.delete(id);
+      // Slow is not failed: the hand may be in the middle of it, and what it did stays in the window.
+      entry.reject(new Error("The edit in the window took longer than expected. That means it was slow, not that it failed: what was done is in the window. Look with photo_info before you repeat any of it."));
+    }, handTime(commands.length));
+    return await done;
+  } finally {
+    if (entry.timer) clearTimeout(entry.timer);
+    hands.delete(id);
+  }
+}
+
+/** Keep a picture that came from the window: it must be a PhotoCraft file, so the command line opens it first. */
+async function keepFromWindow(session: string, body: Buffer): Promise<Inspected | undefined> {
+  fs.mkdirSync(folder(session), { recursive: true, mode: 0o700 });
+  if (!cliFile()) {
+    fs.writeFileSync(workFile(session), body, { mode: 0o600 });
+    return undefined;
+  }
+  const incoming = `put-${crypto.randomBytes(4).toString("hex")}.pcraft`;
+  fs.writeFileSync(path.join(folder(session), incoming), body, { mode: 0o600 });
+  try {
+    const r = await serve(session, [{ method: "doc.open", params: { path: incoming } }, { method: "doc.inspect" }], { timeoutMs: 60_000 });
+    first(r, "That is not a PhotoCraft picture");
+    const doc = first(r.slice(1), "Could not read the picture") as Inspected;
+    fs.renameSync(path.join(folder(session), incoming), workFile(session));
+    return doc;
+  } finally {
+    fs.rmSync(path.join(folder(session), incoming), { force: true });
+  }
+}
+
 // -------------------------------------------------------------------- tools --
 
 /** The most a tool result may say, in characters: a layer tree or the command list can be large. */
@@ -309,7 +390,6 @@ export async function runPhotoTool(session: string, tool: string, args: Record<s
   try {
     return await inLine(session, async () => {
       const mine = entryFor(session);
-      mine.cue = { seq: (mine.cue?.seq ?? 0) + 1, tool: tool.slice(6) };
       const none = "There is no picture yet. Open one with photo_open (a file, or `new` for a blank canvas).";
 
       switch (tool) {
@@ -418,6 +498,25 @@ export async function runPhotoTool(session: string, tool: string, args: Record<s
             if (typeof id !== "string" || !id) throw new Error("every command needs an `id`");
             return { command: id, ...(s && typeof s === "object" && s.params && typeof s.params === "object" ? { params: s.params } : {}) };
           });
+          const hand = await byHand(session, batch);
+          if (hand && (hand.bytes || hand.results.length > 0)) {
+            const said = hand.results
+              .map((x, i) => `${i + 1}. ${x.command ?? batch[i]?.command ?? "?"}: ${x.ok === false ? `FAILED -- ${x.error ?? "it did not work"}` : x.how === "direct" ? "done (as the editor's command: it has no tile in All tools)" : "done by hand in the window"}`)
+              .join("\n");
+            if (hand.bytes) {
+              const doc = await keepFromWindow(session, hand.bytes);
+              mine.by = "agent";
+              // The window made this revision itself: it is told so, and does not load it again.
+              mine.hand = mine.rev + 1;
+              noteChange(session, "agent", doc);
+            }
+            const bad = hand.results.findIndex((x) => x.ok === false);
+            if (bad >= 0) {
+              return { ok: false, summary: `Stopped at command ${bad + 1} (${batch[bad]?.command}).\n${cut(said, "")}\nThe ones before it were applied, in the window.`, preview: `stopped at ${batch[bad]?.command}` };
+            }
+            if (!hand.bytes) return { ok: false, summary: `The window did the edit but could not send the picture back: ${hand.error ?? "no picture"}.\n${cut(said, "")}` };
+            return { ok: true, summary: `Applied ${batch.length} command${batch.length === 1 ? "" : "s"} by hand in the window, where the person watched.\n${cut(said, "")}\nCall photo_look to see the result.`, preview: batch.length === 1 ? batch[0].command : `${batch.length} commands` };
+          }
           const r = await serve(session, [
             { method: "doc.open", params: { path: WORK } },
             { method: "batch", params: { steps: batch, stopOnError: true } },
@@ -501,7 +600,17 @@ export function photoBriefing(on: boolean): string {
 const rawDoc = express.raw({ type: "*/*", limit: MAX_DOC });
 
 /** The window's side of the wire: its state, its picture, and opening and putting it away. */
-export function photoRoutes(app: Express, opts: { exists: (session: string) => boolean; incognito: (session: string) => boolean; off: () => boolean }) {
+export function photoRoutes(app: Express, opts: {
+  exists: (session: string) => boolean;
+  incognito: (session: string) => boolean;
+  off: () => boolean;
+  /** Send a message to the chat's open pages (not kept in its log). */
+  push?: (session: string, message: Record<string, unknown>) => void;
+  /** Whether Visible work is on: then the agent's edits are done in the window, by hand. */
+  visible?: () => boolean;
+}) {
+  if (opts.push) pushed = opts.push;
+  if (opts.visible) visible = opts.visible;
   const known = (req: Request, res: Response): string | null => {
     const id = String(req.params.session);
     if (!validSession(id) || !opts.exists(id)) {
@@ -530,7 +639,6 @@ export function photoRoutes(app: Express, opts: { exists: (session: string) => b
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("X-Photo-Rev", String(e.rev));
-    if (e.by === "agent" && e.cue) res.setHeader("X-Photo-Cue", JSON.stringify(e.cue));
     res.send(fs.readFileSync(file));
   });
 
@@ -569,6 +677,64 @@ export function photoRoutes(app: Express, opts: { exists: (session: string) => b
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
     }
+  });
+
+  /* The person pressed Save: the picture as it is now, kept in Artifacts as a PNG (the layered file stays the
+     window's). The agent is not asked and not woken. */
+  app.post("/api/photo/:session/keep", async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    if (opts.off()) return res.status(403).json({ error: "Autora Photo is switched off on the Tools page." });
+    if (!fs.existsSync(workFile(id))) return res.status(404).json({ error: "There is no picture yet." });
+    if (!cliFile()) return res.status(503).json({ error: "Autora Photo's command line is not built into this server." });
+    const out = `keep-${crypto.randomBytes(4).toString("hex")}.png`;
+    try {
+      const data = await inLine(id, async () => {
+        const r = await serve(id, [{ method: "doc.open", params: { path: WORK } }, { method: "doc.save", params: { path: out } }], { timeoutMs: 60_000 });
+        first(r, "Could not open the picture");
+        first(r.slice(1), "Could not save it as a PNG");
+        return fs.readFileSync(path.join(folder(id), out));
+      });
+      const art = keepCopy({ session: id, title: chatTitle(id), fallback: "Picture", ext: "png", data, mime: "image/png", note: "Saved from Autora Photo" });
+      res.json({ artifact: art.id, name: art.name });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      fs.rmSync(path.join(folder(id), out), { force: true });
+    }
+  });
+
+  /* The agent's edit, by hand: the first window to ask does it. */
+  app.post("/api/photo/:session/hand/claim", (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const p = hands.get(String(req.query.id ?? ""));
+    const won = Boolean(p && p.session === id && !p.claimed);
+    if (won && p) p.claimed = true;
+    res.json({ won });
+  });
+
+  /* ...and its answer: the picture as the body, what each command did in X-Photo-Hand. */
+  app.post("/api/photo/:session/hand/reply", rawDoc, (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const p = hands.get(String(req.query.id ?? ""));
+    if (!p || p.session !== id || !p.claimed) return res.status(404).json({ error: "No such edit." });
+    let said: { results?: unknown; error?: unknown } = {};
+    try {
+      said = JSON.parse(decodeURIComponent(String(req.get("X-Photo-Hand") ?? "")));
+    } catch {
+      // nothing said
+    }
+    const results = (Array.isArray(said.results) ? said.results : []).slice(0, 200).map((r: any): HandResult => ({
+      command: typeof r?.command === "string" ? r.command.slice(0, 120) : undefined,
+      ok: r?.ok !== false,
+      error: typeof r?.error === "string" ? r.error.slice(0, 600) : undefined,
+      how: r?.how === "direct" ? "direct" : "ui",
+    }));
+    const body = req.body as Buffer;
+    p.resolve({ results, bytes: Buffer.isBuffer(body) && body.length > 0 ? body : null, error: typeof said.error === "string" ? said.error.slice(0, 600) : undefined });
+    res.json({ ok: true });
   });
 
   /* The person opens it from the toolbox: the editor, with whatever picture the chat has. */

@@ -31,6 +31,7 @@ import type { ChatImage } from "./llm";
 import { FileRefError, readFileRef, type FileInput } from "./fileref";
 import { lookAtPdf, type DeskHooks } from "./pdf";
 import type { OfficeHooks } from "./officedesk";
+import { handSteps, stepWords, type HandReply, type HandStep } from "./officehand";
 import { APP_OF, OfficeRenderError, editorBuilt, renderToPdf } from "./officerender";
 import { PdfRenderError } from "./pdfrender";
 
@@ -72,6 +73,9 @@ interface OfficeContext {
   held?: (surface: "office", subject: string) => string | null;
   /** Kinds of document the person has switched off on the Tools page (Autora Pages, Sheets or Slides). */
   off?: Kind[];
+  /** With Visible work on: type these steps in the open window, by hand (server/officehand.ts). Null when no window
+      took them -- nobody is watching -- and the change simply appears. */
+  hand?: (kind: Kind, steps: HandStep[]) => Promise<HandReply | null>;
   cancelled: () => boolean;
   onCancel: (stop: () => void) => void;
 }
@@ -592,6 +596,23 @@ async function editTool(args: Record<string, any>, ctx: OfficeContext): Promise<
     const refreshed = kind === "xlsx" ? await refreshFormulas(p, work, ctx) : "";
     const data = fs.readFileSync(p);
     const name = outputName(file, kind, args.output, "edited");
+    /* With Visible work on and the document open in its window, what the edit changes in the words is typed there
+       first, live, by the agent's hand; then the file the operations made goes in, so the document is exactly that
+       (and what was not typing -- styles, tables, pictures -- appears then). */
+    let typed = "";
+    if (inWindow && ctx.hand) {
+      const steps = await handSteps(kind, file.data, data);
+      const reply = steps.length ? await ctx.hand(kind, steps) : null;
+      if (reply) {
+        const done = reply.results.filter((r) => r.ok).map((r) => stepWords(steps[r.i])).filter(Boolean);
+        const missed = reply.results.filter((r) => !r.ok).map((r) => `${stepWords(steps[r.i])} (${r.error ?? "not done"})`);
+        typed = done.length
+          ? ` Typed by hand in the ${WINDOW[kind]} window, where the person watched: ${done.slice(0, 8).join("; ")}${done.length > 8 ? `; and ${done.length - 8} more` : ""}.`
+          : ` The window could not type it by hand${reply.error ? ` (${reply.error})` : ""}.`;
+        if (missed.length) typed += ` Not typed (they appear with the finished file): ${missed.slice(0, 5).join("; ")}.`;
+        if (steps.length && done.length) typed += " The finished file, with anything that was not typing, is in the window now.";
+      }
+    }
     const saved = deliver(ctx, name, data, MIME[kind], `${file.name} edited`);
     showInWindow(ctx, file.name, data, saved, file, "Changed by the agent");
     const there = ctx.win
@@ -599,7 +620,7 @@ async function editTool(args: Record<string, any>, ctx: OfficeContext): Promise<
       : "";
     return {
       ok: true,
-      summary: `${run.env?.summary ?? "Edited."}${refreshed} ${savedLine(saved)}${there}${warn ? ` ${warn}` : ""}${failures}${meanwhile(ctx, kind)}`.trim(),
+      summary: `${run.env?.summary ?? "Edited."}${refreshed} ${savedLine(saved)}${there}${typed}${warn ? ` ${warn}` : ""}${failures}${meanwhile(ctx, kind)}`.trim(),
       preview: `${saved.name} edited`,
     };
   });

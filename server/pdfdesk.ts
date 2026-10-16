@@ -509,12 +509,60 @@ function squash(news: string[]): string[] {
   return out;
 }
 
+/* The agent's hand is at work in the window (Visible work: server/pdfhand.ts): the next save the editor makes is its
+   work, not the person's. It becomes one change of the agent's, up for review like any other, and the hand is told. */
+const handSaves = new Map<string, { label: string; saved: boolean; done: (ok: boolean) => void }>();
+/** The editor may write the file more than once for one Save (the pages, then the file): what follows the hand's own
+    save within this long is still its work. */
+const HAND_SAVE_GRACE_MS = 5_000;
+
+/** Wait for the window's next save, made by the agent's hand. `end` stops attributing saves to it (after a grace). */
+export function expectHandSave(session: string, label: string): { saved: Promise<boolean>; end: () => void } {
+  handSaves.get(session)?.done(false);
+  let resolve: (ok: boolean) => void = () => undefined;
+  const saved = new Promise<boolean>((r) => { resolve = r; });
+  const entry = { label, saved: false, done: (ok: boolean) => resolve(ok) };
+  handSaves.set(session, entry);
+  return {
+    saved,
+    end: () => {
+      resolve(false);
+      const drop = () => { if (handSaves.get(session) === entry) handSaves.delete(session); };
+      if (entry.saved) setTimeout(drop, HAND_SAVE_GRACE_MS);
+      else drop();
+    },
+  };
+}
+
 /** The pages changed in the window: deleted, turned, reordered, merged. */
 export function personBase(session: string, data: Buffer, items: unknown[], cwd: string): string | null {
   const desk = load(session);
   if (!desk) return "There is no PDF open in the window.";
   if (!isPdf(data)) return "That is not a PDF.";
   if (data.byteLength > MAX_ARTIFACT_BYTES) return "That file is over 50 MB.";
+  const hand = handSaves.get(session);
+  if (hand) {
+    // The agent's own work, done by hand in the editor: kept as its change, which the person can decline.
+    keepBase(session, desk);
+    const before = desk.baseRev;
+    desk.base = data;
+    desk.items = [];
+    desk.compose = null;
+    desk.outline = null;
+    desk.baseRev++;
+    desk.rev++;
+    // One change of the agent's, however many writes the editor's Save took.
+    if (!hand.saved) {
+      desk.marks.push({ id: markId(), kind: "page", page: 1, label: hand.label, beforeBaseRev: before });
+      snapshot(session, desk, hand.label, "agent");
+      hand.saved = true;
+    }
+    persist(session);
+    changed(session);
+    rewrite(session, cwd);
+    hand.done(true);
+    return null;
+  }
   const kept = new Map(desk.items.map((i) => [i.id, i]));
   desk.base = data;
   desk.items = items.slice(0, 2000).map(cleanItem).filter((i): i is DeskItem => Boolean(i)).map((i) => {

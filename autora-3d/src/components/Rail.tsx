@@ -18,6 +18,8 @@ import {
   LayoutGrid,
   Layers3,
   Library,
+  LogIn,
+  LogOut,
   Move,
   Move3d,
   Octagon,
@@ -78,6 +80,11 @@ export interface RailProps extends TopBarProps {
   onIsolate: () => void;
   /** The selection is already a group, so the Group tool becomes Ungroup. */
   grouped: boolean;
+  /** A group is open for editing from the inside. */
+  entered: boolean;
+  onEnterGroup: () => void;
+  /** A desktop shows the library in the parts pane: this opens it there. */
+  onOpenLibrary: () => void;
   hiddenCount: number;
   onHide: () => void;
   onShowHidden: () => void;
@@ -119,7 +126,7 @@ const PAD = { phone: 8, desktop: 5 };
 const KEYS: Record<string, string> = { draw: 'D', move: 'M', group: 'G', repeat: 'R', join: 'J', subtract: 'S', isolate: 'I', hide: 'H', delete: 'Del' };
 const nameOf = (t: { id: string; label: string; disabled?: boolean; hint?: string }) => (t.disabled && t.hint ? `${t.label} · ${t.hint}` : KEYS[t.id] ? `${t.label} (${KEYS[t.id]})` : t.label);
 
-const usePhone = () => {
+export const usePhone = () => {
   const q = '(max-width: 639px)';
   const [phone, setPhone] = useState(() => matchMedia(q).matches);
   useEffect(() => {
@@ -155,9 +162,10 @@ export default function Rail(props: RailProps) {
   const tools: Tool[] = [
     { id: 'shapes', label: 'Shape', group: 'Build', icon: Shapes, color: C.shape, phone: true, desktop: true, on: openId === 'shapes', run: toggleOpen('shapes') },
     { id: 'draw', label: 'Draw', group: 'Build', icon: PenTool, color: C.draw, phone: true, desktop: true, on: props.drawOn, run: props.onDraw },
-    { id: 'library', label: 'Library', group: 'Build', icon: Library, color: C.gold, on: openId === 'library', run: toggleOpen('library') },
+    { id: 'library', label: 'Library', group: 'Build', icon: Library, color: C.gold, on: openId === 'library', run: phone ? toggleOpen('library') : props.onOpenLibrary },
     { id: 'move', label: 'Move', group: 'Edit', icon: Move3d, color: C.select, phone: true, desktop: true, on: props.moveOn, disabled: n < 1, hint: picked, run: props.onToggleMove },
     { id: 'group', label: props.grouped ? 'Ungroup' : 'Group', group: 'Edit', icon: props.grouped ? Ungroup : Boxes, color: C.text, phone: true, desktop: true, disabled: !props.grouped && n < 2, hint: addHint, run: props.onGroup },
+    { id: 'enter', label: props.entered ? 'Exit group' : 'Edit inside', group: 'Edit', icon: props.entered ? LogOut : LogIn, color: C.text, on: props.entered, disabled: !props.entered && !props.grouped, hint: 'Select a group', run: props.onEnterGroup },
     { id: 'repeat', label: 'Repeat', group: 'Edit', icon: Repeat, color: C.note, phone: true, desktop: true, on: props.repeatOn, disabled: !props.repeatOn && n < 1, hint: picked, run: props.onPattern },
     { id: 'join', label: 'Join', group: 'Combine', icon: Combine, color: C.insert, desktop: true, disabled: n < 2, hint: addHint, run: props.onJoin },
     { id: 'subtract', label: 'Subtract', group: 'Combine', icon: SquareMinus, color: C.remove, desktop: true, disabled: n < 2, hint: addHint, run: props.onSubtract },
@@ -242,7 +250,7 @@ export default function Rail(props: RailProps) {
       case 'library':
         return (
           <div className="p-3 w-[min(19rem,calc(100vw-1.5rem))]">
-            <p className="px-2 pb-2 text-xs text-slate-400">{props.library.length ? 'Your objects · placed copies stay linked · globe = in every project' : 'Nothing saved yet. Select a group or a shape and use Save to library.'}</p>
+            <p className="px-2 pb-2 text-xs text-slate-400">{props.library.length ? 'Your objects · tap to add a copy · globe = in every project' : 'Nothing saved yet. Select a group or a shape and use Save to library.'}</p>
             <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
               {props.library.map((item) => (
                 <div key={item.id} className="flex items-center gap-1">

@@ -16,7 +16,7 @@ import {
   saneMcp, recordToolFeed, type CostParts,
   DEFAULT_PROMPT, standingRules, } from "./server/state";
 import { redactCredentials } from "./server/credentials";
-import { declined, guardWorthy, irreversible, judgeAction, matchesAskRule, shouldHold } from "./server/guard";
+import { declined, guardWorthy, irreversible, judgeAction, makesTimerOrWake, matchesAskRule, shouldHold } from "./server/guard";
 import { prune } from "./server/retention";
 import { diskUsage } from "./server/host";
 import {
@@ -81,9 +81,10 @@ import { lookColors, readLook } from "./src/lib/agentlook";
 import { readActivity } from "./src/lib/activity";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
+import { chatTitles, folderOfChat, setChatFolder } from "./server/folders";
 import { systemRoutes } from "./server/routes/system";
 import {
-  attachmentNote, attachmentRefs, notebookNote, notebookRefs, picturesFor, type AttachmentRef, type NotebookRef,
+  attachmentNote, attachmentRefs, folderFiles, notebookNote, notebookRefs, picturesFor, type AttachmentRef, type NotebookRef,
 } from "./server/attach";
 import {
   MAX_FRAME_BYTES, clearFrame, frameImage, latestFrame, liveViewNote, putFrame,
@@ -133,6 +134,8 @@ import {
   addressIn, DEVICES, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, } from "./server/preview";
 import { deskDocument, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase } from "./server/pdfdesk";
+import { pdfHandRoutes } from "./server/pdfhand";
+import { officeHandRoutes } from "./server/officehand";
 import { staticDir } from "./server/staticfiles";
 import { memoryRoutes } from "./server/routes/memory";
 import { healthRoutes } from "./server/routes/health";
@@ -148,12 +151,13 @@ import { keyRoutes } from "./server/routes/keys";
 import { dropOpencut, onOpencutChange, opencutRoutes, opencutState, serveOpencut, videoBriefing } from "./server/opencut";
 import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spectraUpgrade } from "./server/spectra";
 import { newFileRoutes } from "./server/newfile";
+import { loadFileRoutes } from "./server/loadfile";
 import { cadRoutes, cadState, dropCad, onCadChange, serveCad } from "./server/caddesk";
 import { dropGame, gameRoutes, gameState, onGameChange, serveGame } from "./server/gamedesk";
 import { dropPhoto, onPhotoChange, photoRoutes, photoState, servePhoto } from "./server/photodesk";
 import { dropTerm, onTermChange, termRoutes, termState, termUpgrade } from "./server/termdesk";
-import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote } from "./server/studio";
-import { windowOff } from "./server/tools";
+import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote, studioVisible } from "./server/studio";
+import { joinProjects, windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
 import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
 import {
@@ -2938,6 +2942,15 @@ const scheduler = new Scheduler(jobs, {
     return { session: session.id, done };
   },
   observe,
+  /* A script job: the command, run by the console itself, with no model and no chat. Looked at once more here, as
+     the agent's tool looks at it when it is set, in case the job was edited since. Output is cut to its tail. */
+  script: async (job, command) => {
+    const why = makesTimerOrWake(command, true);
+    if (why) return { ok: false, output: `Not run: it contains ${why}.` };
+    const out = await runShellQuiet(command, 300);
+    log("info", "schedule", `script "${job.name}" ${out.ok ? "finished" : "failed"}`);
+    return { ok: out.ok, output: out.output.slice(-4000) };
+  },
   save: () => saveJobs(),
   notify: (job, run) => {
     /* A job held back by the day\u0027s budget is not a failure and is worth
@@ -3439,14 +3452,15 @@ async function shareCheck(session: Session): Promise<void> {
 
 /** A new schedule, planned and saved: from the Schedules page, or from an
     offer the person said yes to. */
-function createJob(input: { name?: string; cron?: string; prompt: string; enabled?: boolean; watch?: unknown }): Job {
+function createJob(input: { name?: string; cron?: string; prompt?: string; command?: string; enabled?: boolean; watch?: unknown }): Job {
   const job: Job = {
     // With a random tail: two jobs saved in the same millisecond (a quick
     // double-click) shared an id, and editing one edited both.
     id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     name: (input.name || "").trim() || "Scheduled Task",
     cron: (input.cron || "").trim() || "0 * * * *",
-    prompt: input.prompt.trim(),
+    prompt: (input.prompt ?? "").trim(),
+    command: (input.command ?? "").trim() || null,
     enabled: input.enabled !== undefined ? Boolean(input.enabled) : true,
     created: Math.floor(Date.now() / 1000),
     last_run: null,
@@ -3454,7 +3468,8 @@ function createJob(input: { name?: string; cron?: string; prompt: string; enable
     last_error: null,
     next_run: null,
     cron_error: null,
-    watch: saneWatch(input.watch),
+    // A script has no model to wake, so nothing to watch for it.
+    watch: (input.command ?? "").trim() ? null : saneWatch(input.watch),
     last_seen: null,
     runs: [],
   };
@@ -4937,6 +4952,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             name: j.name,
             cron: j.cron,
             prompt: j.prompt,
+            command: j.command ?? null,
             enabled: j.enabled,
             watch: j.watch ? { kind: j.watch.kind, target: j.watch.target } : null,
             next_run: j.next_run,
@@ -4950,7 +4966,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
               name: input.name.trim().slice(0, 80) || "Scheduled Task",
               cron: input.cron.trim(),
-              prompt: input.prompt.trim(),
+              // What an agent makes is a script: no prompt, no watcher, nothing that wakes a model.
+              prompt: "",
+              command: input.command.trim(),
               enabled: input.enabled !== false,
               created: Math.floor(Date.now() / 1000),
               last_run: null,
@@ -4958,14 +4976,13 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               last_error: null,
               next_run: null,
               cron_error: null,
-              watch: saneWatch(input.watch),
+              watch: null,
               last_seen: null,
               runs: [],
             };
             scheduler.plan(made);
             jobs.push(made);
             saveJobs();
-            if (made.watch) void scheduler.check(made);
             log("info", "schedule", `${session.id} set up "${made.name}" (${made.cron})`);
             emitEvent(session, "system.log", "agent", {
               event: "schedule.made",
@@ -4980,16 +4997,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             const job = jobs.find((j) => j.id === id);
             if (!job) return { ok: false, error: `There is no job ${id}.` };
             if (typeof patch.name === "string" && patch.name.trim()) job.name = patch.name.trim().slice(0, 80);
-            if (typeof patch.prompt === "string" && patch.prompt.trim()) job.prompt = patch.prompt.trim();
-            if (typeof patch.cron === "string" && patch.cron.trim()) job.cron = patch.cron.trim();
-            if (patch.enabled !== undefined) job.enabled = Boolean(patch.enabled);
-            if (patch.watch !== undefined) {
-              const watch = saneWatch(patch.watch);
-              const changed = JSON.stringify(watch) !== JSON.stringify(job.watch ?? null);
-              job.watch = watch;
-              if (changed) job.last_seen = null;
-              if (changed && watch) void scheduler.check(job);
+            // Only a script is the agent's to change; a task that wakes a model is the person's (it may still be paused).
+            if (job.command) {
+              if (typeof patch.command === "string" && patch.command.trim()) job.command = patch.command.trim();
+              if (typeof patch.cron === "string" && patch.cron.trim()) job.cron = patch.cron.trim();
             }
+            if (patch.enabled !== undefined) job.enabled = Boolean(patch.enabled);
             scheduler.plan(job);
             saveJobs();
             return { ok: true, error: job.cron_error };
@@ -6239,6 +6252,10 @@ async function startServer() {
   /** Gone for good: its log, its pictures, and its browser. */
   // The PDF window: its pages, and what the person changes in it.
   deskRoutes(app, { exists: (id) => sessions.has(id), cwd: () => terminalDir() });
+  // Visible work in the PDF window: the agent's pdf_edit, done there by hand.
+  pdfHandRoutes(app, { exists: (id) => sessions.has(id), push: (id, message) => sendEphemeral(id, message), visible: () => state.agentCursor });
+  // ...and in Pages, Sheets and Slides: office_edit's typing, done there by hand.
+  officeHandRoutes(app, { exists: (id) => sessions.has(id), push: (id, message) => sendEphemeral(id, message), visible: () => state.agentCursor });
 
   /* The PDF window's editor (server/spectra.ts): Spectra-PDF's own UI and its
      own PDF engine, with the desk above as the document both sides share. */
@@ -6265,12 +6282,17 @@ async function startServer() {
     exists: (id: string) => sessions.has(id),
     incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
     off: () => windowOff("cad_scene_get"),
+    push: (id: string, message: Record<string, unknown>) => sendEphemeral(id, message),
+    visible: () => state.agentCursor,
+    watched,
   });
   // Autora Photo: the photo window's picture, and opening and putting it away.
   photoRoutes(app, {
     exists: (id: string) => sessions.has(id),
     incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
     off: () => windowOff("photo_look"),
+    push: (id: string, message: Record<string, unknown>) => sendEphemeral(id, message),
+    visible: () => state.agentCursor,
   });
   // Autora Games: the game window's game and files, and opening and putting it away.
   gameRoutes(app, {
@@ -6285,6 +6307,7 @@ async function startServer() {
     off: () => windowOff("studio_look"),
     push: (id: string, message: Record<string, unknown>) => sendEphemeral(id, message),
   });
+  studioVisible(() => state.agentCursor);
 
   /* File -> Export PDF in the Office window: the server lays the document out (the same pages office_pdf
      makes), and the PDF opens in the PDF editor -- PDFs always go to our own. */
@@ -6314,6 +6337,17 @@ async function startServer() {
 
   /* The toolbox beside the message box: a tool the person taps there makes a
      blank file and opens its window, without spending a turn. */
+  /* ...and its other half: a saved file picked from Artifacts, loaded into an app's window. */
+  loadFileRoutes(app, {
+    exists: (id) => sessions.has(id),
+    incognito: (id) => Boolean(sessions.get(id)?.incognito),
+    off: (which) => {
+      const s = toolSettings();
+      if (which === "pdf") return windowOff("pdf_open", s);
+      if (which === "pages" || which === "sheets" || which === "slides") return windowOff("office_open", s) || !s[which].enabled;
+      return windowOff(`${which}_open`, s);
+    },
+  });
   newFileRoutes(app, {
     exists: (id) => sessions.has(id),
     incognito: (id) => Boolean(sessions.get(id)?.incognito),
@@ -6450,6 +6484,7 @@ async function startServer() {
 
   // 3b'. Artifacts: what the agent made and what you uploaded, kept on disk.
 
+  chatTitles((id) => sessions.get(id)?.title?.trim() || null);
   artifactRoutes(app, {
     rawBody: express.raw({ type: () => true, limit: MAX_ARTIFACT_BYTES }),
     log,
@@ -6583,11 +6618,20 @@ async function startServer() {
     /* Files picked in the composer are uploaded before the message goes, so
        what arrives here are artifact ids. A message can be nothing but a
        picture: "look at this" is a complete request. */
-    const attachments = attachmentRefs(req.body?.attachments);
+    const asFiles = attachmentRefs(req.body?.attachments);
+    /* A project folder picked in the composer comes as the files in it, newest first, as many as fit; a message that is
+       nothing but a folder is a whole request, as a message of nothing but a file is. */
+    const fromFolders = folderFiles(req.body?.folders, asFiles);
+    const attachments = [...asFiles, ...fromFolders.files];
     const notebooks = notebookRefs(req.body?.notebooks);
     if (!text && attachments.length === 0 && notebooks.length === 0) {
-      return res.status(400).json({ error: "Empty message" });
+      return res.status(400).json({ error: fromFolders.folders.length ? "That folder has nothing in it." : "Empty message" });
     }
+    // The chat works in the project it was handed, even before a file in it is touched.
+    if (!session.incognito) for (const folder of fromFolders.folders) if (!folderOfChat(session.id)) setChatFolder(session.id, folder);
+    // A file given to this chat is this chat's work: an upload becomes its,
+    // and one from another project brings this chat into that project's folder.
+    if (!session.incognito && attachments.length) joinProjects(session.id, attachments.map((a) => a.id));
 
     /* Sent while the agent is working: unless the person asked to interrupt
        (or it carries files, is dictated, or is a command), it is added to the
@@ -6623,7 +6667,7 @@ async function startServer() {
        keyboard. It is the same turn otherwise, and only the wait changes. */
     const spoken = req.body?.spoken === true;
 
-    res.json({ ok: true, queued: false });
+    res.json({ ok: true, queued: false, ...(fromFolders.left.length ? { left: fromFolders.left } : {}) });
     void startTurn(session, text, attachments, { spoken, ...(notebooks.length ? { notebooks } : {}) });
   });
 

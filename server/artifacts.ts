@@ -16,6 +16,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { placeKey } from "./folders";
 import { stateDir } from "./state";
 
 export type ArtifactOrigin = "agent" | "user";
@@ -28,8 +29,12 @@ export interface Artifact {
   size: number;
   /** Milliseconds since the epoch. */
   ts: number;
-  /** The session it was made in, when there was one. */
+  /** The chat it belongs to: the one it was made in, or for an upload, the
+      first chat that worked on it. */
   session?: string;
+  /** The folder it was moved to by hand (./folders.ts); absent, it is in
+      its chat's folder. */
+  folder?: string;
   /** A line about what it is: the prompt behind an image, say. */
   note?: string;
 }
@@ -138,6 +143,9 @@ export function saveArtifact(input: {
   mime?: string;
   session?: string;
   note?: string;
+  /** The person's Save in a window: a copy kept that the next Save of the
+      same name in the same folder replaces, whoever made the one there. */
+  keep?: boolean;
 }): Artifact {
   if (input.data.byteLength > MAX_ARTIFACT_BYTES) {
     throw new Error(`Too large: artifacts are capped at ${MAX_ARTIFACT_BYTES / 1024 / 1024} MB.`);
@@ -157,13 +165,16 @@ export function saveArtifact(input: {
   // Saving the same name again from the agent rewrites that file instead of
   // leaving a near-identical copy beside it: the id and its place in the list
   // stay, so a link, a note or an artifact id the person already has still
-  // points at the thing. Uploads are exempt -- two files with one name can be
-  // two different files, and neither is ours to overwrite.
-  const at = input.origin === "agent" ? list.findIndex((a) => a.origin === "agent" && a.name === name) : -1;
+  // points at the thing. Only in the same folder: two projects each with a
+  // report.pdf have two reports. Uploads are exempt -- two files with one name
+  // can be two different files, and neither is ours to overwrite.
+  const at = input.keep
+    ? list.findIndex((a) => a.name === name && placeKey(a) === placeKey({ session: input.session }))
+    : input.origin === "agent" ? indexOfSame(list, name, input.session) : -1;
   fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
   if (at >= 0) {
     const prev = list[at];
-    const next: Artifact = { ...prev, mime: artifact.mime, size: artifact.size, ts: artifact.ts };
+    const next: Artifact = { ...prev, origin: artifact.origin, mime: artifact.mime, size: artifact.size, ts: artifact.ts };
     if (artifact.session) next.session = artifact.session;
     // A note describes the file as it was; one that came with this save
     // replaces it, and a save without one does not leave the old behind.
@@ -177,6 +188,38 @@ export function saveArtifact(input: {
   list.push(artifact);
   persist();
   return artifact;
+}
+
+function indexOfSame(list: Artifact[], name: string, session?: string): number {
+  const here = placeKey({ session });
+  return list.findIndex((a) => a.origin === "agent" && a.name === name && placeKey(a) === here);
+}
+
+/** The agent's file of this name in the folder a save from this chat would
+    land in: the one a save would rewrite. */
+export function sameArtifact(name: string, session?: string): Artifact | null {
+  const list = load();
+  return list[indexOfSame(list, cleanName(name), session)] ?? null;
+}
+
+/** Put a file in a folder by hand, or with null back in its chat's. */
+export function moveArtifact(id: string, folder: string | null): Artifact | null {
+  const a = load().find((x) => x.id === id);
+  if (!a) return null;
+  if (folder) a.folder = folder;
+  else delete a.folder;
+  persist();
+  return a;
+}
+
+/** An upload a chat works on belongs to that chat from then on, so it shows
+    in that chat's folder. A file that already has a chat keeps it. */
+export function claimArtifact(id: string, session: string): boolean {
+  const a = load().find((x) => x.id === id);
+  if (!a || a.session) return false;
+  a.session = session;
+  persist();
+  return true;
 }
 
 export function deleteArtifact(id: string): boolean {
@@ -193,4 +236,16 @@ export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * The person pressed Save in a window: what is there now, kept in Artifacts in
+ * this chat's folder, named after the chat. Each Save replaces the last one.
+ */
+export function keepCopy(input: { session: string; title: string | null; fallback: string; ext: string; data: Buffer; mime?: string; note: string }): Artifact {
+  const base = cleanName(input.title ?? "", input.fallback).replace(/\.[a-z0-9]{1,5}$/i, "").slice(0, 80) || input.fallback;
+  return saveArtifact({
+    origin: "user", name: `${base}.${input.ext}`, data: input.data, mime: input.mime,
+    session: input.session, note: input.note, keep: true,
+  });
 }

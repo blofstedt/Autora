@@ -17,7 +17,7 @@ export function jobRoutes(app: Express, deps: {
   saveJobs: () => void;
   jobView: (job: Job) => unknown;
   saneWatch: (raw: unknown) => JobWatch | null;
-  createJob: (input: { name?: string; cron?: string; prompt: string; enabled?: boolean; watch?: unknown }) => Job;
+  createJob: (input: { name?: string; cron?: string; prompt?: string; command?: string; enabled?: boolean; watch?: unknown }) => Job;
   /** What automated runs have spent today (rolled over if the day changed). */
   todaysLedger: () => AutomationLedger;
   /** How many automated turns are running now. */
@@ -43,11 +43,13 @@ export function jobRoutes(app: Express, deps: {
 
   app.post("/api/jobs", (req: Request, res: Response) => {
     const prompt = (req.body?.prompt || "").trim();
-    if (!prompt) return res.status(400).json({ error: "A task needs a prompt" });
+    const command = String(req.body?.command ?? "").trim();
+    if (!prompt && !command) return res.status(400).json({ error: "A task needs a prompt, or a command to run" });
     const newJob = createJob({
       name: String(req.body?.name ?? ""),
       cron: String(req.body?.cron ?? ""),
-      prompt,
+      prompt: command ? "" : prompt,
+      command,
       enabled: req.body?.enabled,
       watch: req.body?.watch,
     });
@@ -59,7 +61,8 @@ export function jobRoutes(app: Express, deps: {
     if (!job) return res.status(404).json({ error: "Job not found" });
 
     if (typeof req.body.name === "string") job.name = req.body.name;
-    if (typeof req.body.prompt === "string") job.prompt = req.body.prompt;
+    if (typeof req.body.prompt === "string" && !job.command) job.prompt = req.body.prompt;
+    if (typeof req.body.command === "string" && job.command && req.body.command.trim()) job.command = req.body.command.trim();
     if (req.body.enabled !== undefined) job.enabled = Boolean(req.body.enabled);
     if (typeof req.body.cron === "string") job.cron = req.body.cron.trim();
     let rewatch = false;
@@ -89,6 +92,10 @@ export function jobRoutes(app: Express, deps: {
     const job = jobs.find((j) => j.id === req.params.id);
     if (!job) return res.status(404).json({ error: "Job not found" });
     if (scheduler.running(job.id)) return res.status(409).json({ error: "It is already running." });
+    if (job.command) {
+      const ok = await scheduler.runScript(job, "manual");
+      return ok ? res.json({ ok: true, output: job.runs?.at(-1)?.summary ?? "" }) : res.status(400).json({ error: job.last_error ?? "It failed." });
+    }
     if (job.watch) {
       const outcome = await scheduler.check(job, true);
       if (outcome === "error") return res.status(400).json({ error: job.last_error });

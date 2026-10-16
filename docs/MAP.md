@@ -95,7 +95,7 @@ task is about the PDF editor's shim or overlay.
 | Autora 3D | `caddesk.ts` (the model per chat, routes, `runCadTool`), `specs/cad.ts` (GENERATED tool list), `autora-3d/` (the modeller's source: a copy, see below) |
 | Office | `office.ts` (CLI tools), `officedesk.ts` (window), `officehost.ts` (Electron stand-in engine), `officerender.ts` (headless PDF), `officepages.ts` (phone pictures) |
 | Static files | `staticfiles.ts` (compressed, cached `express.static`) |
-| Persistence | `store.ts` (sessions, events, vault), `state.ts` (settings, secrets, usage, redactor), `blobs.ts`, `artifacts.ts`, `notebooks.ts`, `retention.ts`, `credentials.ts` |
+| Persistence | `store.ts` (sessions, events, vault), `state.ts` (settings, secrets, usage, redactor), `blobs.ts`, `artifacts.ts`, `folders.ts` (the Artifacts page's project folders), `notebooks.ts`, `retention.ts`, `credentials.ts` |
 | Scheduling | `scheduler.ts`, `triggers.ts`, `automation.ts`, `autonomy.ts`, `proactive.ts`, `quiet.ts`, `noticer.ts`, `suggest.ts` |
 | Collaboration | `presence.ts`, `companion.ts` |
 | Agents and Threads | `agents.ts` (the roster and the org map), `threads.ts` (the forum), `routes/organization.ts`; `runAgentTask` in `server.ts`; tools `agents` and `thread` (`specs/files.ts`) |
@@ -103,7 +103,7 @@ task is about the PDF editor's shim or overlay.
 | Voice | `speech.ts` (TTS), `dictation.ts` (STT) |
 | Network/security | `crosssite.ts`, `tls.ts`, `hosts.ts`, `push.ts`, `webpush.ts` |
 | Desktop relay | `desktop.ts` |
-| Misc | `logs.ts`, `trace.ts`, `replay.ts`, `inventory.ts`, `host.ts`, `thumbs.ts`, `widgets.ts`, `attach.ts`, `fileref.ts`, `newfile.ts`, `ephemeral.ts` |
+| Misc | `logs.ts`, `trace.ts`, `replay.ts`, `inventory.ts`, `host.ts`, `thumbs.ts`, `widgets.ts`, `attach.ts`, `fileref.ts`, `newfile.ts`, `loadfile.ts`, `ephemeral.ts` |
 
 ## `src/` (client)
 
@@ -113,11 +113,11 @@ task is about the PDF editor's shim or overlay.
 | Event log -> UI | `lib/stream.ts`, `lib/derive.ts`, `lib/share.ts`, `lib/steps.ts`, `lib/types.ts` |
 | Thread | `components/Thread.tsx` (`TurnBucket`, `CellView`, `Reply`), cells: `ToolCell`, `TerminalCell`, `FileCell`, `ImageCell`, `AskCell`, `PermissionCell`, `TodoCell`, `MemoryCell`, `LearnedCell`, `RemarkCell`, `WidgetCell`, `ScreencastCell`, `Markdown` |
 | Phone stage | `lib/stage.ts`, `components/Stage.tsx`, `ImmersiveChat.tsx`, `lib/fullscreen.ts`, `lib/cursorPos.ts` |
-| Windows | Video: `OpenCutWindow`, `lib/opencut.ts`. Games: `GameWindow`, `lib/gamedesk.ts`. 3D: `CadWindow`, `lib/caddesk.ts`. Photo: `PhotoWindow`, `lib/photodesk.ts`. Music: `StudioWindow` + `studio/{Arrangement,PianoRoll,Mixer,useSong}`, `lib/studio.ts`, `lib/studio/{model,engine}.ts`. Browser: `ScreencastCell`, `lib/liveFrame.ts`, `lib/pageInput.ts`. App: `AppPreview`, `AppInspector`, `AppReview`, `AppVersions`, `DevtoolsPanel`, `lib/preview.ts`, `lib/appApi.ts`. PDF: `SpectraWindow`, `lib/spectra.ts`, `lib/pdfdesk.ts`. Office: `OfficeWindow`, `OfficeCursor`, `OfficePages`, `lib/officedesk.ts`, `lib/officeSelection.ts`, `lib/humanPath.ts` |
+| Windows | Video: `OpenCutWindow`, `lib/opencut.ts`. Games: `GameWindow`, `lib/gamedesk.ts`. 3D: `CadWindow`, `lib/caddesk.ts`. Photo: `PhotoWindow`, `lib/photodesk.ts`. Music: `StudioWindow` + `studio/{Arrangement,PianoRoll,Mixer,useSong,hand}`, `lib/studio.ts`, `lib/studio/{model,engine,handsteps}.ts` (the agent's hand: `handsteps` plans, `hand` does). Browser: `ScreencastCell`, `lib/liveFrame.ts`, `lib/pageInput.ts`. App: `AppPreview`, `AppInspector`, `AppReview`, `AppVersions`, `DevtoolsPanel`, `lib/preview.ts`, `lib/appApi.ts`. PDF: `SpectraWindow`, `lib/spectra.ts`, `lib/pdfdesk.ts`. Office: `OfficeWindow`, `OfficePages`, `lib/officedesk.ts`, `lib/officeSelection.ts`; the agent's hand in the editors: `office/shim/hand.js`, `server/officehand.ts` |
 | Pages (menu) | `components/Rail.tsx`; lazy: `components/pages/*` (Organization and Threads: `OrganizationPage`, `ThreadsPage`, `lib/organization.ts`) ; eager: `Settings.tsx`, `Sessions.tsx`, `Schedule.tsx`, `Triggers.tsx` |
 | Settings cards | `Settings.tsx` (1.5k), `SecretStore`, `Credentials`, `VoiceCard`, `NotifyCard`, `QuietCard`, `CaptchaCard`, `AutomationCard`, `CollabSettings`, `TimeZoneCard`, `ModelPicker`, `SetupCard` |
 | Composer | `DictateButton`, `AttachButton`, `SlashMenu` + `lib/commands.ts`, `ModeSelect`, `PermissionsPill`, `SpendBar`/`SpendPeek` + `lib/spend.ts`, `LiveChat` + `lib/voice.ts` (1.9k), `lib/liveview.ts` |
-| Shared hooks | `lib/poll.ts` (`every`, `usePoll`: polling that pauses while the tab is hidden), `lib/sure.ts` + `components/SureHost.tsx` (the "are you sure?" dialog; never `confirm()`), `lib/ago.ts`, `lib/systemTabs.ts` |
+| Shared hooks | `components/SaveButton.tsx` (Save in every window's bar), `lib/poll.ts` (`every`, `usePoll`: polling that pauses while the tab is hidden), `lib/sure.ts` + `components/SureHost.tsx` (the "are you sure?" dialog; never `confirm()`), `lib/ago.ts`, `lib/systemTabs.ts` |
 | Tool rail | `components/ToolRail.tsx` (bar, All tools grid, tray), `lib/toolrail.ts` (tool list type, verb colours, pins); `docs/TOOL-RAIL.md` is the spec |
 | Look | `styles.css` (6.6k, one file), `fonts.css`, `lib/theme.ts`, `lib/mark.ts` + `AutoraMark.tsx`, `Icons.tsx` |
 

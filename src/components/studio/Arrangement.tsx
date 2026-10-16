@@ -212,7 +212,7 @@ export function Arrangement({
             const soloed = project.tracks.some((x) => x.solo);
             const quiet = t.mute || (soloed && !t.solo);
             return (
-              <div key={t.id} className={`st-row${picked ? " is-picked" : ""}${quiet ? " is-quiet" : ""}`} style={{ ["--tc" as string]: t.color }}>
+              <div key={t.id} data-track={t.id} className={`st-row${picked ? " is-picked" : ""}${quiet ? " is-quiet" : ""}`} style={{ ["--tc" as string]: t.color }}>
                 <div className={`st-head${menu === t.id ? " is-open" : ""}`} style={{ width: HEAD }} onPointerDown={() => onPick({ trackId: t.id, clipId: pick.trackId === t.id ? pick.clipId : null })}>
                   <i className="st-swatch" />
                   <div className="st-head-main">
@@ -274,6 +274,7 @@ export function Arrangement({
                     return (
                       <div
                         key={c.id}
+                        data-clip={c.id}
                         className={`st-clip${pick.clipId === c.id ? " is-picked" : ""}${flash.has(c.id) ? " is-flash" : ""}${g ? " is-drag" : ""}`}
                         style={{ left: start * bw, width: Math.max(10, length * bw - 1) }}
                         onPointerDown={(e) => startClip(e, t, c, "move")}

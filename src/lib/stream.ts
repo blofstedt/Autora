@@ -12,6 +12,7 @@ type Handlers = {
   onPreview?: (state: unknown) => void;
   /** The PDF window: whether a PDF is open, and what is on it. */
   onPdfDesk?: (state: unknown) => void;
+  onPdfHand?: (msg: unknown) => void;
   /** One event for the PDF editor: an engine reply, or the document changing
       under it. The window passes on the ones the editor asked for. */
   onSpectra?: (msg: { event: string; payload: unknown }) => void;
@@ -21,6 +22,7 @@ type Handlers = {
   onCadDesk?: (state: unknown) => void;
   onGameDesk?: (state: unknown) => void;
   onPhotoDesk?: (state: unknown) => void;
+  onPhotoHand?: (msg: unknown) => void;
   /** The Terminal window: whether it is open, where it is, and that something moved in it. */
   onTermDesk?: (state: unknown) => void;
   /** Autora Music's window: whether it is open, and what changed last. */
@@ -29,6 +31,8 @@ type Handlers = {
   onStudioCommand?: (cmd: { id: string; name: string; args: Record<string, unknown> }) => void;
   onOfficeDesk?: (state: unknown) => void;
   onOfficePush?: (msg: unknown) => void;
+  onOfficeHand?: (msg: unknown) => void;
+  onCadHand?: (msg: unknown) => void;
   /** Who has hold of what: surfaces the person has taken, and ones in use. */
   onPresence?: (state: unknown) => void;
 };
@@ -158,6 +162,9 @@ export class SessionStream {
         case "pdfdesk":
           this.handlers.onPdfDesk?.(msg.state);
           break;
+        case "pdfdesk.hand":
+          this.handlers.onPdfHand?.(msg);
+          break;
         case "spectra":
           if (typeof msg.event === "string") this.handlers.onSpectra?.({ event: msg.event, payload: msg.payload });
           break;
@@ -172,11 +179,20 @@ export class SessionStream {
         case "officedesk.push":
           this.handlers.onOfficePush?.(msg);
           break;
+        case "officedesk.hand":
+          this.handlers.onOfficeHand?.(msg);
+          break;
+        case "cad.hand":
+          this.handlers.onCadHand?.(msg);
+          break;
         case "gamedesk":
           this.handlers.onGameDesk?.(msg.state);
           break;
         case "photodesk":
           this.handlers.onPhotoDesk?.(msg.state);
+          break;
+        case "photodesk.hand":
+          this.handlers.onPhotoHand?.(msg);
           break;
         case "caddesk":
           this.handlers.onCadDesk?.(msg.state);

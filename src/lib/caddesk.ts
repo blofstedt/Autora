@@ -42,3 +42,19 @@ export const cadStateNow = (): CadState => state;
 export function onCadState(fn: () => void): () => void {
   return subscribe(fn);
 }
+
+/** The agent's call, to be done by hand in the window (Visible work; server/caddesk.ts `byHand`). */
+type CadHand = { id: string; name: string; args: Record<string, unknown> };
+const handListeners = new Set<(h: CadHand) => void>();
+
+export function emitCadHand(m: unknown) {
+  const msg = m as Partial<CadHand> | null;
+  if (!msg || typeof msg.id !== "string" || typeof msg.name !== "string") return;
+  const args = msg.args && typeof msg.args === "object" ? msg.args : {};
+  for (const l of handListeners) l({ id: msg.id, name: msg.name, args });
+}
+
+export function onCadHand(fn: (h: CadHand) => void): () => void {
+  handListeners.add(fn);
+  return () => { handListeners.delete(fn); };
+}

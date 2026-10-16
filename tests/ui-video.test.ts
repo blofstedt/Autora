@@ -72,6 +72,7 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => { if (m.text().startsWith("[video hand]")) console.log(`    ${m.text()}`); });
     await page.goto(`${app.base}/?session=${s}`);
     await page.waitForSelector(".composer", { timeout: 20_000 });
 
@@ -108,7 +109,9 @@ async function main() {
       assert.match(text, /Project "Test cut"/);
       assert.match(text, /Imported image "violet.png"/);
       assert.match(text, /image "violet.png"/, "the picture is on the timeline");
-      assert.match(text, /text "Hello from Autora"/, "and so is the title, in full");
+      assert.match(text, /text "Hello from Autora" {2}1\.00s to 3\.00s/, "and so is the title, in full, as long as asked");
+      // Visible work is on: the title went in from the Text panel's "+", and its words were typed in.
+      assert.match(text, /Default text[^\n]{0,40}typed the words, by hand in the Video window/, `the title was added by hand: ${text.slice(text.lastIndexOf("Done (add_text)"), text.lastIndexOf("Done (add_text)") + 1500)}`);
     });
 
     await test("it is beside the chat, named for the app, and the cursor played", async () => {
@@ -136,10 +139,13 @@ async function main() {
     });
 
     await test("a person's edits are the editor's own, and the agent reads them back", async () => {
-      // Undo is the editor's: the title the agent typed goes, and video_look shows it gone.
+      // Undo is the editor's: the title the agent made goes, and video_look shows it gone. Made by hand, it was made
+      // in a person's steps (added, typed, its end dragged), and each is a step of undo.
       await page.locator(".app-pane[data-pane=video] iframe").focus();
-      await page.keyboard.press("Control+z");
-      await sleep(400);
+      for (let i = 0; i < 4; i++) {
+        await page.keyboard.press("Control+z");
+        await sleep(400);
+      }
       n = steps.length - 1; // only video_look again
       app.seen.length = 0;
       await app.turn(s, "what is on the timeline now?", 60_000);
@@ -168,6 +174,49 @@ async function main() {
       await frame.click('.rail-bar.is-phone button[aria-label="Media"]');
       assert.equal(await frame.locator("[data-phone-panel]").count(), 0, "the same button puts it away");
       await phone.close();
+    });
+
+    await test("after the server restarts (an update), the open window is the agent's again, without a reload", async () => {
+      const open = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      await open.goto(`${app.base}/?session=${s}`);
+      await open.waitForSelector(".app-pane[data-pane=video]", { timeout: 20_000 });
+      const frame = await editorIn(open);
+      await frame.waitForSelector("[data-rail], .has-rail", { timeout: 60_000 });
+      await sleep(3000);
+      await app.restart();
+      await sleep(4000);
+      n = steps.length - 1;
+      app.seen.length = 0;
+      const started = Date.now();
+      const events = await app.turn(s, "look at the timeline", 150_000);
+      assert.deepEqual(events.filter((e) => e.kind === "tool.error").map((e) => e.payload.error), [], "the editor answered");
+      assert.match(said(), /image "violet.png"/);
+      assert.ok(Date.now() - started < 60_000, `it answered in ${Math.round((Date.now() - started) / 1000)}s`);
+      await open.close();
+    });
+
+    await test("a browser whose GPU never answers still gets an editor, and the agent can use it", async () => {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      // The editor's own request for a GPU adapter, made to never answer (its script, rewritten on the way in): a sandboxed
+      // frame takes no init script, and this is the call that hangs on the machines where it does.
+      let hangs = 0;
+      await ctx.route(/\/opencut-editor\/assets\/.*\.js$/, async (route) => {
+        const res = await route.fetch();
+        const body = (await res.text()).replace(/return (\w+)\.requestAdapter\((\w*)\)\}/g, () => { hangs++; return "return new Promise(function(){})}"; });
+        await route.fulfill({ response: res, body });
+      });
+      const hung = await ctx.newPage();
+      await hung.goto(`${app.base}/?session=${s}`);
+      await hung.waitForSelector(".app-pane[data-pane=video]", { timeout: 20_000 });
+      n = steps.length - 1;
+      app.seen.length = 0;
+      const started = Date.now();
+      const events = await app.turn(s, "look at it once more", 150_000);
+      assert.deepEqual(events.filter((e) => e.kind === "tool.error").map((e) => e.payload.error), [], "the editor answered");
+      assert.match(said(), /image "violet.png"/);
+      assert.ok(Date.now() - started < 45_000, `it answered in ${Math.round((Date.now() - started) / 1000)}s`);
+      assert.ok(hangs > 0, "the GPU request was the one that hangs");
+      await ctx.close();
     });
 
     await test("a reload finds the project again", async () => {

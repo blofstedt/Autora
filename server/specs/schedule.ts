@@ -13,61 +13,48 @@ export const scheduleSPECS: ToolSpec[] = [
     name: "schedule",
     group: "schedule",
     description:
-      "Set something going that comes back to you later: a task and a cron " +
-      "time for it. Use it for anything that should happen at a time (\"every " +
-      "weekday at 8am, check the release status and report\") or be watched for " +
-      "a change (give `watch` a page, a file or a command, and the task runs " +
-      "only when what it watches differs from the last look). The task runs as " +
-      "a turn of its own, in a new session, with this workspace's memory and " +
-      "tools, and the person sees what it says. Name it after the outcome, and " +
-      "write the prompt as an instruction to yourself: say what to do and what " +
-      "to tell the person. Prefer a watcher over a schedule that looks again " +
-      "and again: a watcher speaks only when something actually changed. " +
-      "Nothing runs while the machine or the console is off -- a time missed is " +
-      "missed, not made up afterwards. To change one you already set, give its " +
-      "id; to see them, use schedules.",
+      "Run a script on a cron time, by itself: a shell command the console runs " +
+      "on the clock with no model and no chat, so it costs nothing to run. Use " +
+      "it for work that is the same every time (\"every weekday at 8am, run the " +
+      "backup\", \"every ten minutes, check the page and write the price to a " +
+      "file\"). Put any checking in the script; its output is kept with the run, " +
+      "and a failure (non-zero exit) is told to the person. You CANNOT set up a task that " +
+      "wakes a model each time (a prompt, or a watcher that starts a turn when " +
+      "something changes): every run would spend tokens whether or not there is " +
+      "anything to do. If something really needs a model every time, tell the " +
+      "person, who can make that task on the Schedule page. A script may not " +
+      "start a model or call Autora's own API. Nothing runs while the machine " +
+      "or the console is off -- a time missed is missed. To change one of " +
+      "your scripts give its id; to see them, use schedules.",
     parameters: {
       type: "object",
       properties: {
         name: {
           type: "string",
-          description: "What it is for, in a few words, e.g. \"Release check\".",
+          description: "What it is for, in a few words, e.g. \"Nightly backup\".",
         },
         cron: {
           type: "string",
           description:
             "Five-field cron, in the server's local time: \"0 8 * * 1-5\" is " +
             "08:00 on weekdays, \"*/15 * * * *\" is every fifteen minutes. " +
-            "@hourly, @daily, @weekly and @monthly also work. For a watcher " +
-            "this is how often to look.",
+            "@hourly, @daily, @weekly and @monthly also work.",
         },
-        prompt: {
+        command: {
           type: "string",
           description:
-            "What to do when it runs, written as an instruction to yourself, " +
-            "ending with what to say to the person.",
+            "The shell command to run, in the terminal's working directory with " +
+            "its environment. It is cut off after a few minutes. Exit non-zero " +
+            "to say it failed.",
         },
         id: {
           type: "string",
-          description: "An existing job's id, to change that one instead of making a new one.",
+          description: "One of your scripts' ids, to change it instead of making a new one.",
         },
         enabled: { type: "boolean", description: "Whether it should run. Default true." },
-        watch: {
-          type: "object",
-          description:
-            "Only for a watcher: what to look at, and the task runs only when " +
-            "it differs from the last look. Leave it out for a plain schedule.",
-          properties: {
-            kind: {
-              type: "string",
-              description: "page (an http(s) address), file (a path on this machine) or command (a shell command's output).",
-            },
-            target: { type: "string", description: "The address, the path, or the command." },
-          },
-          required: ["kind", "target"],
-        },
       },
-      required: ["name", "cron", "prompt"],
+      // Not required: a call that asks for a prompt gets the explanation of why it cannot, not "command is missing".
+      required: [],
     },
     risky: true,
   },
@@ -75,7 +62,7 @@ export const scheduleSPECS: ToolSpec[] = [
     name: "schedules",
     group: "schedule",
     description:
-      "The scheduled tasks and watchers this workspace has: each one's id, " +
+      "The scheduled scripts and tasks this workspace has: each one's id, " +
       "when it next runs, when it last ran, and anything that went wrong. " +
       "Read it before creating one that may already exist, and to find the id " +
       "to change or remove.",

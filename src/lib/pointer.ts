@@ -4,10 +4,10 @@
  * tremor that settles, a rest, a press with a ring -- and fades away after a while with nothing to do.
  *
  * A layer of its own on the body, so no window needs to hold it. It never goes anywhere nothing is: callers give
- * it the rectangle of a real element, or a point a frame confirmed. (The Office windows have their own, which also
- * types; see components/OfficeCursor.tsx.)
+ * it the rectangle of a real element, or a point a frame confirmed. (The editors with an agent's hand -- Photo, PDF,
+ * Pages, Sheets, Slides -- draw their own cursor inside their frame, where the hand works.)
  */
-import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "./humanPath";
+import { along, humanRoute, restMs, routeMs, type Point } from "./humanPath";
 import { clearCursor, reportCursor } from "./cursorPos";
 import { getCursorWho, glyphPoints, onCursorWho } from "./cursorWho";
 
@@ -56,6 +56,15 @@ function place(p: Point) {
   at = p;
   if (arrow) arrow.style.transform = `translate(${p.x}px, ${p.y}px)`;
   reportCursor(p.x, p.y);
+}
+
+/** Put the pointer at `p` at once, shown: for a hand that moves it itself, a frame at a time, while it drags. */
+export function pointerPlace(p: Point) {
+  const host = ensure();
+  window.clearTimeout(hideTimer);
+  host.classList.remove("is-off");
+  host.classList.add("is-on");
+  place(p);
 }
 
 /** The centre of an element, in the page's pixels; null when it is not on screen. */
@@ -112,24 +121,6 @@ export async function pointerGo(to: Point, press = true, control?: Element | nul
     await sleep(240);
   }
   return mine === token;
-}
-
-/** Typed words beside the pointer, a few letters at a time with a person's uneven gaps: for places that take text. */
-export async function pointerType(text: string): Promise<void> {
-  const mine = token;
-  ensure();
-  const shown = arrow?.querySelector<HTMLElement>(".agent-pointer-typed");
-  if (!shown) return;
-  const chars = Array.from(text.slice(0, 80));
-  const gaps = typingDelays(chars.join(""), 1800);
-  shown.textContent = "";
-  for (let i = 0; i < chars.length; i++) {
-    if (mine !== token) break;
-    shown.textContent += chars[i];
-    await sleep(Math.max(25, gaps[i] ?? 60));
-  }
-  await sleep(300);
-  shown.textContent = "";
 }
 
 /** Nothing more to do here: it fades after a moment, and the line the agent says beside it lets go of it. */

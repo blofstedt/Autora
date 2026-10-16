@@ -169,14 +169,13 @@ async function main() {
       // They were typing a moment ago, so the deck is theirs: wait out the lease.
       await frame.evaluate(() => { (window as any).__kept = "same page"; });
       await sleep(22_000);
-      const cursor = page.waitForSelector(".office-cursor-layer .office-cursor", { state: "attached", timeout: 90_000 });
       const ev = await app.turn(s, "rename the title to Annual review", 120_000);
       if (process.env.OFFICE_DEBUG) console.log("last events:", JSON.stringify(ev.slice(-10).map((e) => [e.kind, JSON.stringify(e.payload).slice(0, 200)])));
       const bytes = (await fileOf())!;
       const text = (pptxParagraphs(bytes) ?? []).join("\n");
       assert.match(text, /Annual review.*moved to Monday/);
-      // The agent's cursor went to the title and typed it, with the browser's kind of motion.
-      await cursor;
+      // With Visible work on, the agent's hand typed the title in the editor itself.
+      assert.match(JSON.stringify(app.seen.flatMap((r) => r.messages).filter((m: { role: string }) => m.role === "tool").slice(-1)), /Typed by hand in the Autora Slides window/);
       assert.equal(await page.locator(".office-ghost").count(), 0, "nothing is drawn over the slide: the typing is in the document");
       // The editor took the change where it stood: the same page, not a new one.
       await sleep(3000);
@@ -249,11 +248,10 @@ async function main() {
       };
       await frame.evaluate(() => { (window as any).__kept = "same page"; });
       await sleep(22_000);
-      const cursor = page.waitForSelector(".office-cursor-layer .office-cursor", { state: "attached", timeout: 90_000 });
       await app.turn(s, "add a Gadget row with quantity 2", 120_000);
       const cells = xlsxCells((await fileOf())!)!;
       assert.ok([...cells.entries()].some(([k, v]) => /A3$/.test(k) && v === "Gadget"), JSON.stringify([...cells]));
-      await cursor;
+      assert.match(JSON.stringify(app.seen.flatMap((r) => r.messages).filter((m: { role: string }) => m.role === "tool").slice(-1)), /Typed by hand in the Autora Sheets window/);
       assert.equal(await page.locator(".office-ghost").count(), 0, "nothing is drawn over the sheet: the typing is in the document");
       assert.ok([...cells.entries()].some(([k, v]) => /B2$/.test(k) && v === "7"), "their change is still there");
       await sleep(4000);

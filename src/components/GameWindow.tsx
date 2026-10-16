@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SaveButton, keptAs } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { gameStateNow, onGameState, useGameState, type GameCue } from "../lib/gamedesk";
 import { useAgentCursor } from "../lib/agentCursor";
 import { GameCursor } from "./GameCursor";
-import { IconGame, IconMaximize, IconMinimize } from "./Icons";
+import { IconArrowLeft, IconGame, IconMaximize, IconMinimize } from "./Icons";
+import { GameRail, type GameRailState } from "./game/GameRail";
 
 /** The colours Autora sends the editor: the custom properties its own pages are drawn from (the editor's theme maps them). */
 const THEME_TOKENS = ["--bg", "--s1", "--s2", "--s4", "--text", "--text-2", "--text-3", "--accent", "--accent-light"];
@@ -40,6 +43,9 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
   const known = useRef(-1);
   const [up, setUp] = useState(false);
   const [trouble, setTrouble] = useState<string | null>(null);
+  /** How the editor says the tool bar's tools look now; null until it has said. */
+  const [rail, setRail] = useState<GameRailState | null>(null);
+  const [asked, setAsked] = useState<string | null>(null);
   const [full, setFull] = useFullscreen();
   /* The colours the frame was opened with: its address, which must not change while it is up. */
   const [src] = useState(() => `/gdevelop-editor/index.html?autora=${encodeURIComponent(sessionId)}&theme=${encodeURIComponent(themeNow())}${phone ? "&phone=1" : ""}`);
@@ -59,9 +65,16 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow || e.origin !== window.location.origin) return;
-      const msg = e.data as { autoraGame?: boolean; ready?: boolean; problem?: string } | null;
+      const msg = e.data as { autoraGame?: boolean; ready?: boolean; problem?: string; saved?: boolean; rail?: GameRailState; playing?: boolean } | null;
       if (!msg || typeof msg !== "object" || !msg.autoraGame) return;
-      if (msg.ready) {
+      if (msg.rail && typeof msg.rail === "object") {
+        setRail(msg.rail);
+      } else if (typeof msg.playing === "boolean") {
+        // A game started or stopped in the window: the bar's Play follows at once, not at the editor's next report.
+        setRail((cur) => (cur ? { ...cur, playing: msg.playing as boolean } : cur));
+      } else if (msg.saved) {
+        savedNow.current?.();
+      } else if (msg.ready) {
         ready.current = true;
         known.current = Math.max(known.current, gameStateNow().rev ?? 0);
         setUp(true);
@@ -103,15 +116,42 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
     return () => watch.disconnect();
   }, [post, sessionId, phone]);
 
+  /** Save: the editor saves what it has (it would a moment later anyway), then the game is kept in Artifacts. */
+  const savedNow = useRef<(() => void) | null>(null);
+  const keep = useCallback(async () => {
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(done, 2500);
+      function done() { clearTimeout(t); savedNow.current = null; resolve(); }
+      savedNow.current = done;
+      post({ autoraGameCmd: "save" });
+    });
+    return keptAs(await fetch(`/api/game/${encodeURIComponent(sessionId)}/keep`, { method: "POST" }));
+  }, [post, sessionId]);
+
+  /** A tool of the bar, pressed: the editor runs it. */
+  const run = useCallback((id: string) => post({ autoraGameCmd: "run", id }), [post]);
+  /** Something the bar cannot do, asked of the agent in this chat. */
+  const ask = useCallback((text: string) => {
+    setAsked(text);
+    void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).then((r) => { if (!r.ok) setAsked(null); }).catch(() => setAsked(null));
+    setTimeout(() => setAsked(null), 3500);
+  }, [sessionId]);
+
   const scenes = game.scenes ?? 0;
   return (
-    <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
-      {phone && <div className="pdf-bar">
+    <div className={`pdf-window game-window has-rail ${phone ? "is-phone" : "is-desk"}${phone && full ? " is-full" : ""}`}>
+      <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconGame size={14} /></span>
         <span className="pdf-bar-app">Autora Games</span>
         <span className="pdf-bar-name">{game.name ?? "Your game"}{scenes ? ` · ${scenes === 1 ? "1 scene" : `${scenes} scenes`}` : ""}</span>
         <span className="pdf-bar-note">{up ? "Saved as you go" : "Starting the engine…"}</span>
         <div className="spacer" />
+        <LoadButton app="game" session={sessionId} phone={phone} />
+        <SaveButton onSave={keep} phone={phone} disabled={!up} />
         {phone && (
           <button
             className="btn icon ghost pdf-full-btn"
@@ -123,7 +163,7 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
           </button>
         )}
-      </div>}
+      </div>
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
       <div className="game-stage">
       <iframe
@@ -137,8 +177,14 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
            game through Autora's routes. A game the person is making does not run here: previews are served apart (see previews). */
         allow="fullscreen; autoplay; gamepad"
       />
+      {up && rail && rail.on !== "scene" && (
+        <button type="button" className="gm-back" onClick={() => run("back")}>
+          <IconArrowLeft size={13} /> Back to the scene
+        </button>
+      )}
       {show && <GameCursor cues={show.cues} seq={show.seq} frame={frame} onDone={reloadAfter} />}
       </div>
+      <GameRail phone={phone} rail={up ? rail : null} run={run} ask={ask} asked={asked} />
     </div>
   );
 }
