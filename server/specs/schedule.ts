@@ -17,10 +17,8 @@ export const scheduleSPECS: ToolSpec[] = [
       "on the clock with no model and no chat, so it costs nothing to run. Use " +
       "it for work that is the same every time (\"every weekday at 8am, run the " +
       "backup\", \"every ten minutes, check the page and write the price to a " +
-      "file\"). Put the checking in the script -- it can fetch a page, read a " +
-      "file or run a command and compare, and print a line only when something " +
-      "is worth saying; whatever it prints is kept with the run, and a failure " +
-      "(a non-zero exit) is told to the person. You CANNOT set up a task that " +
+      "file\"). Put any checking in the script; its output is kept with the run, " +
+      "and a failure (non-zero exit) is told to the person. You CANNOT set up a task that " +
       "wakes a model each time (a prompt, or a watcher that starts a turn when " +
       "something changes): every run would spend tokens whether or not there is " +
       "anything to do. If something really needs a model every time, tell the " +
@@ -64,7 +62,7 @@ export const scheduleSPECS: ToolSpec[] = [
     name: "schedules",
     group: "schedule",
     description:
-      "The scheduled scripts, tasks and watchers this workspace has: each one's id, " +
+      "The scheduled scripts and tasks this workspace has: each one's id, " +
       "when it next runs, when it last ran, and anything that went wrong. " +
       "Read it before creating one that may already exist, and to find the id " +
       "to change or remove.",

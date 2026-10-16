@@ -22,7 +22,6 @@ import { loadSong } from "./studio";
 import { terminalDir } from "./tools";
 import { LOAD_APPS, loadable, type LoadApp } from "../src/lib/loadable";
 
-export { LOAD_APPS, loadable, type LoadApp };
 
 const NAME: Record<LoadApp, string> = {
   pdf: "Autora PDF", pages: "Autora Pages", sheets: "Autora Sheets", slides: "Autora Slides", photo: "Autora Photo",

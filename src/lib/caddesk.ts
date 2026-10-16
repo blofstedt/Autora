@@ -44,7 +44,7 @@ export function onCadState(fn: () => void): () => void {
 }
 
 /** The agent's call, to be done by hand in the window (Visible work; server/caddesk.ts `byHand`). */
-export type CadHand = { id: string; name: string; args: Record<string, unknown> };
+type CadHand = { id: string; name: string; args: Record<string, unknown> };
 const handListeners = new Set<(h: CadHand) => void>();
 
 export function emitCadHand(m: unknown) {

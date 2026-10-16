@@ -59,7 +59,7 @@ interface Agent {
 
 export const LEAD_ID = "agent_autora";
 
-export interface AgentModel { provider: string; model: string }
+interface AgentModel { provider: string; model: string }
 
 /** A temper between reserved and chatty. */
 const temper = (random: () => number = Math.random) => Math.round((0.6 + random() * 0.8) * 100) / 100;

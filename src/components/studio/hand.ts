@@ -14,13 +14,13 @@ import type { StudioStep } from "../../lib/studio/handsteps";
 import { centreOf, pointerGo, pointerPlace, pointerRest, pointerTyping } from "../../lib/pointer";
 import { typingDelays, type Point } from "../../lib/humanPath";
 
-export type HandEnv = {
+type HandEnv = {
   root: HTMLElement;
   live: () => Project;
   saveNow: () => Promise<void>;
 };
 
-export type HandResult = { i: number; ok: boolean; error?: string };
+type HandResult = { i: number; ok: boolean; error?: string };
 
 class Skip extends Error {}
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

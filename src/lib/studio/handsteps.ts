@@ -34,7 +34,7 @@ export type StudioStep =
 /** The most notes one call places by hand; the rest are in the finished song. */
 export const MAX_HAND_NOTES = 48;
 /** The most steps of any kind one call does by hand. */
-export const MAX_HAND_STEPS = 60;
+const MAX_HAND_STEPS = 60;
 
 const GRIDS = [1, 0.5, 0.25, 0.125];
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;

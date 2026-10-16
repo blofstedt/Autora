@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { stateDir } from "./state";
 
-export interface Folder {
+interface Folder {
   id: string;
   name: string;
   /** Milliseconds since the epoch. */
@@ -75,7 +75,7 @@ function persist() {
 }
 
 /** A folder name fit to show: one line, not empty, not endless. */
-export function cleanFolderName(name: string, fallback = "Project"): string {
+function cleanFolderName(name: string, fallback = "Project"): string {
   const one = String(name ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
   return one || fallback;
 }

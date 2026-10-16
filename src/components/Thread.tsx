@@ -691,7 +691,7 @@ const TurnBucket = memo(function TurnBucket({
 });
 
 /** Where a message the person sent has got to: on its way, with the server, or taken in by the agent. */
-export type Receipt = "sent" | "received" | "read";
+type Receipt = "sent" | "received" | "read";
 
 const RECEIPT_LABEL: Record<Receipt, string> = { sent: "Sent", received: "Delivered", read: "Read by the agent" };
 

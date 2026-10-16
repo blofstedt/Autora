@@ -13,7 +13,7 @@ export type OfficeKind = "docx" | "pptx" | "xlsx";
 export const APP_NAME: Record<OfficeKind, string> = { docx: "Pages", pptx: "Slides", xlsx: "Sheets" };
 
 /** One thing the agent did in the document, played as a cursor that goes there and types it (server/officedesk.ts). */
-export type OfficeCue = {
+type OfficeCue = {
   act: "type" | "point"; text: string; cell?: string; sheet?: string; box?: [number, number, number, number];
   /** The slide's size in points, so the box can be placed on the slide as the editor draws it. */
   slide?: [number, number];

@@ -1188,7 +1188,7 @@ export function reachFor(providerId: string): { key: string; baseUrl: string } |
  * (its key was removed), so the role falls back to the main model and Settings
  * can say why rather than every turn failing.
  */
-export function roleTarget(role: "planner" | "background", providerId: string): { target: Target | null; problem: string | null } {
+function roleTarget(role: "planner" | "background", providerId: string): { target: Target | null; problem: string | null } {
   const model = role === "planner" ? plannerModelFor(providerId) : backgroundModelFor(providerId);
   if (!model) return { target: null, problem: null };
   const provider = roleProviderFor(role, providerId);

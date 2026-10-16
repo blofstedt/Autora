@@ -59,7 +59,7 @@ export function attachmentRefs(raw: unknown): AttachmentRef[] {
 }
 
 /** A message carries at most this many files; more is a wall of chips nobody reads, and a prompt nobody can afford. */
-export const MAX_ATTACHED = 20;
+const MAX_ATTACHED = 20;
 
 /**
  * The project folders a message asks for, as the files in them: the newest first, as many as the message has room for.

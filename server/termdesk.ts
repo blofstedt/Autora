@@ -353,7 +353,7 @@ function take(cap: NonNullable<Shell["capture"]>, raw: string) {
 }
 
 /** What a terminal shows, as text: escape sequences out, a line rewritten with \r kept at what it ended as. */
-export function plain(raw: string): string {
+function plain(raw: string): string {
   const text = raw
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")

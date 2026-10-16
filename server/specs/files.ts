@@ -50,12 +50,10 @@ export const filesSPECS: ToolSpec[] = [
     name: "artifact_list",
     group: "files",
     description:
-      "List the artifacts in the workspace: files the person uploaded for you " +
-      "(documents, photos, spreadsheets) and files you made earlier. When the " +
-      "person mentions something they uploaded, look here first. Files are in " +
-      "folders, one per project: a chat's files are in its own, and working on " +
-      "another chat's file by its id (reading it, opening it, editing it) puts " +
-      "this chat in that file's project folder, so carrying on earlier work keeps it together.",
+      "List the artifacts: files the person uploaded (documents, photos, " +
+      "spreadsheets) and files you made. When the person mentions an upload, " +
+      "look here first. Files are in one folder per project; working on another " +
+      "chat's file puts this chat in its folder.",
     parameters: {
       type: "object",
       properties: {
