@@ -70,9 +70,13 @@ async function main() {
     /** A model to start from, put in at speed. */
     const start = async (calls: Call[]) => {
       await app.api("PATCH", "/api/agent-cursor", { on: false });
-      await run("set up", [{ name: "cad_doc_clear", args: {} }, ...calls]);
+      // Several shapes go in as one change: the window takes a model in one piece, not a shape at a time.
+      const batched = calls.length > 1 && calls.every((c) => c.name === "cad_shape_add")
+        ? [{ name: "cad_batch", args: { commands: calls.map((c) => ({ tool: c.name.slice(4), args: c.args })) } }]
+        : calls;
+      await run("set up", [{ name: "cad_doc_clear", args: {} }, ...batched]);
       await app.api("PATCH", "/api/agent-cursor", { on: true });
-      await sleep(1200);
+      await sleep(3000);
     };
     const add = (name: string, extra: Record<string, unknown> = {}): Call => ({ name: "cad_shape_add", args: { kind: "box", width: 40, depth: 40, height: 20, x: 0, y: 0, name, ...extra } });
 
@@ -213,7 +217,9 @@ async function main() {
     });
 
     await test("pane", "the parts pane: a shape picked by its thumbnail, named there, found by search among many", async () => {
-      await start([add("Alpha", { x: -90 }), add("Beta", { x: -60 }), add("Gamma", { x: -30 }), add("Delta", { x: 0 }), add("Eps", { x: 30 }), add("Zeta", { x: 60 }), add("Eta", { x: 90 })]);
+      // One batch, so the window takes the seven shapes as one change.
+      const names: Array<[string, number]> = [["Alpha", -90], ["Beta", -60], ["Gamma", -30], ["Delta", 0], ["Eps", 30], ["Zeta", 60], ["Eta", 90]];
+      await start([{ name: "cad_batch", args: { commands: names.map(([n, x]) => ({ tool: "shape_add", args: { kind: "box", width: 20, depth: 20, height: 20, x, y: 0, name: n } })) } }]);
       const eta = await named("Eta");
       let out = await byHand("make Eta taller", [{ name: "cad_shape_resize", args: { id: eta.id, height: 45 } }]);
       assert.match(out, /picked the shape in the view/);

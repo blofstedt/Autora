@@ -1060,7 +1060,12 @@ export default function App() {
             onPickShapes={(ids, extend) => {
               if (!extend) return selectMany(ids);
               const all = ids.every((i) => selectedBodyIds.includes(i));
-              selectMany(all ? selectedBodyIds.filter((i) => !ids.includes(i)) : [...new Set([...selectedBodyIds, ...ids])]);
+              // As Shift-clicking in the view does: the one added last is the primary (Subtract takes it as the cutter).
+              const next = all ? selectedBodyIds.filter((i) => !ids.includes(i)) : [...new Set([...selectedBodyIds, ...ids])];
+              setSelectedBodyIds(next);
+              setSelectedBodyId(all ? next[next.length - 1] ?? null : ids[0]);
+              setSelectedEdges([]);
+              setSelectedFace(null);
             }}
             onRename={handlePaneRename}
             onSave={handlePaneSave}

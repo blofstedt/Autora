@@ -1167,7 +1167,13 @@ export async function runHand(name: string, args: Record<string, unknown>, api: 
         const plane = (source.frame ? 0 : source.elevation ?? 0) + source.extrusionHeight;
         const dot = async (which: 'repeat-end' | 'repeat-bend', to: Point2D, words: string) => {
           const v = view(api);
-          const h = await waitFor(() => v.handles().find((x) => x.gizmo === which && !!canvasAt(x)));
+          const reach = () => v.handles().find((x) => x.gizmo === which && !!canvasAt(x));
+          // A card left open over the dot is closed, as a person closes it to get at what is under it.
+          if (!reach()) {
+            const close = document.querySelector<HTMLElement>('button[aria-label="Close options"]');
+            if (close) await press(close, 'Closing the card');
+          }
+          const h = await waitFor(reach);
           if (!h) throw new Skip("the repeat's dots could not be reached");
           const end = v.project({ x: to.x, y: to.y, z: plane }, source.frame);
           if (!end) throw new Skip('where the copies go is out of view');

@@ -1,5 +1,5 @@
 diff --git a/autora-3d/src/App.tsx b/autora-3d/src/App.tsx
-index 8728a3c..36d84e2 100644
+index 8728a3c..dc8dd9c 100644
 --- a/autora-3d/src/App.tsx
 +++ b/autora-3d/src/App.tsx
 @@ -25,7 +25,8 @@ import { installBridge } from './core/bridge';
@@ -183,7 +183,7 @@ index 8728a3c..36d84e2 100644
      hiddenCount: hiddenCount,
      onHide: hideSelected,
      onShowHidden: showHidden,
-@@ -984,6 +1048,29 @@ export default function App() {
+@@ -984,6 +1048,34 @@ export default function App() {
        <TopBar {...railProps} />
  
        <div className="flex-1 min-h-0 flex">
@@ -199,7 +199,12 @@ index 8728a3c..36d84e2 100644
 +            onPickShapes={(ids, extend) => {
 +              if (!extend) return selectMany(ids);
 +              const all = ids.every((i) => selectedBodyIds.includes(i));
-+              selectMany(all ? selectedBodyIds.filter((i) => !ids.includes(i)) : [...new Set([...selectedBodyIds, ...ids])]);
++              // As Shift-clicking in the view does: the one added last is the primary (Subtract takes it as the cutter).
++              const next = all ? selectedBodyIds.filter((i) => !ids.includes(i)) : [...new Set([...selectedBodyIds, ...ids])];
++              setSelectedBodyIds(next);
++              setSelectedBodyId(all ? next[next.length - 1] ?? null : ids[0]);
++              setSelectedEdges([]);
++              setSelectedFace(null);
 +            }}
 +            onRename={handlePaneRename}
 +            onSave={handlePaneSave}
@@ -213,7 +218,7 @@ index 8728a3c..36d84e2 100644
          {/* Viewport */}
          <main className="relative flex-1 min-w-0 min-h-0 bg-slate-950">
            <div className="absolute inset-0">
-@@ -1057,6 +1144,23 @@ export default function App() {
+@@ -1057,6 +1149,23 @@ export default function App() {
            {/* Bottom-center stack: isolation state and toasts */}
            <div className="absolute z-30 left-1/2 -translate-x-1/2 bottom-3 w-[calc(100%-1.5rem)] max-w-xl flex flex-col items-center gap-2 pointer-events-none [&>*]:pointer-events-auto">
              <AnimatePresence>
@@ -238,7 +243,7 @@ index 8728a3c..36d84e2 100644
                  <motion.div
                    key="isolated"
 diff --git a/autora-3d/src/agentHand.ts b/autora-3d/src/agentHand.ts
-index 0a41dcc..152725e 100644
+index 0a41dcc..b6e6d8b 100644
 --- a/autora-3d/src/agentHand.ts
 +++ b/autora-3d/src/agentHand.ts
 @@ -74,11 +74,11 @@ const pointer = (type: string, p: Point, shift = false, held = type === 'pointer
@@ -503,7 +508,22 @@ index 0a41dcc..152725e 100644
          break;
        }
        case 'group_remove': {
-@@ -1029,8 +1196,21 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+@@ -1000,7 +1167,13 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+         const plane = (source.frame ? 0 : source.elevation ?? 0) + source.extrusionHeight;
+         const dot = async (which: 'repeat-end' | 'repeat-bend', to: Point2D, words: string) => {
+           const v = view(api);
+-          const h = await waitFor(() => v.handles().find((x) => x.gizmo === which && !!canvasAt(x)));
++          const reach = () => v.handles().find((x) => x.gizmo === which && !!canvasAt(x));
++          // A card left open over the dot is closed, as a person closes it to get at what is under it.
++          if (!reach()) {
++            const close = document.querySelector<HTMLElement>('button[aria-label="Close options"]');
++            if (close) await press(close, 'Closing the card');
++          }
++          const h = await waitFor(reach);
+           if (!h) throw new Skip("the repeat's dots could not be reached");
+           const end = v.project({ x: to.x, y: to.y, z: plane }, source.frame);
+           if (!end) throw new Skip('where the copies go is out of view');
+@@ -1029,8 +1202,21 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
          break;
        }
        case 'library_save': {
@@ -525,7 +545,7 @@ index 0a41dcc..152725e 100644
          if (gid) {
            await pickGroup(api, gid);
            did.push('picked the group in the view');
-@@ -1055,21 +1235,15 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+@@ -1055,21 +1241,15 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
            await pickFace(api, host, { kind: 'top' });
            did.push('picked the top face to place it on');
          }
@@ -554,7 +574,7 @@ index 0a41dcc..152725e 100644
          break;
        }
        case 'object_unlink': {
-@@ -1080,18 +1254,25 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+@@ -1080,18 +1260,25 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
          did.push(`pressed ${forget ? 'Separate' : 'Edit object'}`);
          break;
        }
