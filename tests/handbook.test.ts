@@ -44,6 +44,13 @@ await test("the Music manual teaches the tool bar and not the toolbar it replace
   }
 });
 
+await test("the Games manual teaches the tool bar, Play in the window and the Advanced rules", () => {
+  const game = manualText("game");
+  for (const needle of ["All tools", "Add object", "Abilities", "pin any tool", "inside the window", "Advanced", "Back to the scene", "whatever is shown"]) {
+    assert.ok(game.includes(needle), `the Games manual lacks "${needle}"`);
+  }
+});
+
 await test("the 3D manual teaches the tool bar and not the bottom bar it replaced", () => {
   const cad = manualText("cad");
   for (const needle of ["All tools", "Size & position", "Pick edges", "Push & pull", "pin any tool", "no bottom bar", "whatever is shown"]) {

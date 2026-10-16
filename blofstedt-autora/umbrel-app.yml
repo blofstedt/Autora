@@ -188,10 +188,9 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Agents can no longer set up scheduled jobs that wake an AI model each time they run, which only wasted tokens. What an
-  agent can schedule now is a script: a command that runs on its cron time by itself, costs nothing and tells you only
-  if it fails. It also cannot make a crontab, an "at" job or a systemd timer, or a script that starts a chat. You can still
-  make "ask the agent" tasks yourself on the Schedule page, and choose "runs a script" there too. Every app now has a Load
-  button beside Save (Pages, Sheets, Slides, PDF, Photo, Video, Music, 3D and Games): pick a saved file from Artifacts and it
-  opens in that window. The 3D window's Save now also keeps the model itself so Load can bring it back. In the message box
-  there is a new Artifacts button beside the notebook, to attach saved files or a whole project folder to a chat.
+  Autora Games now has the same round tool bar as the other apps. GDevelop's two rows of tabs and small icons are gone:
+  the bar has Play, Add object, Objects, Properties, Layers, Abilities, Scenes, Undo, Redo and Delete, and All tools
+  holds the rest (scene settings, 2D/3D view, grid, zoom, pictures and sounds, game settings, export as a web game).
+  The game's rules sheet is under Advanced. Play now runs your game inside the window, with Restart, Full screen and
+  Stop, instead of a pop-up. The Add object dialog no longer opens on an empty Asset Store with a red error: it starts
+  on objects from scratch, and the new object lands on the scene.

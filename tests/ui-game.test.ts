@@ -77,8 +77,8 @@ async function main() {
 
     await test("what the agent makes opens beside the chat, with the game in GDevelop's editor", async () => {
       await page.waitForSelector(".app-pane .pdf-window", { timeout: 20_000 });
-      // (A desktop's window has no bar of its own: its tab names it, and the editor says what is open.)
-      assert.equal(await page.locator(".app-pane .pdf-window .pdf-bar").count(), 0);
+      // Autora's own slim bar: the game's name, Load and Save (the editor's tab strip and toolbar are away behind the tool bar).
+      assert.equal(await page.locator(".app-pane .pdf-window .pdf-bar button.win-save").count(), 2);
       await waitFor("the objects to be listed", async () => /Hello/.test(await editorText()) && /Cat/.test(await editorText()));
     });
 
@@ -127,20 +127,49 @@ async function main() {
       assert.match(JSON.stringify(app.seen[app.seen.length - 1].messages), /Kitty \(Sprite\)/);
     });
 
-    await test("Preview runs the game in a box with no origin of Autora's", async () => {
-      const opened = context.waitForEvent("page", { timeout: 60_000 });
-      await editor().getByText("Preview", { exact: true }).first().click();
-      const game = await opened;
-      await waitFor("the game to start", async () => game.evaluate(() => !!document.querySelector("canvas") && typeof (window as any).gdjs === "object"), 60_000);
-      assert.match(game.url(), new RegExp(`/api/game/${s}/preview/[0-9a-f]+/preview/index\\.html$`));
-      assert.equal(await game.evaluate(() => String(origin)), "null", "the game has no origin to reach the app with");
-      const reach = await game.evaluate(async (u) => fetch(u).then((r) => r.status, () => "blocked"), `${app.base}/api/sessions`);
+    await test("Play runs the game in the window, in a box with no origin of Autora's, and Stop puts it away", async () => {
+      await page.locator('.rail-bar button[aria-label="Play"]').click();
+      let game: Frame | undefined;
+      await waitFor("the game to start", async () => {
+        game = page.frames().find((f) => /\/preview\/[0-9a-f]+\/preview\/index\.html$/.test(f.url()));
+        return !!game && await game.evaluate(() => !!document.querySelector("canvas") && typeof (window as any).gdjs === "object");
+      }, 60_000);
+      assert.match(game!.url(), new RegExp(`/api/game/${s}/preview/[0-9a-f]+/preview/index\\.html$`));
+      assert.equal(await game!.evaluate(() => String(origin)), "null", "the game has no origin to reach the app with");
+      const reach = await game!.evaluate(async (u) => fetch(u).then((r) => r.status, () => "blocked"), `${app.base}/api/sessions`);
       assert.equal(reach, "blocked", "and it cannot read the app's API");
-      await game.close();
+      assert.equal(await page.locator('.rail-bar button[aria-label="Play"]').getAttribute("aria-pressed"), "true", "Play is lit while it plays");
+      assert.equal(await editor().locator("#autora-play").count(), 1, "in a box over the scene, not a pop-up window");
+      await editor().getByRole("button", { name: "Stop" }).click();
+      await waitFor("the box to go", async () => (await editor().locator("#autora-play").count()) === 0);
+      await waitFor("Play to go dark", async () => (await page.locator('.rail-bar button[aria-label="Play"]').getAttribute("aria-pressed")) !== "true");
     });
 
-    await test("Share exports the game as a web game: a .zip with the page, the data and the runtime", async () => {
-      await editor().getByText("Share", { exact: true }).first().click();
+    await test("Add object opens on objects from scratch, with no Asset Store and no error", async () => {
+      await page.locator('.rail-bar button[aria-label="Add object"]').click();
+      await waitFor("the dialog", async () => /All categories/.test(await editorText()), 20_000).catch(async (e) => { console.log((await editorText()).slice(0, 800)); throw e; });
+      const said = await editorText();
+      assert.ok(!/error fetching|Asset Store/i.test(said), "nothing about a store");
+      await page.keyboard.press("Escape");
+    });
+
+    await test("Rules shows the events sheet and a Back to the scene chip returns", async () => {
+      await page.locator('.rail-bar button[aria-label="All tools"]').click();
+      await page.getByRole("dialog", { name: "All tools" }).getByText("Rules", { exact: true }).click();
+      await page.getByRole("button", { name: /Back to the scene/ }).first().waitFor({ timeout: 15_000 });
+      await page.getByRole("button", { name: /Back to the scene/ }).first().click();
+      await waitFor("the chip to go", async () => (await page.getByRole("button", { name: /Back to the scene/ }).count()) === 0, 15_000);
+    });
+
+    await test("Scenes lists the scenes and New scene adds one", async () => {
+      await page.locator('.rail-bar button[aria-label="Scenes"]').click();
+      await page.getByRole("button", { name: "New scene" }).click();
+      await waitFor("a second scene", async () => (await page.locator(".gm-chip:not(.is-new)").count()) >= 2, 15_000);
+    });
+
+    await test("Export web game, from All tools, makes a .zip with the page, the data and the runtime", async () => {
+      await page.locator('.rail-bar button[aria-label="All tools"]').click();
+      await page.getByRole("dialog", { name: "All tools" }).getByText("Export web game", { exact: true }).click();
       await editor().getByText("Export as a HTML5 game").first().click({ timeout: 20_000 });
       await waitFor("the export to be done", async () => /Done!/.test(await editorText()), 60_000);
       const download = page.waitForEvent("download", { timeout: 20_000 });
@@ -157,7 +186,7 @@ async function main() {
     assert.deepEqual(errors.filter((e) => !/Network Error|Failed to fetch/.test(e)), [], "no uncaught errors in the page");
     await context.close();
 
-    await test("on a phone the editor is the paired-down one: the scene, Play, undo and what is in it; no events, sharing or 3D", async () => {
+    await test("on a phone the tool bar is the dock: Play, Add object, Objects, Properties, Abilities, Undo, Delete; the editor's own toolbar and tabs are away", async () => {
       const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
       const phone = await ctx.newPage();
       await phone.goto(`${app.base}/?session=${s}`);
@@ -166,12 +195,12 @@ async function main() {
       let frame: Frame | undefined;
       await waitFor("the editor frame", async () => { frame = phone.frames().find((f) => f.url().includes("/gdevelop-editor/")); return !!frame; }, 20_000);
       assert.match(frame!.url(), /phone=1/);
-      await frame!.waitForSelector("#toolbar-preview-button", { timeout: 90_000 });
+      await phone.waitForSelector(".rail-bar.is-phone", { timeout: 90_000 });
+      const names = await phone.locator(".rail-bar.is-phone .rail-btn").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));
+      assert.deepEqual(names, ["Play", "Add object", "Objects", "Properties", "Abilities", "Undo", "Delete", "All tools"]);
       const shown = (id: string) => frame!.evaluate((q) => { const el = document.querySelector(q); return !!el && el.getClientRects().length > 0; }, id);
-      assert.equal(await shown("#toolbar-preview-button"), true, "Play");
-      assert.equal(await shown("#toolbar-save-button"), true, "save");
-      for (const gone of ["#toolbar-publish-button", "#game-editor-toggle", "#tab-layout-events-Scene", "#tab-start-page", "#toolbar-history-button", "#main-toolbar-project-manager-button"]) {
-        assert.equal(await shown(gone), false, `${gone} is the desktop's`);
+      for (const gone of ["#toolbar-preview-button", "#toolbar-save-button", "#toolbar-publish-button", "#game-editor-toggle", "#toolbar-history-button", "#main-toolbar-project-manager-button"]) {
+        assert.equal(await shown(gone), false, `${gone} is the tool bar's now`);
       }
       await ctx.close();
     });

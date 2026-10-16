@@ -73,18 +73,18 @@ export function GameRail({ phone, rail, run, ask, asked }: {
     { id: "sceneSettings", label: "Scene settings", group: "Scenes", icon: <IconGear size={20} />, color: VERB.select, disabled: !ready, about: "Background colour and the scene's own options", run: () => run("sceneSettings") },
     { id: "sceneVariables", label: "Scene variables", group: "Scenes", icon: <IconCode size={20} />, color: VERB.select, disabled: !ready, about: "Numbers and words this scene remembers", run: () => run("sceneVariables") },
 
-    { id: "mode", label: rail?.mode === "3d" ? "3D view" : "2D view", group: "View", icon: <IconEye size={20} />, color: VERB.note, desktop: true, on: rail?.mode === "3d", disabled: !ready, about: "Look at the scene in 2D or in 3D", run: () => run("mode") },
-    { id: "grid", label: "Grid", group: "View", icon: <IconTable size={20} />, color: VERB.note, desktop: true, on: !!rail?.grid, disabled: !ready, about: "Snap things to a grid while you place them", run: () => run("grid") },
-    { id: "zoom", label: "Zoom", group: "View", icon: <IconSearch size={20} />, color: VERB.note, desktop: true, on: tray === "zoom", disabled: !ready, about: "Closer, further, or everything in view", run: () => toggleTray("zoom") },
+    { id: "mode", label: rail?.mode === "3d" ? "3D view" : "2D view", group: "View", icon: <IconEye size={20} />, color: VERB.note, on: rail?.mode === "3d", disabled: !ready, about: "Look at the scene in 2D or in 3D", run: () => run("mode") },
+    { id: "grid", label: "Grid", group: "View", icon: <IconTable size={20} />, color: VERB.note, on: !!rail?.grid, disabled: !ready, about: "Snap things to a grid while you place them", run: () => run("grid") },
+    { id: "zoom", label: "Zoom", group: "View", icon: <IconSearch size={20} />, color: VERB.note, on: tray === "zoom", disabled: !ready, about: "Closer, further, or everything in view", run: () => toggleTray("zoom") },
 
     { id: "undo", label: "Undo", group: "Edit", icon: <IconRotateCcw size={20} />, color: VERB.shape, phone: true, desktop: true, disabled: !ready || (scene && !rail?.canUndo), about: "Take back the last change (Ctrl+Z)", run: () => run("undo") },
     { id: "redo", label: "Redo", group: "Edit", icon: <IconRotateCw size={20} />, color: VERB.shape, desktop: true, disabled: !ready || (scene && !rail?.canRedo), about: "Put it back (Ctrl+Y)", run: () => run("redo") },
     { id: "delete", label: "Delete", group: "Edit", icon: <IconTrash size={20} />, color: VERB.remove, phone: true, desktop: true, disabled: !ready || !rail?.instances, about: "Delete what is picked on the scene (Delete)", run: () => run("delete") },
 
-    { id: "pictures", label: "Pictures & sounds", group: "Game", icon: <IconImage size={20} />, color: VERB.draw, desktop: true, disabled: !ready, about: "The files your game uses: add your own", run: () => run("pictures") },
+    { id: "pictures", label: "Pictures & sounds", group: "Game", icon: <IconImage size={20} />, color: VERB.draw, disabled: !ready, about: "The files your game uses: add your own", run: () => run("pictures") },
     { id: "project", label: "Game settings", group: "Game", icon: <IconFolder size={20} />, color: VERB.select, on: !!rail?.projectManager, disabled: !ready, about: "Name, screen size, scenes and everything else in the game", run: () => run("project") },
 
-    { id: "export", label: "Export web game", group: "Share", icon: <IconDownload size={20} />, color: VERB.insert, desktop: true, disabled: !ready, about: "A web game you can put anywhere, as a .zip", run: () => run("export") },
+    { id: "export", label: "Export web game", group: "Share", icon: <IconDownload size={20} />, color: VERB.insert, disabled: !ready, about: "A web game you can put anywhere, as a .zip", run: () => run("export") },
 
     { id: "rules", label: rail?.on === "events" ? "Back to the scene" : "Rules", group: "Advanced", icon: <IconCode size={20} />, color: VERB.highlight, on: rail?.on === "events", disabled: !ready, about: "The game's rules as events. Autora writes these when you ask; here is the sheet itself", run: () => run("rules") },
   ];

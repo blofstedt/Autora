@@ -223,9 +223,19 @@ export const run = async (id: string): Promise<void> => {
   const scene = await sceneEditor();
   if (!scene) return;
   switch (id) {
-    case 'addObject':
+    case 'addObject': {
+      // The new object lands on the scene where the person is looking, rather than only in the list.
+      let at = [0, 0];
+      try {
+        const cursor = scene.editorDisplay
+          ? scene.editorDisplay.viewControls.getLastCursorSceneCoordinates()
+          : null;
+        if (cursor) at = cursor;
+      } catch (err) {}
+      scene.setState({ newObjectInstanceSceneCoordinates: [at[0], at[1]] });
       if (scene.editorDisplay) scene.editorDisplay.openNewObjectDialog();
       return;
+    }
     case 'objects': return scene.toggleObjectsList();
     case 'properties': return scene.toggleProperties();
     case 'layers': return scene.toggleLayersList();
