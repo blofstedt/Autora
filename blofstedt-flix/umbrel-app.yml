@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.1.6"
+version: "0.1.7"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -45,8 +45,8 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  When Flix cannot reach its server, it now says why. Instead of an empty
-  page, the app names the cause and offers the fix: Umbrel signed you out (with
-  a Sign in to Umbrel button), the device is offline, or the server did not
-  answer. A blank screen no longer leaves you guessing whether it was your
-  password or the session behind it.
+  The home screen now works like a streaming service: shows are grouped into
+  rows by genre, each scrolling sideways, and the rows fade in as you reach
+  them. Tapping a show opens a proper page for it — artwork, the summary, the
+  cast, and a YouTube trailer when one can be found. Transitions, button press
+  states and hover effects are smoother throughout.
