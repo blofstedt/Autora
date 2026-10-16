@@ -186,9 +186,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A tidier desktop. The tool bar on the right of every app (PDF, Pages, Sheets, Slides, Video, Music, 3D, Photo) is
-  smaller and matches the rest of the interface. The menu on the left is always there, whole or as icons: the hamburger
-  and "fold away" are gone, and when it is icons, expand and New session sit in the top bar beside the chat's name. Also
-  fixed: 3D's view-cube buttons were hidden under the tool bar, 3D now has the same top bar as the other apps, Music's
-  bars reach the edge, Video no longer shows the project name twice, Sheets no longer shows a "Streaming ... rows
-  available" message, and the duplicate "Agent cursor" buttons are gone (the Visible switch does that).
+  Autora now caps itself at 4 GiB of memory and 4 GiB of swap in its app definition, so a runaway render can no longer
+  take the whole server down with it. On 15 October 2026 the app peaked at 4.6 GB on a 7.7 GB box and wedged the host;
+  that cap had been applied to the running container by hand, and was lost every time the app was recreated. It is part
+  of the app now, so umbreld carries it into every install, update and recreate.
