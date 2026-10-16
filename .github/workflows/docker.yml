@@ -18,6 +18,18 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # A commit that cannot change the image should not spend 20-40 minutes of
+    # the runner's one concurrency slot building it. `blofstedt-*/` is store
+    # metadata (the manifest version and the icon Umbrel reads), `docs/` is
+    # prose, and the rest are markdown files: the Dockerfile copies none of
+    # them, so nothing in the image moves. Pull requests are left alone and
+    # still build on every change -- that is where a broken Dockerfile is
+    # meant to be caught -- and path filters are not evaluated for tag pushes,
+    # so a `v*` tag still builds.
+    paths-ignore:
+      - "blofstedt-*/**"
+      - "docs/**"
+      - "**/*.md"
   pull_request:
     branches: [main]
   workflow_dispatch:
