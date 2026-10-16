@@ -253,3 +253,17 @@ export function show(cue: Showing): Promise<void> {
   busy = busy.then(run, run);
   return busy;
 }
+
+/* ---- The agent's hand (agentHand.ts): the same pointer, driven step by step while the hand does the work. ---- */
+
+/** Go to a place and, when `pressed`, press there; the words beside the pointer say what it is doing. */
+export async function handGo(to: Point, pressed: boolean, control?: HTMLElement | null, words?: string): Promise<void> {
+  ensureLayer();
+  if (thought && words) { thought.textContent = words; thought.style.opacity = '1'; }
+  await goTo(to, pressed, control);
+}
+
+/** The hand is done: the pointer fades after a while. */
+export function handRest(): void {
+  rest();
+}

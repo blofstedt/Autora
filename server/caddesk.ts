@@ -16,6 +16,7 @@
  * geometry kernel), built by the autora-3d sub-project, and the server is typechecked without it. Without the build the
  * tools are simply not offered (`cadAvailable`).
  */
+import crypto from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
@@ -48,7 +49,7 @@ interface CadResponse {
 
 /** A model, as the app saves it: shapes, groups, repeats and the project library. */
 interface CadDoc {
-  bodies: Array<{ repeatOf?: unknown }>;
+  bodies: Array<{ id: string; repeatOf?: unknown }>;
   groups: unknown[];
   repeats: unknown[];
   library: unknown[];
@@ -242,6 +243,85 @@ const EXPORT_MIME: Record<string, string> = {
 /** The most a tool result may say, in characters: a whole scene can be large and the agent can ask for less. */
 const MOST = 24_000;
 
+// --------------------------------------------------------------- by hand --
+
+/** The calls the window's hand can do with the modeller's own controls (autora-3d/src/agentHand.ts). */
+const HAND_TOOLS = new Set(["shape_add", "shape_move", "shape_resize", "shape_set", "shape_delete", "shapes_join", "shapes_subtract", "group_create"]);
+/** How long a window has to take the call before it is done here instead: nobody watching counts as Visible work off. */
+const CLAIM_MS = 4000;
+
+let pushTo: (session: string, message: Record<string, unknown>) => void = () => undefined;
+let visible: () => boolean = () => false;
+let watched: (session: string) => boolean = () => true;
+
+type HandReply = { did?: string[]; skipped?: string; doc?: unknown };
+type Handing = { session: string; claimed: boolean; resolve: (r: HandReply | null) => void };
+const handing = new Map<string, Handing>();
+
+/** Hand one call to the open window and wait for what its hand did; null when no window took it, or it did nothing. */
+async function handToWindow(session: string, name: string, args: Record<string, unknown>): Promise<HandReply | null> {
+  const id = crypto.randomBytes(6).toString("hex");
+  return await new Promise<HandReply | null>((resolve) => {
+    const entry: Handing = { session, claimed: false, resolve: () => undefined };
+    const send = () => pushTo(session, { type: "cad.hand", session, id, name, args });
+    const again = setInterval(() => { if (!entry.claimed) send(); }, 1000);
+    const done = (r: HandReply | null) => {
+      clearInterval(again);
+      clearTimeout(unclaimed);
+      clearTimeout(slow);
+      handing.delete(id);
+      resolve(r);
+    };
+    entry.resolve = done;
+    handing.set(id, entry);
+    send();
+    const unclaimed = setTimeout(() => { if (!entry.claimed) done(null); }, CLAIM_MS);
+    const slow = setTimeout(() => done(null), 120_000);
+  });
+}
+
+/**
+ * With Visible work on, a call the hand can do is done in the window, live, while this waits: the result is worked out on a
+ * copy of the model first, the window's hand does the call with the modeller's own controls (its changes come up as the
+ * person's do), and then the finished model goes in without a cursor played over it, keeping the ids the window gave what
+ * the hand made. Null when it is not done that way (Visible work off, no window, a call with no hand): then as before.
+ */
+async function byHand(session: string, engine: CadEngine, name: string, given: Record<string, unknown>): Promise<{ res: CadResponse; said: string } | null> {
+  const entry = entryFor(session);
+  if (!visible() || !entry.open || !HAND_TOOLS.has(name) || !watched(session)) return null;
+  const c = await loadCore();
+  const before = engine.getDoc();
+  const copy = new c.Engine(c.parseDoc(JSON.parse(JSON.stringify(engine.toJSON()))) ?? c.emptyDoc());
+  const res = await copy.execute(name, given);
+  if (!res.ok) return null;
+  const reply = await handToWindow(session, name, given);
+  if (!reply?.did?.length) return null;
+  // What the hand made has the window's ids: the finished model takes them, and so does what the agent is told.
+  const was = new Set(before.bodies.map((b) => b.id));
+  const theirs = (c.parseDoc(reply.doc)?.bodies ?? []).filter((b) => !was.has(b.id) && !b.repeatOf).map((b) => b.id);
+  const ours = copy.getDoc().bodies.filter((b) => !was.has(b.id) && !b.repeatOf).map((b) => b.id);
+  let text = JSON.stringify(copy.toJSON());
+  let answer = JSON.stringify({ result: res.result, shapes: res.shapes, changed: res.changed, revision: res.revision });
+  if (theirs.length === ours.length) {
+    ours.forEach((from, i) => {
+      const to = theirs[i]!;
+      if (!/^[\w-]{1,64}$/.test(to)) return;
+      text = text.split(`"${from}"`).join(`"${to}"`);
+      answer = answer.split(from).join(to);
+    });
+  }
+  // The window's last change is on its way up: the finished model goes in after it, not under it.
+  await new Promise((r) => setTimeout(r, 400));
+  const after = c.parseDoc(JSON.parse(text)) ?? copy.getDoc();
+  entry.by = "agent";
+  entry.cue = null;
+  engine.setDoc(after);
+  const parsed = JSON.parse(answer) as { result?: unknown; shapes?: unknown[]; changed: boolean; revision?: number };
+  const said = `Done by hand in the 3D window, where the person watched: ${reply.did.join("; ")}.` +
+    (reply.skipped ? ` Not by hand (${reply.skipped}): the rest went in with the finished model.` : "");
+  return { res: { ok: true, result: parsed.result, shapes: parsed.shapes, changed: parsed.changed, revision: parsed.revision } as CadResponse, said };
+}
+
 interface CadToolHooks {
   /** Show a saved file in the thread. */
   showFile?: (file: { id: string; name: string; mime: string; size: number }) => void;
@@ -271,10 +351,16 @@ export async function runCadTool(
     const exportArgs = name === "export" ? { name: given.name } : null;
     if (exportArgs) delete given.name;
     const mine = entryFor(session);
+    setOpen(session, true);
+    const hand = exportArgs ? null : await byHand(session, engine, name, given);
+    if (hand) {
+      let summary = asAgentSees(JSON.stringify({ result: hand.res.result, shapes: hand.res.shapes, changed: hand.res.changed, revision: hand.res.revision }));
+      if (summary.length > MOST) summary = `${summary.slice(0, MOST)}\n[cut: the answer was ${summary.length} characters. Ask for less (cad_scene_get lists shapes; cad_shape_get takes one id).]`;
+      return { ok: true, summary: `${summary}\n${hand.said}`, preview: name };
+    }
     mine.by = "agent";
     // Said before the change lands: the window is told the model moved a moment later, and asks for this with it.
     mine.cue = { seq: (mine.cue?.seq ?? 0) + 1, tool: name };
-    setOpen(session, true);
     const res = await engine.execute(name, given);
     if (!res.ok) {
       const hint = res.hint ? ` ${asAgentSees(res.hint)}` : "";
@@ -325,7 +411,20 @@ export function cadBriefing(on: boolean): string {
 const bigJson = express.json({ limit: "64mb" });
 
 /** The window's side of the wire: its state, its model, and opening and putting it away. */
-export function cadRoutes(app: Express, opts: { exists: (session: string) => boolean; incognito: (session: string) => boolean; off: () => boolean }) {
+export function cadRoutes(app: Express, opts: {
+  exists: (session: string) => boolean;
+  incognito: (session: string) => boolean;
+  off: () => boolean;
+  /** A message to the chat's open pages (the agent's hand, `cad.hand`). */
+  push?: (session: string, message: Record<string, unknown>) => void;
+  /** Whether Visible work is on. */
+  visible?: () => boolean;
+  /** Whether a page has the chat open: with none, no call waits for a window to take it. */
+  watched?: (session: string) => boolean;
+}) {
+  if (opts.push) pushTo = opts.push;
+  if (opts.visible) visible = opts.visible;
+  if (opts.watched) watched = opts.watched;
   const known = (req: Request, res: Response): string | null => {
     const id = String(req.params.session);
     if (!validSession(id) || !opts.exists(id)) {
@@ -397,6 +496,30 @@ export function cadRoutes(app: Express, opts: { exists: (session: string) => boo
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
+  });
+
+  /* The agent's call, done by hand in the window: the first window to ask takes it, then says what its hand did. */
+  app.post("/api/cad/:session/hand/claim", (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const h = handing.get(String(req.query.id ?? ""));
+    const won = Boolean(h && h.session === id && !h.claimed);
+    if (won && h) h.claimed = true;
+    res.json({ won });
+  });
+
+  app.post("/api/cad/:session/hand/reply", bigJson, (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const h = handing.get(String(req.query.id ?? ""));
+    if (!h || h.session !== id || !h.claimed) return res.status(404).json({ error: "No such call." });
+    const b = req.body as { did?: unknown; skipped?: unknown; doc?: unknown } | null;
+    h.resolve({
+      did: Array.isArray(b?.did) ? b.did.filter((x): x is string => typeof x === "string").slice(0, 40).map((x) => x.slice(0, 160)) : [],
+      skipped: typeof b?.skipped === "string" ? b.skipped.slice(0, 200) : undefined,
+      doc: b?.doc,
+    });
+    res.json({ ok: true });
   });
 
   /* The person opens it from the toolbox: a block to start from, so there is something to hold. */

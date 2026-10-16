@@ -1,0 +1,482 @@
+diff --git a/autora-3d/src/App.tsx b/autora-3d/src/App.tsx
+index 80e5c6e..815c1ea 100644
+--- a/autora-3d/src/App.tsx
++++ b/autora-3d/src/App.tsx
+@@ -178,6 +178,9 @@ export default function App() {
+ 
+   const [selectedBodyId, setSelectedBodyId] = useState<string | null>(null);
+   const [selectedBodyIds, setSelectedBodyIds] = useState<string[]>([]);
++  // What is picked now, for the agent's hand, which reads it between its clicks (agentHand.ts).
++  const selectedIdsRef = useRef(selectedBodyIds);
++  selectedIdsRef.current = selectedBodyIds;
+   const [selectedEdges, setSelectedEdges] = useState<EdgeSel[]>([]);
+   const [selectedFace, setSelectedFace] = useState<FaceSel | null>(null);
+   /** When set, only these bodies are shown, in both 2D and 3D. */
+@@ -329,6 +332,12 @@ export default function App() {
+     const was = new Map(before.bodies.map((b) => [b.id, JSON.stringify(b)]));
+     const touched = after.bodies.filter((b) => !b.repeatOf && was.get(b.id) !== JSON.stringify(b)).map((b) => b.id);
+     return touched.length ? viewerApi.current?.screenOf(touched) ?? null : null;
++  }, {
++    // The agent's hand (agentHand.ts): the model, what is picked, and where a shape is drawn.
++    doc: () => docRef.current,
++    selected: () => selectedIdsRef.current,
++    screenOf: (ids) => viewerApi.current?.screenOf(ids) ?? null,
++    emptySpot: () => viewerApi.current?.emptySpot() ?? null,
+   });
+ 
+   // ---- Selection ----------------------------------------------------------
+diff --git a/autora-3d/src/agentCursor.ts b/autora-3d/src/agentCursor.ts
+index a807b2a..c5965b7 100644
+--- a/autora-3d/src/agentCursor.ts
++++ b/autora-3d/src/agentCursor.ts
+@@ -253,3 +253,17 @@ export function show(cue: Showing): Promise<void> {
+   busy = busy.then(run, run);
+   return busy;
+ }
++
++/* ---- The agent's hand (agentHand.ts): the same pointer, driven step by step while the hand does the work. ---- */
++
++/** Go to a place and, when `pressed`, press there; the words beside the pointer say what it is doing. */
++export async function handGo(to: Point, pressed: boolean, control?: HTMLElement | null, words?: string): Promise<void> {
++  ensureLayer();
++  if (thought && words) { thought.textContent = words; thought.style.opacity = '1'; }
++  await goTo(to, pressed, control);
++}
++
++/** The hand is done: the pointer fades after a while. */
++export function handRest(): void {
++  rest();
++}
+diff --git a/autora-3d/src/agentHand.ts b/autora-3d/src/agentHand.ts
+new file mode 100644
+index 0000000..c76243e
+--- /dev/null
++++ b/autora-3d/src/agentHand.ts
+@@ -0,0 +1,303 @@
++/**
++ * @license
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++/**
++ * The agent's hand, inside Autora's frame (Visible work): one of the agent's tool calls done with this app's own controls,
++ * the way a person does it, while the person watches -- the Shape tray and a shape's tile, a shape picked by a click on it
++ * in the view (Shift-click for more), its size and place typed into Size & position, Delete, Join, Subtract and Group
++ * pressed on the tool bar, a group's name typed into the top bar. Every act is a real pointer, mouse or key event into the
++ * element the app drew, so the app's own handlers make the change and it goes up to Autora the way a person's does.
++ *
++ * Autora works out the finished model itself and puts it in after (server/caddesk.ts), so what the hand cannot do (a shape
++ * inside a group, a colour, a turn) is not lost: it says what it did, and Autora says what it did not.
++ */
++import type { Doc } from './core/doc';
++import { SHAPE_LABELS, type ShapeKind } from './utils/primitives';
++import { handGo, handRest } from './agentCursor';
++
++type Point = { x: number; y: number };
++
++/** What the hand needs from the app: the model, what is picked, and where a shape is drawn. */
++export interface HandApi {
++  doc: () => Doc;
++  selected: () => string[];
++  screenOf: (ids: string[]) => (Point & { clear?: boolean }) | null;
++  emptySpot: () => Point | null;
++}
++
++export interface HandResult {
++  /** What was done by hand, in a few words each. */
++  did: string[];
++  /** Why the rest was not, when it was not. */
++  skipped?: string;
++}
++
++class Skip extends Error {}
++const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
++const rand = (a: number, b: number) => a + Math.random() * (b - a);
++
++async function waitFor<T>(fn: () => T | null | undefined | false, ms = 2500): Promise<T | null> {
++  const end = Date.now() + ms;
++  for (;;) {
++    const v = fn();
++    if (v) return v;
++    if (Date.now() > end) return null;
++    await sleep(50);
++  }
++}
++
++const centre = (el: Element): Point => {
++  const r = el.getBoundingClientRect();
++  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
++};
++
++const pointer = (type: string, p: Point, shift = false): PointerEvent =>
++  new PointerEvent(type, {
++    bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, button: 0,
++    buttons: type === 'pointerdown' ? 1 : 0, pointerId: 1, pointerType: 'mouse', isPrimary: true, shiftKey: shift,
++  });
++const mouse = (type: string, p: Point): MouseEvent =>
++  new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, button: 0, buttons: type === 'mousedown' ? 1 : 0 });
++
++/** Go to a control and press it, with the events a mouse makes. */
++async function press(el: HTMLElement | null, words?: string): Promise<void> {
++  if (!el) throw new Skip('a control was not on the screen');
++  if ((el as HTMLButtonElement).disabled) throw new Skip(`${el.getAttribute('aria-label') ?? 'a control'} was not available`);
++  const p = centre(el);
++  await handGo(p, true, el, words);
++  el.dispatchEvent(pointer('pointerdown', p));
++  el.dispatchEvent(mouse('mousedown', p));
++  el.dispatchEvent(pointer('pointerup', p));
++  el.dispatchEvent(mouse('mouseup', p));
++  el.dispatchEvent(mouse('click', p));
++  await sleep(rand(160, 260));
++}
++
++/** A tool of the bar by its name: on the bar, or in its All tools grid. */
++async function tool(label: string, words?: string): Promise<void> {
++  const onBar = document.querySelector<HTMLElement>(`nav[aria-label="Tools"] button[aria-label="${label}"]`);
++  if (onBar) return press(onBar, words);
++  await press(document.querySelector<HTMLElement>('nav[aria-label="Tools"] button[aria-label="All tools"]'), words);
++  const tile = await waitFor(() => Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-label="All tools"] button'))
++    .find((b) => b.textContent?.trim() === label) ?? null);
++  await press(tile, words);
++}
++
++const setValue = (input: HTMLInputElement, value: string) => {
++  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
++};
++
++/** Click into a field, and type a number into it a key at a time; Enter puts it in. */
++async function typeInto(input: HTMLInputElement | null, text: string, words?: string): Promise<void> {
++  if (!input) throw new Skip('a field was not on the screen');
++  await press(input, words);
++  input.focus();
++  await sleep(60);
++  input.select();
++  let typed = '';
++  for (const ch of text) {
++    typed += ch;
++    input.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
++    setValue(input, typed);
++    input.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
++    input.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
++    await sleep(rand(55, 140));
++  }
++  await sleep(rand(120, 220));
++  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
++  await sleep(rand(180, 260));
++}
++
++const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
++const ids = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
++const mm = (v: number) => String(Math.round(v * 100) / 100);
++
++/** A click on the view itself, with Shift held when adding to the pick. */
++async function tap(p: Point, words: string, shift = false): Promise<void> {
++  const hit = document.elementFromPoint(p.x, p.y);
++  if (!(hit instanceof HTMLCanvasElement)) throw new Skip('something was in front of a shape');
++  await handGo(p, true, null, words);
++  hit.dispatchEvent(pointer('pointerdown', p, shift));
++  await sleep(40);
++  hit.dispatchEvent(pointer('pointerup', p, shift));
++  // The arrows of what is picked now spring in over a moment: where the next click is safe is known after.
++  await sleep(rand(600, 700));
++}
++
++/**
++ * Pick these shapes in the view: a click on the first, Shift-click on the rest. A shape inside a group, or one not on the
++ * screen, is not one a click can pick alone: then nothing is picked and the hand says so.
++ */
++async function pick(api: HandApi, want: string[]): Promise<void> {
++  const doc = api.doc();
++  if (!want.length) throw new Skip('no shape was named');
++  if (want.some((id) => doc.groups.some((g) => g.bodyIds.includes(id)))) throw new Skip('a shape in a group is picked with its group');
++  let fitted = false;
++  for (let i = 0; i < want.length; i++) {
++    let p = api.screenOf([want[i]]);
++    // Under the arrows of the shape picked now: a person clicks on nothing to let go of it first. Out of view: they fit
++    // the model in the view.
++    if (p && !p.clear && i === 0 && api.selected().length) {
++      const empty = api.emptySpot();
++      if (empty) await tap(empty, 'Letting go of the pick');
++      p = api.screenOf([want[i]]);
++    }
++    if (!p && !fitted) {
++      fitted = true;
++      await press(document.querySelector<HTMLElement>('button[aria-label="Fit model in view"]'), 'Fitting the model in view');
++      await sleep(700);
++      p = api.screenOf([want[i]]);
++    }
++    // Small on the screen, so the arrows of the shape picked now cover it: a person scrolls in on it.
++    for (let n = 0; p && !p.clear && n < 10; n++) {
++      const canvas = document.elementFromPoint(p.x, p.y);
++      if (!(canvas instanceof HTMLCanvasElement)) break;
++      await handGo(p, false, null, 'Zooming in');
++      canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: p.x, clientY: p.y, deltaY: -300, deltaMode: 0 }));
++      await sleep(rand(260, 360));
++      p = api.screenOf([want[i]]);
++    }
++    if (!p) throw new Skip('a shape was out of view');
++    if (!p.clear) throw new Skip('something was in front of a shape');
++    await tap(p, i === 0 ? 'Picking the shape' : 'Adding it to the pick', i > 0);
++  }
++  const now = api.selected();
++  if (want.some((id) => !now.includes(id)) || now.length !== want.length) throw new Skip('the click picked something else');
++}
++
++/** The Size & position card, open. */
++async function sizeCard(): Promise<void> {
++  const open = () => document.querySelector('section[aria-label="Size & position options"]');
++  if (open()) return;
++  await tool('Size & position', 'Opening Size & position');
++  if (!(await waitFor(open))) throw new Skip('Size & position did not open');
++}
++const field = (label: string) => document.querySelector<HTMLInputElement>(`section[aria-label="Size & position options"] input[aria-label="${label} in mm"]`);
++const valueOf = (label: string) => Number(field(label)?.value ?? NaN);
++
++/** Type the given sizes and place into Size & position, each only when it is not already that. */
++async function typeSizes(want: { Width?: number | null; Depth?: number | null; Height?: number | null; X?: number | null; Y?: number | null; Z?: number | null }, did: string[]): Promise<void> {
++  const todo = Object.entries(want).filter(([, v]) => v !== null && v !== undefined) as Array<[string, number]>;
++  if (!todo.length) return;
++  await sizeCard();
++  for (const [label, v] of todo) {
++    if (Math.abs(valueOf(label) - v) < 0.01) continue;
++    await typeInto(field(label), mm(v), `Typing the ${label.toLowerCase()}`);
++    did.push(`typed ${label} ${mm(v)} in Size & position`);
++  }
++}
++
++/** One tool call, by hand. */
++export async function runHand(name: string, args: Record<string, unknown>, api: HandApi): Promise<HandResult> {
++  const did: string[] = [];
++  try {
++    switch (name) {
++      case 'shape_add': {
++        if (args.onTopOf !== undefined) throw new Skip('placing on top of a shape is done directly');
++        const kind = String(args.kind ?? '') as ShapeKind;
++        const label = SHAPE_LABELS[kind];
++        if (!label) throw new Skip('no such shape');
++        const before = new Set(api.doc().bodies.map((b) => b.id));
++        await tool('Shape', 'Opening the shapes');
++        const tile = await waitFor(() => Array.from(document.querySelectorAll<HTMLElement>('section[aria-label="Shape options"] button'))
++          .find((b) => b.textContent?.trim() === label) ?? null);
++        await press(tile, `Adding a ${label.toLowerCase()}`);
++        const made = await waitFor(() => api.doc().bodies.find((b) => !before.has(b.id) && !b.repeatOf));
++        if (!made) throw new Skip('no shape came');
++        did.push(`added a ${label.toLowerCase()} from the Shape tray`);
++        await typeSizes({ Width: num(args.width), Depth: num(args.depth), Height: num(args.height), X: num(args.x), Y: num(args.y), Z: num(args.elevation) }, did);
++        break;
++      }
++      case 'shape_move': {
++        await pick(api, ids(args.ids));
++        did.push('picked the shapes in the view');
++        const by = (args.by ?? {}) as Record<string, unknown>;
++        const to = (args.to ?? {}) as Record<string, unknown>;
++        await sizeCard();
++        const at = { X: valueOf('X'), Y: valueOf('Y'), Z: valueOf('Z') };
++        const goal = (k: 'x' | 'y' | 'z', now: number) => num(to[k]) ?? (num(by[k]) !== null ? now + num(by[k])! : null);
++        await typeSizes({ X: goal('x', at.X), Y: goal('y', at.Y), Z: goal('z', at.Z) }, did);
++        break;
++      }
++      case 'shape_resize': {
++        await pick(api, ids([args.id]));
++        did.push('picked the shape in the view');
++        await typeSizes({ Width: num(args.width), Depth: num(args.depth), Height: num(args.height) }, did);
++        break;
++      }
++      case 'shape_set': {
++        if (num(args.height) === null && num(args.elevation) === null) throw new Skip('nothing here is a field of Size & position');
++        await pick(api, ids([args.id]));
++        did.push('picked the shape in the view');
++        await typeSizes({ Height: num(args.height), Z: num(args.elevation) }, did);
++        break;
++      }
++      case 'shape_delete': {
++        const gone = ids(args.ids);
++        await pick(api, gone);
++        await tool('Delete', 'Deleting it');
++        // It asks first, as it asks a person: Delete in that box is what removes them.
++        const sure = await waitFor(() => Array.from(document.querySelectorAll<HTMLElement>('[role="alertdialog"] button'))
++          .find((b) => b.textContent?.trim() === 'Delete') ?? null);
++        if (sure) await press(sure, 'Yes, delete');
++        if (!(await waitFor(() => !api.doc().bodies.some((b) => gone.includes(b.id))))) throw new Skip('the shapes were still there');
++        did.push(sure ? 'picked the shapes, pressed Delete and said yes' : 'picked the shapes and pressed Delete');
++        break;
++      }
++      case 'shapes_join': {
++        const joined = ids(args.ids);
++        await pick(api, joined);
++        await tool('Join', 'Joining them');
++        if (!(await waitFor(() => joined.some((id) => !api.doc().bodies.some((b) => b.id === id))))) throw new Skip('Join did nothing');
++        did.push('picked the shapes and pressed Join');
++        break;
++      }
++      case 'shapes_subtract': {
++        const from = ids(args.from);
++        const cutters = ids(args.cutters);
++        // The shape picked last is the one cut out: a person picks the others, then the cutter.
++        if (cutters.length !== 1) throw new Skip('more than one cutter is done directly');
++        await pick(api, [...from, ...cutters]);
++        await tool('Subtract', 'Cutting it out');
++        if (!(await waitFor(() => !api.doc().bodies.some((b) => b.id === cutters[0])))) throw new Skip('Subtract did nothing');
++        did.push('picked the shapes, the cutter last, and pressed Subtract');
++        break;
++      }
++      case 'group_create': {
++        const members = ids(args.ids);
++        await pick(api, members);
++        await tool('Group', 'Grouping them');
++        if (!(await waitFor(() => api.doc().groups.some((g) => members.every((id) => g.bodyIds.includes(id)))))) throw new Skip('Group did nothing');
++        did.push('picked the shapes and pressed Group');
++        const name = typeof args.name === 'string' ? args.name.trim() : '';
++        if (name) {
++          const title = await waitFor(() => Array.from(document.querySelectorAll<HTMLElement>('button[title="Tap to rename"]'))[0] ?? null);
++          await press(title, 'Naming the group');
++          const input = await waitFor(() => document.querySelector<HTMLInputElement>('input[aria-label="Group name"]'));
++          if (input) {
++            input.select();
++            let typed = '';
++            for (const ch of name) {
++              typed += ch;
++              setValue(input, typed);
++              input.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
++              await sleep(rand(55, 130));
++            }
++            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
++            did.push(`named it "${name}" in the top bar`);
++          }
++        }
++        break;
++      }
++      default:
++        throw new Skip('this one is done directly');
++    }
++    return { did };
++  } catch (err) {
++    return { did, skipped: err instanceof Error ? err.message : String(err) };
++  } finally {
++    handRest();
++  }
++}
+diff --git a/autora-3d/src/components/ModelViewer3D.tsx b/autora-3d/src/components/ModelViewer3D.tsx
+index 0f82dab..95b7f71 100644
+--- a/autora-3d/src/components/ModelViewer3D.tsx
++++ b/autora-3d/src/components/ModelViewer3D.tsx
+@@ -88,8 +88,13 @@ export interface ViewerApi {
+   view(view: CubeFace | 'fit'): void;
+   /** A PNG of the current view, as a data URL. */
+   screenshot(): string;
+-  /** Where on the page (client pixels) these shapes are drawn now, for the agent's cursor; null when they are off screen. */
+-  screenOf(ids: string[]): { x: number; y: number } | null;
++  /**
++   * Where on the page (client pixels) these shapes are drawn now, for the agent's cursor; null when they are off screen.
++   * For one shape, `clear` says a press there picks it (no edge, arrow or other shape in the way).
++   */
++  screenOf(ids: string[]): { x: number; y: number; clear?: boolean } | null;
++  /** A point of the view where a press touches nothing (and so drops the pick), or null. */
++  emptySpot(): { x: number; y: number } | null;
+ }
+ 
+ export interface ModelViewer3DProps {
+@@ -1579,10 +1584,37 @@ export default function ModelViewer3D({
+           const box = found.length ? selectionBounds(found) : null;
+           if (!box) return null;
+           const top = Math.max(...found.map((b) => (b.elevation ?? 0) + b.extrusionHeight));
+-          const v = new THREE.Vector3(box.centerX, top, -box.centerY).project(camera);
+-          if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null;
+           const r = renderer.domElement.getBoundingClientRect();
+-          return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height };
++          const onScreen = (x: number, z: number, y = top) => {
++            const v = new THREE.Vector3(x, y, -z).project(camera);
++            if (v.z > 1 || Math.abs(v.x) > 0.98 || Math.abs(v.y) > 0.98) return null;
++            return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height };
++          };
++          const middle = onScreen(box.centerX, box.centerY);
++          if (ids.length !== 1 || found[0].frame) return middle;
++          // One shape: a point of it that a press there would pick, the middle of its top first, then elsewhere on the top
++          // and on its sides, so a shape partly under another, or by the edge or the arrows of another, is still pressed
++          // where it shows.
++          const low = found[0].elevation ?? 0;
++          const at: Array<[number, number, number]> = [];
++          for (const [fx, fy] of [[0.5, 0.5], [0.3, 0.5], [0.7, 0.5], [0.5, 0.3], [0.5, 0.7], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8], [0.1, 0.5], [0.9, 0.5], [0.5, 0.1], [0.5, 0.9]]) at.push([fx, fy, 1]);
++          for (const f of [0.5, 0.25, 0.75]) for (const h of [0.5, 0.25, 0.75]) at.push([f, 0, h], [f, 1, h], [0, f, h], [1, f, h]);
++          for (const [fx, fy, fh] of at) {
++            const p = onScreen(box.minX + fx * (box.maxX - box.minX), box.minY + fy * (box.maxY - box.minY), low + fh * (top - low));
++            if (!p) continue;
++            // What a press there would touch, as a press works it out: not an edge, an arrow or a handle, nor another shape.
++            const hit = resolveHit(p.x, p.y);
++            if (hit?.type === 'body' && hit.bodyId === ids[0]) return { ...p, clear: true };
++          }
++          return middle && { ...middle, clear: false };
++        },
++        emptySpot: () => {
++          const r = renderer.domElement.getBoundingClientRect();
++          for (const [fx, fy] of [[0.85, 0.8], [0.15, 0.8], [0.85, 0.3], [0.15, 0.3], [0.5, 0.88], [0.5, 0.15]]) {
++            const p = { x: r.left + fx * r.width, y: r.top + fy * r.height };
++            if (!resolveHit(p.x, p.y) && document.elementFromPoint(p.x, p.y) === renderer.domElement) return p;
++          }
++          return null;
+         },
+       };
+     }
+diff --git a/autora-3d/src/embed.ts b/autora-3d/src/embed.ts
+index 845444f..150cb49 100644
+--- a/autora-3d/src/embed.ts
++++ b/autora-3d/src/embed.ts
+@@ -3,6 +3,7 @@
+  * SPDX-License-Identifier: Apache-2.0
+  */
+ 
++import { runHand, type HandApi } from './agentHand';
+ import { useEffect, useRef } from 'react';
+ import { Doc, parseDoc } from './core/doc';
+ import { setWho, show, type Cue, type Who } from './agentCursor';
+@@ -18,6 +19,8 @@ import { setWho, show, type Cue, type Who } from './agentCursor';
+  *   parent → frame   { autora3d: 'theme', vars }   Autora's current colours (see `themeStyle`)
+  *   frame → parent   { autora3d: 'ready' }         booted: send the model
+  *   frame → parent   { autora3d: 'changed', doc }  the person changed the model
++ *   parent → frame   { autora3d: 'hand', id, name, args }  with Visible work on: do this tool call by hand (agentHand.ts)
++ *   frame → parent   { autora3d: 'handed', id, did, skipped?, doc }  what the hand did, and the model as it now is
+  *
+  * Everything else (the tools, the geometry, the gestures) is the same app as on its own.
+  */
+@@ -70,7 +73,13 @@ const SEND_AFTER_MS = 250;
+  * Connects the app to Autora when it is a frame. `apply` shows a model the agent changed (as one undo step);
+  * the document is sent up whenever the person changes it. A model that came down is never sent back up.
+  */
+-export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (before: Doc, after: Doc) => { x: number; y: number } | null): void {
++export function useAutoraEmbed(
++  doc: Doc,
++  apply: (doc: Doc) => void,
++  where?: (before: Doc, after: Doc) => { x: number; y: number } | null,
++  /** What the agent's hand needs from the app (agentHand.ts): with it, the agent's tool calls can be done here by hand. */
++  hand?: HandApi,
++): void {
+   const on = useRef(embedded()).current;
+   const known = useRef<Doc | null>(null);
+   /** Nothing goes up before the first model came down: the empty one this page starts with is not the person's work. */
+@@ -79,6 +88,8 @@ export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (bef
+   applyRef.current = apply;
+   const whereRef = useRef(where);
+   whereRef.current = where;
++  const handRef = useRef(hand);
++  handRef.current = hand;
+ 
+   useEffect(() => {
+     if (!on) return;
+@@ -105,6 +116,17 @@ export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (bef
+         const w = m.who as Partial<Who> | null;
+         setWho(w && typeof w.name === 'string' && typeof w.color === 'string' && typeof w.rgb === 'string' && /^#[0-9a-f]{6}$/i.test(w.color) && /^[\d, ]+$/.test(w.rgb)
+           ? { name: w.name.slice(0, 24), color: w.color, rgb: w.rgb, sides: Number(w.sides) || 3 } : null);
++      } else if (m.autora3d === 'hand') {
++        // Autora's agent, with Visible work on: its tool call done here with this app's own controls, then answered with
++        // what was done and the model as it now is (its changes go up as a person's do, a moment after each).
++        const h = m as { id?: unknown; name?: unknown; args?: unknown };
++        const api = handRef.current;
++        if (typeof h.id !== 'string' || typeof h.name !== 'string' || !api) return;
++        const id = h.id;
++        void runHand(h.name, (h.args ?? {}) as Record<string, unknown>, api).then(async (result) => {
++          await new Promise((r) => setTimeout(r, SEND_AFTER_MS + 150));
++          window.parent.postMessage({ autora3d: 'handed', id, ...result, doc: api.doc() }, origin);
++        });
+       } else if (m.autora3d === 'theme') {
+         for (const [prop, value] of Object.entries(themeStyle(m.vars))) document.documentElement.style.setProperty(prop, value);
+       }

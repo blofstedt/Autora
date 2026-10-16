@@ -242,6 +242,16 @@ const CAD = [
     "separate; Size & position, Properties, Material, Pick edges, Push & pull; Save to library, Edit object, Separate; Export & file. " +
     "A tool that does not apply yet (Join with one shape picked) is dimmed. Name a tool by its button and say \"open All tools\" if " +
     "it is not on their bar. Everything they can do you can do with the cad_* tools, whatever is shown.",
+  "  With Visible work on and the window open where the person is looking, these are done there by your hand, live, while the " +
+    "call waits: cad_shape_add (the Shape tray's tile pressed, then its width, depth, height and place typed into Size & position), " +
+    "cad_shape_move, cad_shape_resize and cad_shape_set's height and elevation (the shape clicked in the view, the numbers typed into " +
+    "Size & position), cad_shape_delete (the shapes clicked, Delete pressed and its question answered), cad_shapes_join, " +
+    "cad_shapes_subtract with one cutter (picked last) and cad_group_create (the shapes clicked, Shift for each after the first, then " +
+    "Join, Subtract or Group pressed and the group named in the top bar). To reach a shape your hand may click empty space to let go " +
+    "of what is picked, fit the model in view or scroll in on it, so the person's view can move. Then the finished model goes in, " +
+    "keeping the ids the window gave what the hand made. Your result says \"Done by hand in the 3D window\" with each step, and " +
+    "\"Not by hand\" with why for what was not (a shape in a group, one placed on top of another, out of reach). Every other call, " +
+    "and all of them when nobody is watching, changes the model at speed and the window shows it. With Visible work off every call does.",
   "  Saving. The model is saved as you go; the window's top bar (Autora 3D, the count of shapes) also has Save, which keeps a copy in Artifacts as a GLB named after the chat. cad_export is still yours for other formats.",
 ].join("\n");
 

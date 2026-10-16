@@ -32,6 +32,7 @@ type Handlers = {
   onOfficeDesk?: (state: unknown) => void;
   onOfficePush?: (msg: unknown) => void;
   onOfficeHand?: (msg: unknown) => void;
+  onCadHand?: (msg: unknown) => void;
   /** Who has hold of what: surfaces the person has taken, and ones in use. */
   onPresence?: (state: unknown) => void;
 };
@@ -180,6 +181,9 @@ export class SessionStream {
           break;
         case "officedesk.hand":
           this.handlers.onOfficeHand?.(msg);
+          break;
+        case "cad.hand":
+          this.handlers.onCadHand?.(msg);
           break;
         case "gamedesk":
           this.handlers.onGameDesk?.(msg.state);

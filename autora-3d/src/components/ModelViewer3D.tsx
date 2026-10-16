@@ -88,8 +88,13 @@ export interface ViewerApi {
   view(view: CubeFace | 'fit'): void;
   /** A PNG of the current view, as a data URL. */
   screenshot(): string;
-  /** Where on the page (client pixels) these shapes are drawn now, for the agent's cursor; null when they are off screen. */
-  screenOf(ids: string[]): { x: number; y: number } | null;
+  /**
+   * Where on the page (client pixels) these shapes are drawn now, for the agent's cursor; null when they are off screen.
+   * For one shape, `clear` says a press there picks it (no edge, arrow or other shape in the way).
+   */
+  screenOf(ids: string[]): { x: number; y: number; clear?: boolean } | null;
+  /** A point of the view where a press touches nothing (and so drops the pick), or null. */
+  emptySpot(): { x: number; y: number } | null;
 }
 
 export interface ModelViewer3DProps {
@@ -1579,10 +1584,37 @@ export default function ModelViewer3D({
           const box = found.length ? selectionBounds(found) : null;
           if (!box) return null;
           const top = Math.max(...found.map((b) => (b.elevation ?? 0) + b.extrusionHeight));
-          const v = new THREE.Vector3(box.centerX, top, -box.centerY).project(camera);
-          if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null;
           const r = renderer.domElement.getBoundingClientRect();
-          return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height };
+          const onScreen = (x: number, z: number, y = top) => {
+            const v = new THREE.Vector3(x, y, -z).project(camera);
+            if (v.z > 1 || Math.abs(v.x) > 0.98 || Math.abs(v.y) > 0.98) return null;
+            return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height };
+          };
+          const middle = onScreen(box.centerX, box.centerY);
+          if (ids.length !== 1 || found[0].frame) return middle;
+          // One shape: a point of it that a press there would pick, the middle of its top first, then elsewhere on the top
+          // and on its sides, so a shape partly under another, or by the edge or the arrows of another, is still pressed
+          // where it shows.
+          const low = found[0].elevation ?? 0;
+          const at: Array<[number, number, number]> = [];
+          for (const [fx, fy] of [[0.5, 0.5], [0.3, 0.5], [0.7, 0.5], [0.5, 0.3], [0.5, 0.7], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8], [0.1, 0.5], [0.9, 0.5], [0.5, 0.1], [0.5, 0.9]]) at.push([fx, fy, 1]);
+          for (const f of [0.5, 0.25, 0.75]) for (const h of [0.5, 0.25, 0.75]) at.push([f, 0, h], [f, 1, h], [0, f, h], [1, f, h]);
+          for (const [fx, fy, fh] of at) {
+            const p = onScreen(box.minX + fx * (box.maxX - box.minX), box.minY + fy * (box.maxY - box.minY), low + fh * (top - low));
+            if (!p) continue;
+            // What a press there would touch, as a press works it out: not an edge, an arrow or a handle, nor another shape.
+            const hit = resolveHit(p.x, p.y);
+            if (hit?.type === 'body' && hit.bodyId === ids[0]) return { ...p, clear: true };
+          }
+          return middle && { ...middle, clear: false };
+        },
+        emptySpot: () => {
+          const r = renderer.domElement.getBoundingClientRect();
+          for (const [fx, fy] of [[0.85, 0.8], [0.15, 0.8], [0.85, 0.3], [0.15, 0.3], [0.5, 0.88], [0.5, 0.15]]) {
+            const p = { x: r.left + fx * r.width, y: r.top + fy * r.height };
+            if (!resolveHit(p.x, p.y) && document.elementFromPoint(p.x, p.y) === renderer.domElement) return p;
+          }
+          return null;
         },
       };
     }

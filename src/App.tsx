@@ -9,7 +9,7 @@ import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { ScreencastCell } from "./components/ScreencastCell";
 import { AppPreview, CadWindow, GameWindow, OfficeWindow, OpenCutWindow, PhotoWindow, SpectraWindow, StudioWindow, TerminalWindow } from "./components/lazyWindows";
-import { resetCad, setCadState, useCadState } from "./lib/caddesk";
+import { emitCadHand, resetCad, setCadState, useCadState } from "./lib/caddesk";
 import { resetGame, setGameState, useGameState } from "./lib/gamedesk";
 import { emitPhotoHand, resetPhoto, setPhotoState, usePhotoState } from "./lib/photodesk";
 import { resetTerm, setTermState, useTermState } from "./lib/termdesk";
@@ -489,6 +489,7 @@ export function App() {
       onOfficeDesk: setOfficeState,
       onOfficePush: emitOfficePush,
       onOfficeHand: emitOfficeHand,
+      onCadHand: emitCadHand,
       onPresence: setCollabState,
       onBrowser: (state) => {
         setLiveFields(state?.fields);

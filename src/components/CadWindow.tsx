@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
 import { SaveButton, keptAs, settle } from "./SaveButton";
-import { cadStateNow, onCadState, useCadState } from "../lib/caddesk";
+import { cadStateNow, onCadHand, onCadState, useCadState } from "../lib/caddesk";
 import { useAgentCursor } from "../lib/agentCursor";
 import { useCursorWho, whoColors, getCursorWho } from "../lib/cursorWho";
 import { IconCube, IconMaximize, IconMinimize } from "./Icons";
@@ -104,8 +104,12 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow || e.origin !== window.location.origin) return;
-      const msg = e.data as { autora3d?: string; doc?: unknown } | null;
+      const msg = e.data as { autora3d?: string; doc?: unknown; id?: unknown; did?: unknown; skipped?: unknown } | null;
       if (!msg || typeof msg !== "object") return;
+      if (msg.autora3d === "handed" && typeof msg.id === "string") {
+        handing.current.get(msg.id)?.({ did: msg.did, skipped: msg.skipped, doc: msg.doc });
+        return;
+      }
       if (msg.autora3d === "ready") {
         ready.current = true;
         post({ autora3d: "theme", vars: themeNow() });
@@ -130,6 +134,35 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
       }),
     [load],
   );
+
+  /** The agent's calls being done in the frame by hand, by id: answered when the frame says what its hand did. */
+  const handing = useRef(new Map<string, (answer: Record<string, unknown>) => void>());
+
+  /* With Visible work on, the agent's call is done in the modeller by its hand (autora-3d/src/agentHand.ts). The first window
+     to claim it does it; one whose modeller is still starting waits for it, so the work is done in front of the person. */
+  useEffect(() => onCadHand((hand) => {
+    void (async () => {
+      const q = `/api/cad/${encodeURIComponent(sessionId)}/hand`;
+      const claim = await fetch(`${q}/claim?id=${encodeURIComponent(hand.id)}`, { method: "POST" })
+        .then((r) => (r.ok ? (r.json() as Promise<{ won?: boolean }>) : { won: false }))
+        .catch(() => ({ won: false }));
+      if (!claim.won) return;
+      for (let waited = 0; !ready.current && waited < 45_000; waited += 250) await new Promise((r) => setTimeout(r, 250));
+      const answer = ready.current
+        ? await new Promise<Record<string, unknown>>((resolve) => {
+          const timer = setTimeout(() => resolve({ did: [], skipped: "the modeller did not answer" }), 110_000);
+          handing.current.set(hand.id, (a) => { clearTimeout(timer); resolve(a); });
+          post({ autora3d: "hand", id: hand.id, name: hand.name, args: hand.args });
+        })
+        : { did: [], skipped: "the modeller did not start" };
+      handing.current.delete(hand.id);
+      await fetch(`${q}/reply?id=${encodeURIComponent(hand.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(answer),
+      }).catch(() => undefined);
+    })();
+  }), [post, sessionId]);
 
   // Autora's theme, followed as it is changed in Settings.
   useEffect(() => {

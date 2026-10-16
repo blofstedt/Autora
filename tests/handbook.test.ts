@@ -108,6 +108,13 @@ await test("the Video manual says which edits are done in the window by hand wit
   }
 });
 
+await test("the 3D manual says which calls are done in the window by hand with Visible work on", () => {
+  const cad = manualText("cad");
+  for (const needle of ["With Visible work on", "by your hand, live", "Shape tray", "Size & position", "Shift for each after the first", "Done by hand in the 3D window", "Not by hand", "With Visible work off"]) {
+    assert.ok(cad.includes(needle), `the 3D manual lacks "${needle}"`);
+  }
+});
+
 await test("the Music manual says that with Visible work on the studio tools are done in the window by hand", () => {
   const music = manualText("studio");
   for (const needle of ["With Visible work on", "by your hand, live", "Song tray", "Add track", "piano roll", "drum grid", "finished song goes in", "With Visible work off"]) {

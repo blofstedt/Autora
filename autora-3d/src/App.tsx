@@ -178,6 +178,9 @@ export default function App() {
 
   const [selectedBodyId, setSelectedBodyId] = useState<string | null>(null);
   const [selectedBodyIds, setSelectedBodyIds] = useState<string[]>([]);
+  // What is picked now, for the agent's hand, which reads it between its clicks (agentHand.ts).
+  const selectedIdsRef = useRef(selectedBodyIds);
+  selectedIdsRef.current = selectedBodyIds;
   const [selectedEdges, setSelectedEdges] = useState<EdgeSel[]>([]);
   const [selectedFace, setSelectedFace] = useState<FaceSel | null>(null);
   /** When set, only these bodies are shown, in both 2D and 3D. */
@@ -329,6 +332,12 @@ export default function App() {
     const was = new Map(before.bodies.map((b) => [b.id, JSON.stringify(b)]));
     const touched = after.bodies.filter((b) => !b.repeatOf && was.get(b.id) !== JSON.stringify(b)).map((b) => b.id);
     return touched.length ? viewerApi.current?.screenOf(touched) ?? null : null;
+  }, {
+    // The agent's hand (agentHand.ts): the model, what is picked, and where a shape is drawn.
+    doc: () => docRef.current,
+    selected: () => selectedIdsRef.current,
+    screenOf: (ids) => viewerApi.current?.screenOf(ids) ?? null,
+    emptySpot: () => viewerApi.current?.emptySpot() ?? null,
   });
 
   // ---- Selection ----------------------------------------------------------

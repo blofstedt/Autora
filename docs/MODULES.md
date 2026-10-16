@@ -355,7 +355,7 @@ Spectra's fetched renderer is most of what is on disk.
   Enter: best-effort). Completion, history, colours and full-screen programs are the shell's own. A touch screen gets a key row (Esc, Tab, Ctrl+C,
   arrows, `| / ~`). The socket to the page carries only `{open, cwd, rev, running}` (`termdesk`). Class names are `tm-*` (`term-*` is the thread's cell).
 - `autora-3d/` and `server/caddesk.ts`: **Autora 3D**, the 3D modelling window (a sketch-and-extrude CAD modeller) and the agent's
-  `cad_*` tools. `autora-3d/` is a **copy** of github.com/blofstedt/3D-Modeling, which is also its own app: never edit it here (the tool rail is the one exception so far: `docs/autora-3d-tool-rail.patch` is to be applied upstream), change
+  `cad_*` tools. `autora-3d/` is a **copy** of github.com/blofstedt/3D-Modeling, which is also its own app: never edit it here (the tool rail and the agent's hand are the exceptions so far: `docs/autora-3d-tool-rail.patch` and `docs/autora-3d-hand.patch` are to be applied upstream), change
   it there and run `node scripts/sync-autora-3d.mjs [checkout]` (it also regenerates `server/specs/cad.ts`, one `cad_*` tool for
   each call the modeller declares, so the two cannot drift). `npm run build` builds it into `dist/autora-3d/` (the window's page) and
   `dist/autora-3d-engine/` (`engine.mjs` + `manifold.wasm`: the headless model, loaded by the server at run time, so the server is
@@ -365,7 +365,11 @@ Spectra's fetched renderer is most of what is on disk.
   `postMessage`: `ready` -> the model is fetched and sent down with Autora's theme (`THEME_TOKENS`, applied by `autora-3d/src/embed.ts`,
   colours only); `changed` -> `PUT /api/cad/:session/doc`; an agent change -> `caddesk` over the socket -> the frame is sent the new
   model. Each change carries `by` (agent or person) so the window reloads only for the agent's: a drag in progress is never
-  answered with an echo. `cad_export` is saved as an artifact (the STL never goes through the conversation). Traps: the window opens
+  answered with an echo. With Visible work on, a page watching and the window open, the calls in `HAND_TOOLS` are done by hand
+  (`byHand`): worked out on a copy, pushed as `cad.hand` until the page claims it (`/hand/claim`, 4 s or done here), posted to the frame
+  as `{autora3d: "hand"}`, done by `runHand` (`agentHand.ts`: the bar's tools, Size & position's fields, clicks in the view at
+  `screenOf`, which asks the viewer's own hit test so arrows and other shapes are not pressed), answered with `handed` and
+  `/hand/reply`; then the copy's model goes in with the window's new ids swapped in. `cad_export` is saved as an artifact (the STL never goes through the conversation). Traps: the window opens
   on the agent's first call; an incognito chat has none; tool names in the engine's messages are prefixed on the way out
   (`asAgentSees`). The phone shows it as a tab in the pinned view like the other windows (`Thread.tsx`, `lib/stage.ts` kind `cad`).
 - `server/studio.ts`, `server/specs/studio.ts`, `src/lib/studio/`, `src/components/StudioWindow.tsx` + `src/components/studio/`:
