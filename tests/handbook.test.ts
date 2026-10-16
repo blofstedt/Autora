@@ -101,6 +101,13 @@ await test("the Terminal manual says that with Visible work on the command is ty
   }
 });
 
+await test("the Video manual says which edits are done in the window by hand with Visible work on", () => {
+  const v = manualText("video");
+  for (const needle of ["With Visible work on", "by your hand, live", "the ruler clicked at the cut", "Delete pressed", "dragged along the timeline", "Default text", "With Visible work off"]) {
+    assert.ok(v.includes(needle), `the Video manual lacks "${needle}"`);
+  }
+});
+
 await test("the Music manual says that with Visible work on the studio tools are done in the window by hand", () => {
   const music = manualText("studio");
   for (const needle of ["With Visible work on", "by your hand, live", "Song tray", "Add track", "piano roll", "drum grid", "finished song goes in", "With Visible work off"]) {

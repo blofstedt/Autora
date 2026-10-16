@@ -450,7 +450,11 @@ Spectra's fetched renderer is most of what is on disk.
   (`trouble` in `bridge.ts`, from the overlay's `editor-provider.tsx` and `start()`), the window shows it and a command
   fails at once with it; a frame not up after 30 s is loaded once more; a command waits up to 90 s for a start, and the
   `video_*` tools are capped at 150 s; the GPU is waited on 6 s at most (overlay `services/renderer/gpu-renderer.ts`:
-  on some machines the adapter request never answers, and the editor hung on "Loading project..."); the project list
+  on some machines (a mini PC with no graphics card) the adapter request never answers, and the editor hung on "Loading
+  project..."; a machine that did not answer is remembered in the editor's preferences, `autora-no-gpu`, and not waited
+  on again); the agent's timeline edits with Visible work on are done with the editor's controls (`byHand` in
+  `OpenCutWindow.tsx`, `hand_point`/`hand_tap` in `commands.ts`, `data-element-id`/`data-in-track` on clips and
+  `data-track-id` on track rows from the overlay's `timeline-element.tsx` and `timeline-track.tsx`; `tests/ui-video-hand.test.ts`); the project list
   that picks the first project is asked again rather than read as empty; (3) a command can arrive in two tabs: `/api/opencut/claim` makes one of them do it, and the
   server sends an unclaimed one again every 1.5 s; (4) theme: the window reads Autora's tokens off its own page and
   posts them (`--a-*`), so a different theme here is a different one there; (5) automatic captions are removed (they

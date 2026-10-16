@@ -151,6 +151,12 @@ async function run(name: string, args: Record<string, unknown>): Promise<unknown
     case "locate":
       return locate(editor, args);
 
+    case "hand_point":
+      return handPoint(editor, args);
+
+    case "hand_tap":
+      return handTap(args);
+
     case "seek":
       editor.playback.seek({ time: sec(Math.max(0, need(num(args, "time"), "time"))) });
       return { playhead: toSec(editor.playback.getCurrentTime()) };
@@ -298,6 +304,146 @@ async function locate(editor: EditorCore, args: Record<string, unknown>): Promis
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------- the hand --
+
+/**
+ * Where the agent's hand presses for a step done as a person does it (Visible work; components/OpenCutWindow.tsx plans the
+ * steps and moves the cursor, this says where things are on the screen and presses there): a time on the ruler, a clip's
+ * body or one of its edges, a track's row, a media or text tile's "+". Out of view, it is scrolled into view first, as a
+ * person scrolls. Null when it is not on the screen at all.
+ */
+type HandSpot = { x: number; y: number; view: { w: number; h: number }; pps?: number; start?: number; duration?: number };
+
+const view = () => ({ w: window.innerWidth, h: window.innerHeight });
+const frames = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+/** How many pixels a second is on the timeline now: from a clip on it, else from the ruler. */
+function pixelsPerSecond(editor: EditorCore): number | null {
+  for (const track of allTracks(editor.scenes.getActiveScene().tracks)) {
+    for (const element of track.elements as TimelineElement[]) {
+      const el = document.querySelector(`[data-element-id="${CSS.escape(element.id)}"]`);
+      const d = toSec(element.duration);
+      if (el && d > 0) return el.getBoundingClientRect().width / d;
+    }
+  }
+  const ruler = document.querySelector('[aria-label="Timeline ruler"]');
+  const inner = ruler?.firstElementChild as HTMLElement | null;
+  const max = Number(ruler?.getAttribute("aria-valuemax"));
+  return inner && max > 0 ? inner.getBoundingClientRect().width / max : null;
+}
+
+/** The timeline's own scrolling box, which the ruler follows. */
+function timelineScroller(): HTMLElement | null {
+  const root = document.querySelector('[aria-label="Timeline"]');
+  if (!root) return null;
+  for (const el of root.querySelectorAll<HTMLElement>("*")) {
+    const s = getComputedStyle(el);
+    if ((s.overflowX === "auto" || s.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 4) return el;
+  }
+  return null;
+}
+
+/** Bring x (on the timeline) into the visible part of it, the way a person scrolls the timeline. */
+async function intoTimelineView(x: number): Promise<number> {
+  const scroller = timelineScroller();
+  if (!scroller) return 0;
+  const r = scroller.getBoundingClientRect();
+  if (x >= r.left + 24 && x <= r.right - 24) return 0;
+  const by = x - (r.left + r.width / 2);
+  scroller.scrollBy({ left: by, behavior: "smooth" });
+  await new Promise<void>((done) => setTimeout(done, 380));
+  await frames();
+  return by;
+}
+
+async function handPoint(editor: EditorCore, args: Record<string, unknown>): Promise<HandSpot | null> {
+  const kind = str(args, "kind");
+  if (kind === "time") {
+    const ruler = document.querySelector('[aria-label="Timeline ruler"]');
+    const inner = ruler?.firstElementChild as HTMLElement | null;
+    const pps = pixelsPerSecond(editor);
+    const time = Math.max(0, num(args, "time") ?? 0);
+    if (!ruler || !inner || !pps) return null;
+    let x = inner.getBoundingClientRect().left + time * pps;
+    const moved = await intoTimelineView(x);
+    if (moved) x = inner.getBoundingClientRect().left + time * pps;
+    const r = ruler.getBoundingClientRect();
+    return { x, y: r.top + r.height / 2, view: view(), pps };
+  }
+  if (kind === "clip") {
+    const id = need(str(args, "elementId"), "elementId");
+    const { element } = findElement(editor, id);
+    let el = document.querySelector<HTMLElement>(`[data-element-id="${CSS.escape(id)}"]`);
+    if (!el) return null;
+    let r = el.getBoundingClientRect();
+    const part = str(args, "part") ?? "body";
+    const edgeX = part === "left" ? r.left : part === "right" ? r.right : r.left + Math.min(r.width * 0.35, 40);
+    if (await intoTimelineView(edgeX)) {
+      el = document.querySelector<HTMLElement>(`[data-element-id="${CSS.escape(id)}"]`);
+      if (!el) return null;
+      r = el.getBoundingClientRect();
+    }
+    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    r = el.getBoundingClientRect();
+    const duration = toSec(element.duration);
+    const base = { view: view(), pps: duration > 0 ? r.width / duration : undefined, start: toSec(element.startTime), duration };
+    if (part === "left" || part === "right") {
+      const handle = el.querySelector<HTMLElement>(`[aria-label="${part === "left" ? "Left" : "Right"} resize handle"]`);
+      if (!handle) return null;
+      const h = handle.getBoundingClientRect();
+      return { ...base, x: h.left + h.width / 2, y: h.top + h.height / 2 };
+    }
+    return { ...base, x: r.left + Math.min(r.width * 0.35, 40), y: r.top + r.height / 2 };
+  }
+  if (kind === "track") {
+    const row = document.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(need(str(args, "trackId"), "trackId"))}"]`);
+    if (!row) return null;
+    row.scrollIntoView({ block: "nearest" });
+    const r = row.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, view: view() };
+  }
+  if (kind === "tile") {
+    // A media or text tile in the panel on the left: its "+", which adds it at the playhead.
+    const name = need(str(args, "name"), "name");
+    // Its name: a label's title, the screen reader's words, or (a text tile) the words drawn in it.
+    const label = [...document.querySelectorAll<HTMLElement>("span[title], .sr-only, span")]
+      .find((s) => (s.getAttribute("title") ?? s.textContent ?? "").trim() === name && s.closest(".group"));
+    const tile = label?.closest<HTMLElement>(".group");
+    const plus = tile?.querySelector<HTMLElement>("button:has(svg.lucide-plus), button[title*='timeline' i]") ?? tile?.querySelector<HTMLElement>("button");
+    if (!tile || !plus) return null;
+    tile.scrollIntoView({ block: "nearest" });
+    // A person's pointer over the tile is what shows its "+".
+    const t = tile.getBoundingClientRect();
+    tile.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, clientX: t.left + t.width / 2, clientY: t.top + t.height / 2 }));
+    const p = plus.getBoundingClientRect();
+    return { x: p.left + p.width / 2, y: p.top + p.height / 2, view: view() };
+  }
+  return null;
+}
+
+/** A press at a point, with the events a mouse makes, on whatever is drawn there. */
+async function handTap(args: Record<string, unknown>): Promise<{ hit: string }> {
+  const at = { x: need(num(args, "x"), "x"), y: need(num(args, "y"), "y") };
+  const hit = document.elementFromPoint(at.x, at.y);
+  if (!hit) throw new Error("Nothing is there on the screen");
+  const shift = args.shift === true;
+  const init = (type: string): PointerEventInit => ({
+    bubbles: true, cancelable: true, composed: true, view: window, clientX: at.x, clientY: at.y, button: 0,
+    buttons: type.endsWith("down") ? 1 : 0, shiftKey: shift, pointerId: 1, pointerType: "mouse", isPrimary: true,
+  });
+  for (const type of ["pointerover", "pointermove", "mousemove", "pointerdown", "mousedown"]) {
+    hit.dispatchEvent(type.startsWith("pointer") ? new PointerEvent(type, init(type)) : new MouseEvent(type, init(type)));
+  }
+  await new Promise<void>((r) => setTimeout(r, 60));
+  for (const type of ["pointerup", "mouseup", "click"]) {
+    hit.dispatchEvent(type.startsWith("pointer") ? new PointerEvent(type, init(type)) : new MouseEvent(type, init(type)));
+  }
+  // The ruler and the clips listen for the mouse coming up anywhere, as a person's would.
+  window.dispatchEvent(new MouseEvent("mouseup", init("mouseup")));
+  await frames();
+  return { hit: (hit as HTMLElement).getAttribute?.("aria-label") ?? hit.tagName.toLowerCase() };
 }
 
 export function installCommands(): void {

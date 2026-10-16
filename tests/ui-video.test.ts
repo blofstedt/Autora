@@ -72,6 +72,7 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => { if (m.text().startsWith("[video hand]")) console.log(`    ${m.text()}`); });
     await page.goto(`${app.base}/?session=${s}`);
     await page.waitForSelector(".composer", { timeout: 20_000 });
 
@@ -108,7 +109,9 @@ async function main() {
       assert.match(text, /Project "Test cut"/);
       assert.match(text, /Imported image "violet.png"/);
       assert.match(text, /image "violet.png"/, "the picture is on the timeline");
-      assert.match(text, /text "Hello from Autora"/, "and so is the title, in full");
+      assert.match(text, /text "Hello from Autora" {2}1\.00s to 3\.00s/, "and so is the title, in full, as long as asked");
+      // Visible work is on: the title went in from the Text panel's "+", and its words were typed in.
+      assert.match(text, /Default text[^\n]{0,40}typed the words, by hand in the Video window/, `the title was added by hand: ${text.slice(text.lastIndexOf("Done (add_text)"), text.lastIndexOf("Done (add_text)") + 1500)}`);
     });
 
     await test("it is beside the chat, named for the app, and the cursor played", async () => {
@@ -136,10 +139,13 @@ async function main() {
     });
 
     await test("a person's edits are the editor's own, and the agent reads them back", async () => {
-      // Undo is the editor's: the title the agent typed goes, and video_look shows it gone.
+      // Undo is the editor's: the title the agent made goes, and video_look shows it gone. Made by hand, it was made
+      // in a person's steps (added, typed, its end dragged), and each is a step of undo.
       await page.locator(".app-pane[data-pane=video] iframe").focus();
-      await page.keyboard.press("Control+z");
-      await sleep(400);
+      for (let i = 0; i < 4; i++) {
+        await page.keyboard.press("Control+z");
+        await sleep(400);
+      }
       n = steps.length - 1; // only video_look again
       app.seen.length = 0;
       await app.turn(s, "what is on the timeline now?", 60_000);

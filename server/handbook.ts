@@ -159,6 +159,14 @@ const VIDEO = [
     "is a button you can click with video_ui by its name. The keyboard shortcuts work on a desktop as ever. Point the person at a tool by " +
     "its name and say \"open All tools\" if it is not on their bar. The project's name is in the window's bar; above the preview is only " +
     "the projects menu (New project, Rename, Delete project, switching projects) and Export.",
+  "  With Visible work on and the window open, these video_edit actions are done there by your hand, live, while the call " +
+    "waits: split (the clip picked, the ruler clicked at the cut, Split pressed on the bar), delete (the clips picked, Delete " +
+    "pressed), move (the clip dragged along the timeline, or to another track), trim (its edges dragged), add_clip (the ruler " +
+    "clicked at its time, the media tile's \"+\" pressed in the Media panel) and add_text (the same with the Text panel's " +
+    "\"Default text\", then the words typed in and its end dragged to its length). Your result says \"by hand in the Video " +
+    "window\", and where the editor landed somewhere else (snapping) what was then set exactly. Each is a person's step of " +
+    "undo. A clip past the end of the timeline, and every other action, is done by the editor directly, with your cursor " +
+    "pointing at where it lands. With Visible work off everything is done directly, at speed.",
   "  Saving. The project is saved as you go; the window's top bar (Autora Video, the project's name) also has Save, which writes the project now. Projects are the person's across chats, so Save keeps nothing in Artifacts; the video file comes from Export.",
 ].join("\n");
 
