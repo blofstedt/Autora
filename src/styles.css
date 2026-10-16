@@ -5264,8 +5264,8 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* What the agent learned from a turn, up for keeping. */
 .learned {
-  display: flex; flex-direction: column; gap: 6px;
-  margin: 4px 0; padding: 8px 10px 8px 38px; font-size: var(--fs-sm); color: var(--text-3);
+  display: flex; flex-direction: column; gap: 4px;
+  margin: 0; padding: 4px 10px 4px 38px; font-size: var(--fs-sm); color: var(--text-3);
   animation: rise var(--dur-2) var(--ease) both;
 }
 .learned-head {
@@ -5274,7 +5274,10 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   color: var(--text-3); cursor: pointer;
 }
 .learned-head:hover { color: var(--text-2); }
-.learned-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+/* Chip on its own line, its note and Discard tight underneath: with a row gap the
+   note floated a line away from the chip it belongs to. */
+.learned-item { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-width: 0; }
+.learned-item + .learned-item { margin-top: 4px; }
 .learned-item.is-discarded .mem-chip { text-decoration: line-through; opacity: 0.55; }
 .learned-note { font-size: var(--fs-xs); }
 .learned-actions { display: inline-flex; gap: 6px; margin-left: auto; }
