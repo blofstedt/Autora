@@ -156,7 +156,7 @@ export const scheduleSPECS: ToolSpec[] = [
       "The to-do list the person watches, in the conversation. Write the plan " +
       "on it before you start anything that takes more than one step, then " +
       "rewrite it as you go: an item is in-progress while you work on it and " +
-      "completed the moment it is finished -- one item at a time: finish it, call this to mark it completed and start the next, then continue. Never do several items and mark them off together. Every call is the WHOLE list as " +
+      "completed the moment it is finished, before the next item starts -- never mark a batch off together. Every call is the WHOLE list as " +
       "it now stands, in order. Keep one item in-progress at a time. The list " +
       "appears by itself on the first call. Use it for programming (many " +
       "items), and for small errands too -- an email is read it, pull the " +
