@@ -314,4 +314,18 @@ test("a reference is a kind the mind can hold and edit", () => {
   assert.equal(r.version, "2");
 });
 
+test("two memories can be connected by judgement, and the link survives a relink", () => {
+  const { g } = graph();
+  const skill = g.write({ title: "Invoices: monthly run", body: "Open the sheet, total, send.", kind: "skill" }).record;
+  const ref = g.write({ title: "Acme: api", body: "POST /v1.", kind: "reference", subject: "acme", source: "https://acme.com/api" }).record;
+  assert.equal(g.connect(skill.id, ref.id, "Uses it!"), null);
+  assert.ok(g.links.some((l) => l.rel === "uses_it" && l.src === skill.id && l.dst === ref.id));
+  g.relink();
+  assert.ok(g.links.some((l) => l.rel === "uses_it"), "relink redraws guesses, not judgements");
+  assert.equal(g.connect(skill.id, ref.id, "uses it"), null);
+  assert.equal(g.links.filter((l) => l.rel === "uses_it").length, 1, "the same link is not drawn twice");
+  assert.match(g.connect(skill.id, skill.id) ?? "", /itself/);
+  assert.match(g.connect(skill.id, "mem-nope") ?? "", /no memory/);
+});
+
 console.log(`${passed} passed`);

@@ -188,6 +188,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The agent now ticks off its to-do list as it works: it finishes one item, marks it done, and moves to the next, instead
-  of completing a batch and marking them all at the end. The copy and read-aloud buttons under a reply moved up beside
-  the agent's name, so they no longer take a row of space under every message.
+  What the agent learned from a turn now shows in one rounded "New memories…" box: a coloured dot and a line for each
+  memory, with an x at the end to forget it. The agent can now connect two memories when it notices they belong together
+  (a new memory_link tool, shown in the Mind), and is told to write, fix and confirm its own skills as memories of kind
+  skill. Earlier in this release: the to-do list is ticked off one item at a time, and the copy and read-aloud buttons
+  sit beside the agent's name.

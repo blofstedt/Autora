@@ -86,6 +86,11 @@ export const MEMORY_GUIDE =
   "short; true months from now (nothing about this conversation: the log has it); nothing secret; no near-copies -- " +
   "memory_update the one that exists. Procedures: the steps, commands and gotchas that worked. Preferences: how the " +
   "person wants things done. A write that breaks these is refused with what to change.\n" +
+  "- Your own skills: a skill is a memory of kind skill -- a way of doing a kind of work that you worked out and would want next " +
+  "time. When you work out a repeatable method, write it with memory_write (kind skill: when to use it, the steps, the " +
+  "gotchas); when you use one and find it wrong or incomplete, fix it with memory_update rather than writing another, and " +
+  "memory_confirm it when it held. When you notice that two memories belong together -- a skill and the reference it relies " +
+  "on, a preference and the procedure it shapes -- tie them with memory_link and say how they relate.\n" +
   "- Improving Autora: when something fails because of Autora itself -- a tool that errors on a valid call, a message that " +
   "misleads, a capability that is missing, an instruction that sent you the wrong way -- record it with improvements " +
   "(action record, with the exact error as evidence) before you move on, then tell the person in a line or two what you " +

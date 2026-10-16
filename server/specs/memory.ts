@@ -87,6 +87,26 @@ export const memorySPECS: ToolSpec[] = [
     risky: true,
   },
   {
+    name: "memory_link",
+    group: "memory",
+    description:
+      "Connect two memories when you notice they belong together: a skill that " +
+      "uses a reference, a preference that explains a procedure, two facts about " +
+      "the same project. The link shows in the Mind and is kept. Name how they " +
+      "relate in a word or two (\"uses\", \"explains\", \"part of\"). Do not " +
+      "link things that are merely alike; the Mind already notices that.",
+    parameters: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "One memory's id, e.g. mem-abc123." },
+        to: { type: "string", description: "The other memory's id." },
+        rel: { type: "string", description: "How they relate, in a word or two. Default \"related to\"." },
+      },
+      required: ["from", "to"],
+    },
+    risky: true,
+  },
+  {
     name: "memory_forget",
     group: "memory",
     description:

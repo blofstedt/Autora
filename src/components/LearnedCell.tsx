@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { LearnedItem } from "../lib/derive";
 import { BUCKETS, KIND_COLOR, type Bucket } from "../lib/memory";
 import { MemoryPeek } from "./MemoryCell";
+import { IconX } from "./Icons";
 
 type Fate = "open" | "kept" | "discarded" | "busy";
 
@@ -91,50 +92,56 @@ export function LearnedCell({
       .catch(() => undefined);
   };
 
+  /* A discarded one is gone from the box, not struck through: the x removes it. */
+  const shown = items.filter((item) => (item.status === "confirmed" ? "kept" : fate[item.id] ?? "open") !== "discarded");
+  if (shown.length === 0 && changes.length === 0 && !peeking) return null;
+
   return (
     <div className="learned">
       <button type="button" className="learned-head" onClick={onOpen} title="Open the Mind">
         <span className="mem-pulse-dot" aria-hidden="true" />
-        learned from this
+        New memories…
       </button>
-      {items.map((item) => {
+      {shown.map((item) => {
         const state = item.status === "confirmed" ? "kept" : fate[item.id] ?? "open";
+        const note =
+          item.action === "proposed" || item.revises ? "a correction to an existing memory" :
+            item.action === "reinforced" ? "already known; counted as having worked" :
+              item.action === "merged" ? "folded into a similar unconfirmed memory" : "new";
         return (
           <div key={item.id} className={`learned-item is-${state}`}>
             <button
               type="button"
               className="learned-open"
               onClick={() => openItem(item)}
-              title="Open this memory"
+              title={`${item.kind}: ${note}`}
             >
               <span
-                className="mem-chip"
+                className="learned-dot"
+                aria-hidden="true"
                 style={isBucket(item.kind) ? ({ "--chip": KIND_COLOR[item.kind] } as React.CSSProperties) : undefined}
-              >
-                <em>{item.kind}</em>
-                {item.title}
-              </span>
+              />
+              {item.title}
             </button>
-            <span className="learned-note">
-              {item.action === "proposed" || item.revises ? "a correction to an existing memory" :
-                item.action === "reinforced" ? "already known; counted as having worked" :
-                  item.action === "merged" ? "folded into a similar unconfirmed memory" : "new"}
-            </span>
-            {state === "discarded" ? (
-              <span className="learned-fate">discarded</span>
-            ) : (
-              /* Remembered already; Discard is only there if it was wrong. */
-              <span className="learned-actions">
-                <button type="button" className="btn tiny ghost" disabled={state === "busy"} onClick={() => void decide(item.id, false).catch(() => undefined)}>Discard</button>
-              </span>
-            )}
+            <button
+              type="button"
+              className="learned-x"
+              disabled={state === "busy"}
+              onClick={() => void decide(item.id, false).catch(() => undefined)}
+              title="Forget this memory"
+              aria-label={`Forget ${item.title}`}
+            >
+              <IconX size={12} />
+            </button>
           </div>
         );
       })}
       {changes.map((c) => (
         <div key={`${c.id}-${c.change}`} className="learned-item is-change">
-          <span className="mem-chip">{c.title}</span>
-          <span className="learned-note">{CHANGE_WORDS[c.change] ?? c.change}</span>
+          <span className="learned-open" title={CHANGE_WORDS[c.change] ?? c.change}>
+            <span className="learned-dot" aria-hidden="true" />
+            {c.title}
+          </span>
         </div>
       ))}
 
