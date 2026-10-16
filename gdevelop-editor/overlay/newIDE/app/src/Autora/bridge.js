@@ -6,6 +6,7 @@
  *   window -> editor   {reload}           the agent changed the game on the server: take it
  *   window -> editor   {theme}            Autora's colours changed: start again with them
  *   window -> editor   {save}             the person pressed Save: save now, then {saved}
+ *   window -> editor   {run}               a tool of the window's tool bar was pressed, and the editor says how the tools look (rail.js)
  *
  * and, on its own, the saving: the person never has to press Save. A change is saved a moment after
  * it is made, to the same place the agent's tools work on.
@@ -16,6 +17,7 @@
 import { AUTORA_STORAGE_NAME } from '../ProjectsStorage/AutoraStorageProvider';
 import { serializeToJSObject } from '../Utils/Serializer';
 import { getAutoraSession, tellAutora, isInAutora } from './session';
+import { startAutoraRail } from './rail';
 
 /** How long the person must have been still before what they did is saved. */
 const QUIET_MS = 1200;
@@ -62,6 +64,8 @@ const reload = async () => {
 export const startAutoraBridge = () => {
   if (started || !isInAutora()) return;
   started = true;
+  // The window's tool bar drives the editor from here (rail.js).
+  startAutoraRail();
 
   /*
    * When to save. GDevelop says "there are unsaved changes" for most of what a person does but not

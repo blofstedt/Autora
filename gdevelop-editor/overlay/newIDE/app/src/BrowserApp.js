@@ -104,7 +104,10 @@ export const create = (authentication: Authentication): React.Node => {
                 getStorageProviderResourceOperations
               }
               getStorageProvider={getStorageProvider}
-              resourceSources={browserResourceSources}
+              // The shop's pictures and sounds are not here (Autora has no connection to it): only the person's own files.
+              resourceSources={browserResourceSources.filter(
+                source => !source.name.startsWith('resource-store-')
+              )}
               resourceExternalEditors={[]}
               extensionsLoader={makeExtensionsLoader({
                 objectsEditorService: ObjectsEditorService,

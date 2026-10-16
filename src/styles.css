@@ -6787,6 +6787,15 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 @keyframes office-click { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .office-click { animation: none; } }
 .game-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* The tool bar's trays (scenes, zoom): the same chips as Music's add-track tray. */
+.gm-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.gm-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: var(--r-pill); cursor: pointer; white-space: nowrap;
+  background: var(--s2); border: 1px solid var(--border-strong); color: var(--text-2); font: 550 var(--fs-sm) var(--sans);
+}
+.gm-chip:hover:not(:disabled) { color: var(--text); background: var(--s3); border-color: var(--accent-line); }
+.gm-chip.is-on { color: var(--text); background: var(--accent-soft); border-color: var(--accent-line); }
+.gm-chip.is-new { border-style: dashed; }
 .pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); display: block; }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */
