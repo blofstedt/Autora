@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveButton, settle } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { useCollab } from "../lib/collab";
 import { TakeControl } from "./TakeControl";
@@ -200,6 +201,7 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
         <span className="pdf-bar-name" title={desk.name ?? undefined}>{desk.name ?? "PDF"}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
+        <LoadButton app="pdf" session={sessionId} phone={phone} />
         <SaveButton onSave={keep} phone={phone} disabled={!desk.name} />
         <TakeControl sessionId={sessionId} surface="pdf" mine={mine} phone={phone} thing="PDF" />
         {desk.working && (

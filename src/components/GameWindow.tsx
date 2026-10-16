@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveButton, keptAs } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { gameStateNow, onGameState, useGameState, type GameCue } from "../lib/gamedesk";
 import { useAgentCursor } from "../lib/agentCursor";
@@ -127,6 +128,7 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
         <span className="pdf-bar-name">{game.name ?? "Your game"}{scenes ? ` · ${scenes === 1 ? "1 scene" : `${scenes} scenes`}` : ""}</span>
         <span className="pdf-bar-note">{up ? "Saved as you go" : "Starting the engine…"}</span>
         <div className="spacer" />
+        <LoadButton app="game" session={sessionId} phone={phone} />
         <SaveButton onSave={keep} phone={phone} disabled={!up} />
         {phone && (
           <button

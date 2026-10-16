@@ -183,5 +183,12 @@ await test("tool_manual returns a manual, and refuses a window that does not exi
   assert.ok(bad.summary.includes("browser, creator"));
 });
 
+await test("the general manual says every window has Load, and what the composer's Artifacts button attaches", () => {
+  const text = windowsOverview();
+  for (const needle of ["has Load", "opens in that window", "you did not open", "the Artifacts button beside the notebook", "project folder", "up to 20"]) {
+    assert.ok(text.includes(needle), `the windows overview lacks "${needle}"`);
+  }
+});
+
 console.log(`\n${passed} passed`);
 process.exit(0);

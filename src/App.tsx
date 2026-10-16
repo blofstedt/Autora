@@ -108,7 +108,7 @@ import {
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconArrowUp, IconChevron, IconFile, IconMask, IconMenu, IconNotebook, IconPlus, IconStop,
+  IconArrow, IconArrowUp, IconChevron, IconFile, IconFolder, IconMask, IconMenu, IconNotebook, IconPlus, IconStop,
   IconWrench,
   IconX,
 } from "./components/Icons";
@@ -130,6 +130,8 @@ const SPEAK_FRESH_S = 30;
 const EVENT_BATCH_MS = 66;
 /** What the composer's library offers. */
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
+/** Saved files, and project folders from the Artifacts page, as the composer's Artifacts button offers them. */
+const ARTIFACT_TABS: LibraryTab[] = ["files", "folders"];
 
 /** The windows that can sit beside the chat on a wide screen, one at a time. */
 type SideWindow = "app" | "pdf" | "video" | "cad" | "game" | "photo" | "term" | "studio" | "pages" | "sheets" | "slides" | "browser" | "work";
@@ -210,6 +212,9 @@ export function App() {
   /** Notebooks going with the next message, and whether the picker is open. */
   const [attachedBooks, setAttachedBooks] = useState<NotebookRef[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  /** Project folders from Artifacts going with the next message (the files in them go, and the chat joins the project), and whether that picker is open. */
+  const [attachedFolders, setAttachedFolders] = useState<Array<{ id: string; name: string }>>([]);
+  const [artifactsOpen, setArtifactsOpen] = useState(false);
   /** The toolbox: the apps the person opens themselves, with a new blank file. */
   const [toolsOpen, setToolsOpen] = useState(false);
   /** The notebook open on the Notebooks page. */
@@ -293,12 +298,13 @@ export function App() {
   useEffect(() => setStepBack(() => {
     if (sessionsOpen) { setSessionsOpen(false); return true; }
     if (libraryOpen) { setLibraryOpen(false); return true; }
+    if (artifactsOpen) { setArtifactsOpen(false); return true; }
     if (toolsOpen) { setToolsOpen(false); return true; }
     if (notebookOpen) { setNotebookOpen(null); return true; }
     if (drawerOpen) { setDrawerOpen(false); return true; }
     if (page !== "chat") { setPage("chat"); return true; }
     return false;
-  }), [sessionsOpen, libraryOpen, toolsOpen, notebookOpen, drawerOpen, page]);
+  }), [sessionsOpen, libraryOpen, artifactsOpen, toolsOpen, notebookOpen, drawerOpen, page]);
   const streamRef = useRef<SessionStream | null>(null);
   /** The newest event the presence has already reacted to, so a reload or a
       session switch does not replay old moments. */
@@ -663,7 +669,8 @@ export function App() {
        but files: "look at this" with the photo is a whole request. */
     const files = spoken === undefined ? attached : [];
     const books = spoken === undefined ? attachedBooks : [];
-    if ((!text && files.length === 0 && books.length === 0) || !sessionId) return;
+    const folders = spoken === undefined ? attachedFolders : [];
+    if ((!text && files.length === 0 && books.length === 0 && folders.length === 0) || !sessionId) return;
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
     if (pointed && typed) clearOfficePick();
@@ -671,6 +678,7 @@ export function App() {
       setDraft("");
       setAttached([]);
       setAttachedBooks([]);
+      setAttachedFolders([]);
       // The message is handed over: a spark from Send to the agent's mark.
       flySpark(visible(".composer-send"), visible(".rail-slot .presence", ".top-presence"));
     }
@@ -689,6 +697,7 @@ export function App() {
         text,
         ...(files.length > 0 ? { attachments: files.map((f) => f.id) } : {}),
         ...(books.length > 0 ? { notebooks: books.map((b) => b.id) } : {}),
+        ...(folders.length > 0 ? { folders: folders.map((f) => f.id) } : {}),
         /* It was said out loud, and a spoken turn answers without thinking
            first: in live voice the wait is the whole experience. */
         ...(spoken !== undefined ? { spoken: true } : {}),
@@ -697,6 +706,13 @@ export function App() {
         ...(interrupt ? { mode: "interrupt" } : {}),
       }),
     }).catch(() => null);
+    // A folder with more files than a message can carry: said, so nobody thinks the rest went.
+    if (res?.ok) {
+      const sent = (await res.clone().json().catch(() => null)) as { left?: Array<{ name: string; left: number }> } | null;
+      if (sent?.left?.length) {
+        setNotice(sent.left.map((l) => `${l.name} has ${l.left} more file${l.left === 1 ? "" : "s"} than a message can carry; Autora can list the rest.`).join(" "));
+      }
+    }
     // Now that the box stays open while the connection comes back, a send
     // can fail: put what was typed back rather than losing it.
     if (!res?.ok) {
@@ -707,10 +723,11 @@ export function App() {
         // the chips come back and Send can be pressed again.
         setAttached((now) => (now.length > 0 ? now : files));
         setAttachedBooks((now) => (now.length > 0 ? now : books));
+        setAttachedFolders((now) => (now.length > 0 ? now : folders));
       }
       setNotice("Could not reach the server; your message was not sent.");
     }
-  }, [draft, attached, attachedBooks, sessionId, speaking, prime]);
+  }, [draft, attached, attachedBooks, attachedFolders, sessionId, speaking, prime]);
 
   /** Put files into the message: up to the artifacts store now, into a chip
       beside the box while they travel, and into the message as their ids. */
@@ -747,7 +764,17 @@ export function App() {
       .map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: f.size }))]);
   }, []);
 
+  /** Saved files and project folders picked from Artifacts go into the next message. */
+  const addFromArtifacts = useCallback((picked: { files: Attachment[]; folders: Array<{ id: string; name: string }> }) => {
+    setArtifactsOpen(false);
+    setAttached((list) => [...list, ...picked.files.filter((f) => !list.some((x) => x.id === f.id))
+      .map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: f.size }))]);
+    setAttachedFolders((list) => [...list, ...picked.folders.filter((f) => !list.some((x) => x.id === f.id))
+      .map((f) => ({ id: f.id, name: f.name }))]);
+  }, []);
+
   const closeLibrary = useCallback(() => setLibraryOpen(false), []);
+  const closeArtifacts = useCallback(() => setArtifactsOpen(false), []);
 
   const notebookToChat = useCallback((ref: NotebookRef) => {
     setAttachedBooks((list) => (list.some((b) => b.id === ref.id) ? list : [...list, ref]));
@@ -909,7 +936,7 @@ export function App() {
      away its focus) mid-sentence, at random as far as anyone typing could
      tell. Messages go over a plain request anyway, not the socket. */
   const readOnly = status.state === "recorded" || status.state === "closed";
-  const nothingAttached = attached.length === 0 && attachedBooks.length === 0;
+  const nothingAttached = attached.length === 0 && attachedBooks.length === 0 && attachedFolders.length === 0;
 
   // Whether a turn is running now, read from the tail of the log so a reload
   // mid-turn comes back knowing one is in flight.
@@ -2151,7 +2178,7 @@ export function App() {
                 {/* The agent's to-do list, attached to the top of the box:
                     one line, the task it is on, tap for all of them. */}
                 {dockPlan && <TodoDock key={cellKey(dockPlan)} items={dockPlan.items} />}
-                <div className={`composer-box ${draft.trim() || attached.length > 0 || attachedBooks.length > 0 ? "has-text" : ""}`}>
+                <div className={`composer-box ${draft.trim() || attached.length > 0 || attachedBooks.length > 0 || attachedFolders.length > 0 ? "has-text" : ""}`}>
                   {/* What the month has cost against the ceiling set in
                       Settings, with this session's share at the right-hand
                       end. Nothing until the first read comes back, so the
@@ -2264,7 +2291,7 @@ export function App() {
                       }
                     }}
                   />
-                  {(attached.length > 0 || attachedBooks.length > 0 || (pointedAt && pointedAt.session === sessionId)) && (
+                  {(attached.length > 0 || attachedBooks.length > 0 || attachedFolders.length > 0 || (pointedAt && pointedAt.session === sessionId)) && (
                     /* Boxes along the bottom of the field, left to right: a
                        picture is the picture, a file is its name. Both arrive
                        with the same small pop. */
@@ -2281,6 +2308,24 @@ export function App() {
                           </button>
                         </span>
                       )}
+                      {attachedFolders.map((folder) => (
+                        <span className="attach-chip is-file is-folder" key={folder.id}>
+                          <IconFolder size={16} />
+                          <span className="attach-meta">
+                            <b title={folder.name}>{folder.name}</b>
+                            <em>project folder</em>
+                          </span>
+                          <button
+                            type="button"
+                            className="attach-drop"
+                            onClick={() => setAttachedFolders((list) => list.filter((f) => f.id !== folder.id))}
+                            title={`Remove ${folder.name}`}
+                            aria-label={`Remove ${folder.name}`}
+                          >
+                            <IconX size={12} />
+                          </button>
+                        </span>
+                      ))}
                       {attachedBooks.map((book) => (
                         <span className="attach-chip is-file is-notebook" key={book.id}>
                           <IconNotebook size={16} />
@@ -2416,6 +2461,17 @@ export function App() {
                       >
                         <IconNotebook size={18} />
                       </button>
+                      {/* Artifacts, beside the notebook: one saved file, or a whole project folder, for the agent to work from. */}
+                      <button
+                        type="button"
+                        className="btn ghost icon attach-btn"
+                        onClick={() => setArtifactsOpen(true)}
+                        disabled={readOnly}
+                        title="Add a saved file or a project folder from Artifacts"
+                        aria-label="Add a saved file or a project folder from Artifacts"
+                      >
+                        <IconFolder size={18} />
+                      </button>
                       {/* The toolbox, between the notebook and Send: the apps the
                           person can open themselves, each with a new blank file,
                           without spending a turn on it. */}
@@ -2438,6 +2494,16 @@ export function App() {
                           onTrouble={setNotice}
                           onOpened={(name, app) => setNotice(`${name} is open in ${app}`)}
                           onAsk={(text) => { setDraft(text); window.setTimeout(() => composerRef.current?.focus(), 0); }}
+                        />
+                      )}
+                      {artifactsOpen && (
+                        <LibraryPicker
+                          tabs={ARTIFACT_TABS}
+                          title="Add from Artifacts"
+                          action="Add"
+                          exclude={new Set(attached.map((f) => f.id))}
+                          onClose={closeArtifacts}
+                          onPick={addFromArtifacts}
                         />
                       )}
                       {libraryOpen && (

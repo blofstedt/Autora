@@ -5,6 +5,7 @@ import { clearCursor, reportCursor } from "../lib/cursorPos";
 import { getCursorWho, whoColors } from "../lib/cursorWho";
 import { IconImage, IconMaximize, IconMinimize } from "./Icons";
 import { SaveButton, keptAs, settle } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 
 /**
  * Autora Photo: the photo editing window, beside the conversation.
@@ -204,6 +205,7 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
         <span className="pdf-bar-name">{size ? `${size.w} × ${size.h}, ${layers === 1 ? "1 layer" : `${layers} layers`}` : "No picture yet"}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
+        <LoadButton app="photo" session={sessionId} phone={phone} />
         <SaveButton onSave={keep} phone={phone} disabled={!size} />
         {phone && <button
           className="btn icon ghost pdf-full-btn"

@@ -146,7 +146,20 @@ Spectra's fetched renderer is most of what is on disk.
   - `memory.ts`: the memory graph (ranked recall, merging near-copies,
     provisional to confirmed).
   - `learning.ts`: looking back at a finished turn and deciding what to keep.
-  - `scheduler.ts`: cron jobs and watchers.
+  - `scheduler.ts`: cron jobs and watchers. A job is one of two kinds: a **script** (`command`: a shell command the clock runs
+    itself via `runScript`, no model, no chat, so free; a failure is notified, a success is only in the run list) or a task that
+    **wakes a model** (`prompt`, with or without a `watch`). An agent may only make and change scripts (the `schedule` tool in
+    `tools.ts`; `jobs` in the agent's `ToolContext` in `server.ts` forces prompt "" and no watcher): tokens spent on a timer
+    nobody asked for are the thing this prevents. A task that wakes a model is the person's (the Schedule page's "asks the agent"),
+    and an agent may only pause one. `makesTimerOrWake` in `guard.ts` also stops the terminal tools making a timer of their own
+    (`crontab`, `at`, `systemd-run`) and a scheduled script from calling Autora's own API or a model's; it reads the command's
+    text, so it is a check on mistakes and the easy way round, not a lock.
+  - `loadfile.ts`: Load, the other half of Save. `POST /api/sessions/:session/load {app, artifact}` puts a saved file in an app's
+    window (PDF and Pages/Sheets/Slides through their desk hooks; Photo and Video through the agent's own tools; Music, 3D and
+    Games through `loadSong`, `loadModel` and `loadGame`). What each app takes is `src/lib/loadable.ts`, shared with the picker
+    (`LoadButton`, in every window's bar beside Save). 3D's Save now also keeps `<name>.model.json` for Load to take back.
+    The composer's Artifacts button (beside the notebook) is the same picker (`LibraryPicker` with a Folders tab): a picked
+    folder goes as `folders` in the message and `folderFiles` in `attach.ts` turns it into its files (20 at most, newest first).
   - `customtools.ts`: scripts the agent saved as its own tools.
   - `toolhealth.ts`: recent failures per tool, told to the agent.
   - `loopwatch.ts` (the same call repeating) and `errorbudget.ts` (the same

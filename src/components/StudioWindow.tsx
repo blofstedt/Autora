@@ -14,6 +14,7 @@ import { useSong } from "./studio/useSong";
 import { runStudioHand } from "./studio/hand";
 import type { StudioStep } from "../lib/studio/handsteps";
 import { SaveButton, keptAs } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 import {
   IconCopy, IconDownload, IconMaximize, IconMetronome, IconMinimize, IconMinus, IconMusic, IconPause, IconPlay, IconPlus, IconRepeat, IconRotateCcw,
   IconRotateCw, IconScissors, IconSearch, IconSkipBack, IconSliders, IconTable, IconTrash, IconX,
@@ -348,6 +349,7 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
         <span className={`pdf-bar-note st-save is-${song.save}`}>{song.save === "saving" ? "Saving…" : song.save === "error" ? "Not saved" : "Saved as you go"}</span>
         <div className="spacer" />
         <span ref={saveRef} className="st-save-btn">
+          <LoadButton app="studio" session={sessionId} phone={phone} />
           <SaveButton onSave={keep} phone={phone} />
         </span>
         <button className="st-tool st-export" onClick={() => void exportWav()} disabled={rendering || empty} title="Save the song as a WAV file" aria-label="Export as WAV"><IconDownload size={13} /><span className="st-export-text">{rendering ? "Rendering…" : "Export"}</span></button>

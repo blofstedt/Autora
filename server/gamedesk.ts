@@ -275,6 +275,23 @@ function looksLikeGame(project: unknown): project is Json {
   return isObject(project) && Array.isArray(project.layouts) && isObject(project.properties) && project.layouts.every((l) => isObject(l) && typeof l.name === "string");
 }
 
+/** The person loads a game they kept (the GDevelop project file Save makes): it becomes the chat's game, in its window. */
+export function loadGame(session: string, data: Buffer): { ok: boolean; error?: string } {
+  if (!validSession(session)) return { ok: false, error: "Autora Games needs a chat to work in." };
+  let project: unknown;
+  try {
+    project = JSON.parse(data.toString("utf8"));
+  } catch {
+    return { ok: false, error: "That is not a game Autora Games kept (a GDevelop project, as JSON)." };
+  }
+  if (!looksLikeGame(project)) return { ok: false, error: "That file is not a GDevelop project." };
+  const entry = entryFor(session);
+  setOpen(session, true);
+  entry.by = "agent";
+  commit(session, project, "agent");
+  return { ok: true };
+}
+
 // -------------------------------------------------------------------- paths --
 
 type Step = { key: string } | { select: string };

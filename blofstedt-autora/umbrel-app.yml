@@ -139,8 +139,10 @@ description: >-
   say yes.
 
 
-  • Schedules and watchers — run a task on a cron schedule, or whenever a web
-  page, a file or a command's output changes, with a history of every run.
+  • Schedules and watchers — run a script on a cron schedule for free, or ask
+  the agent to do a task on a schedule or whenever a web page, a file or a
+  command's output changes (you set those; agents only make scripts), with a
+  history of every run.
 
 
   • Proactive — a new chat suggests what it can do for you from what is really
@@ -186,18 +188,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Every app now has a Save button in its top bar (Photo, PDF, Pages, Sheets, Slides, Video, Music, 3D and Games):
-  press it to keep your work right now, without asking the agent; all but Video also put a copy on the Artifacts
-  page. Artifacts are now in folders, one per project: a chat's files start in their own folder, and when another
-  chat carries on with them both chats share one folder. Move files into a new folder, rename it or remove it.
-  Visible work now means you watch the agent really use Photo, PDF, Pages, Sheets, Slides, Music and the Terminal,
-  live: it selects words and types over them, types into cells, opens a slide's text box and types in it, adds
-  tracks, draws clips and places notes in Music with your own controls, types its commands at your own prompt
-  in the Terminal, in Video picks clips, clicks the ruler, presses Split and Delete and drags clips into place,
-  and in 3D does everything by hand: adds shapes from the Shape tray, draws with Draw, clicks shapes, faces and
-  edges in the view, types sizes, drags the ring to turn and a bevel's handle to round an edge, steps a repeat's
-  count and drags its dots, uses Properties, Material, the Library, Join, Subtract, Group and Delete, and presses
-  Undo and Redo. With Visible off it works at full speed. The 3D window also no longer loses a change the agent
-  makes right after another. Also fixed: the Video window no longer gets stuck
-  loading on machines with no graphics card (and remembers there is none, so it starts at once), and no longer loses
-  its project when Autora restarts, so the agent can use it again; Save in the PDF window really saves, filling in a form works, and Photo scrolls smoothly.
+  Agents can no longer set up scheduled jobs that wake an AI model each time they run, which only wasted tokens. What an
+  agent can schedule now is a script: a command that runs on its cron time by itself, costs nothing and tells you only
+  if it fails. It also cannot make a crontab, an "at" job or a systemd timer, or a script that starts a chat. You can still
+  make "ask the agent" tasks yourself on the Schedule page, and choose "runs a script" there too. Every app now has a Load
+  button beside Save (Pages, Sheets, Slides, PDF, Photo, Video, Music, 3D and Games): pick a saved file from Artifacts and it
+  opens in that window. The 3D window's Save now also keeps the model itself so Load can bring it back. In the message box
+  there is a new Artifacts button beside the notebook, to attach saved files or a whole project folder to a chat.

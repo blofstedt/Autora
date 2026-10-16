@@ -109,6 +109,36 @@ await test("a due job runs once, is planned again, and records how it went", asy
   assert.ok(!h.s.running(j.id));
 });
 
+await test("a script job runs its command with no model and no session; a failure is told, a success is not", async () => {
+  const ran: string[] = [];
+  const told: JobRun[] = [];
+  let clock = Date.parse("2026-03-10T08:00:00");
+  let result = { ok: true, output: "backed up 3 files" };
+  const j = job({ id: "script", prompt: "", command: "backup.sh" });
+  const s = new Scheduler([j], {
+    now: () => clock,
+    save: () => undefined,
+    notify: (_job, run) => told.push(run),
+    observe: async () => "",
+    run: async () => { throw new Error("a script must not start a model"); },
+    script: async (_job, command) => { ran.push(command); return result; },
+  });
+  s.plan(j);
+  clock += 60_000;
+  await s.tick();
+  assert.deepEqual(ran, ["backup.sh"]);
+  assert.equal(j.last_session, null);
+  assert.equal(j.runs?.[0].ok, true);
+  assert.equal(j.runs?.[0].summary, "backed up 3 files");
+  assert.equal(told.length, 0, "a script that works is not news every time");
+  result = { ok: false, output: "disk full" };
+  clock += 60_000;
+  await s.tick();
+  assert.equal(j.runs?.[1].ok, false);
+  assert.match(j.last_error ?? "", /disk full/);
+  assert.equal(told.length, 1);
+});
+
 await test("a disabled job or a broken cron never runs", async () => {
   const off = job({ id: "off", enabled: false });
   const bad = job({ id: "bad", cron: "every day" });

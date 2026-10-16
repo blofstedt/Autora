@@ -4,6 +4,7 @@ import { useBootWatch } from "../lib/bootWatch";
 import { useCollab } from "../lib/collab";
 import { TakeControl } from "./TakeControl";
 import { SaveButton } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "../lib/humanPath";
 import { clearCursor, reportCursor } from "../lib/cursorPos";
@@ -623,6 +624,7 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
         <span className="pdf-bar-name" title={desk.name ?? undefined}>{desk.name ?? "Video"}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
+        <LoadButton app="video" session={sessionId} phone={phone} />
         <SaveButton onSave={keep} phone={phone} disabled={!desk.name} />
         <TakeControl sessionId={sessionId} surface="video" mine={mine} phone={phone} thing="video" />
         {phone && (

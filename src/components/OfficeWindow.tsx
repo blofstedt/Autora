@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveButton, keptAs, settle } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 import { useFullscreen } from "../lib/fullscreen";
 import { useCollab } from "../lib/collab";
 import { TakeControl } from "./TakeControl";
@@ -300,6 +301,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             Versions · {versions.length}
           </button>
         )}
+        <LoadButton app={kind === "docx" ? "pages" : kind === "xlsx" ? "sheets" : "slides"} session={sessionId} phone={phone} />
         <SaveButton onSave={keep} phone={phone} disabled={!word.name} />
         <TakeControl sessionId={sessionId} surface="office" mine={mine} phone={phone} thing="document" />
         {/* Whether the agent's cursor shows is Visible work, the eye beside Follow: not a switch of this window's own. */}

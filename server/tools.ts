@@ -29,7 +29,6 @@ import type { LedgerResult } from "./ledger";
 import type { RequirementResult } from "./requirements";
 import { checkEntry } from "./mindrules";
 import { checkArgs } from "./argcheck";
-import { nextRun } from "./scheduler";
 import { officeDir, runOfficeTool } from "./office";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
@@ -173,6 +172,7 @@ export function updateToolSettings(patch: any): ToolSettings {
 
 import { terminalSPECS } from "./specs/terminal";
 import { scheduleSPECS } from "./specs/schedule";
+import { makesTimerOrWake } from "./guard";
 import { browserSPECS } from "./specs/browser";
 import { computerSPECS } from "./specs/computer";
 import { personSPECS } from "./specs/person";
@@ -558,6 +558,8 @@ export interface AgentJob {
   name: string;
   cron: string;
   prompt: string;
+  /** A script job's command: it runs without a model. Null for one that wakes a model. */
+  command: string | null;
   enabled: boolean;
   watch: { kind: string; target: string } | null;
   next_run: number | null;
@@ -572,6 +574,7 @@ export interface AgentJobInput {
   name?: string;
   cron?: string;
   prompt?: string;
+  command?: string;
   watch?: { kind: string; target: string } | null;
   enabled?: boolean;
 }
@@ -659,7 +662,7 @@ export interface ToolContext {
   /** The Schedule page's jobs, so the agent can set up its own. */
   jobs?: {
     list: () => AgentJob[];
-    create: (input: AgentJobInput & { name: string; cron: string; prompt: string }) =>
+    create: (input: AgentJobInput & { name: string; cron: string; command: string }) =>
       { id: string | null; error: string | null };
     update: (id: string, patch: AgentJobInput) => { ok: boolean; error: string | null };
     remove: (id: string) => boolean;
@@ -1829,8 +1832,11 @@ export const AGENT_RUN_CAP_MS = 600_000;
 /** Chains: an agent may hand on to more, and each of those is capped too. */
 const CAP_AGENT_MS = AGENT_RUN_CAP_MS * 3 + 60_000;
 
-/** The closest two runs of a task without a watcher may be, when the agent sets it up. */
-const MIN_PLAIN_JOB_MS = 15 * 60_000;
+/** Why a timer made some other way is refused, and what to do instead. */
+const TIMER_REFUSAL = (what: string) =>
+  `That would make ${what}. A recurring job is the schedule tool's: give it a cron time and the shell command to run, and it ` +
+  "runs by itself, shows on the Schedule page and can be paused. A job that has to wake a model each time spends tokens " +
+  "for nothing and is the person's to set up on the Schedule page, not yours.";
 /** How long the second attempt waits before it goes. */
 const RETRY_BACKOFF_MS = 1_500;
 
@@ -2094,6 +2100,8 @@ async function runToolUnredacted(
         const settings = toolSettings().terminal;
         const command = String(args.command ?? "").trim();
         if (!command) return { ok: false, summary: "No command was given." };
+        const timer = makesTimerOrWake(command);
+        if (timer) return { ok: false, summary: TIMER_REFUSAL(timer) };
         const asked = String(args.cwd ?? "").trim();
         // A relative directory is taken from the terminal's own, like `cd`; once the Terminal window is open, its own.
         const base = termCwd(ctx.session) ?? terminalDir();
@@ -2184,6 +2192,8 @@ async function runToolUnredacted(
       case "run_background": {
         const command = String(args.command ?? "").trim();
         if (!command) return { ok: false, summary: "No command was given." };
+        const timer = makesTimerOrWake(command);
+        if (timer) return { ok: false, summary: TIMER_REFUSAL(timer) };
         const asked = String(args.cwd ?? "").trim();
         const cwd = asked ? path.resolve(terminalDir(), asked) : terminalDir();
         const started = startJob({ command, cwd, note: String(args.note ?? ""), session: ctx.session });
@@ -2260,53 +2270,58 @@ async function runToolUnredacted(
         if (!jobs) return { ok: false, summary: "Scheduled tasks are not available here." };
         const name = String(args.name ?? "").trim();
         const cron = String(args.cron ?? "").trim();
-        const prompt = String(args.prompt ?? "").trim();
+        const command = String(args.command ?? "").trim();
         const id = String(args.id ?? "").trim();
-        if (!prompt) return { ok: false, summary: "A task needs a prompt: what to do when it runs." };
+        /* What an agent may set is a script: a command the console runs on its own clock, with no model. A task that
+           wakes a model each time it fires spends tokens whether or not there is anything to do, and an agent
+           reaching for one is almost always polling, so it is the person's to make on the Schedule page. */
+        if ((args.prompt !== undefined && String(args.prompt).trim()) || args.watch) {
+          return {
+            ok: false,
+            summary:
+              "You cannot set up a task that wakes a model: every run is a full turn, and it costs tokens whether or not there is anything " +
+              "to do. Give `command` instead -- a shell command, run on the cron by the console itself with no model -- and make the " +
+              "script do the checking (a script can look at a page, a file or a command's output, and print only when something is " +
+              "worth saying). If it really needs a model each time, tell the person, who can make that task on the Schedule page.",
+          };
+        }
         if (!id && !name) return { ok: false, summary: "Give it a name, so the person knows what it is." };
         if (!cron && !id) return { ok: false, summary: "Give it a time: a five-field cron expression." };
-        const watch = args.watch && typeof args.watch === "object"
-          ? {
-            kind: String((args.watch as any).kind ?? ""),
-            target: String((args.watch as any).target ?? "").trim(),
-          }
-          : null;
-        if (watch && !watch.target) return { ok: false, summary: "A watcher needs something to watch." };
-        /* A task with no watcher is a whole model turn every time it fires, tools and context included.
-           An agent polling for something every few minutes burns a turn per look; a watcher costs one
-           only when the thing changed. */
-        if (cron && !watch) {
-          const first = nextRun(cron, new Date());
-          const second = first ? nextRun(cron, first) : null;
-          if (first && second && second.getTime() - first.getTime() < MIN_PLAIN_JOB_MS) {
-            return {
-              ok: false,
-              summary: `"${cron}" runs the task more often than every ${MIN_PLAIN_JOB_MS / 60_000} minutes, and each run is a full model turn. ` +
-                "To wait for something to change, use a watcher (watch: a command, page or file): it costs a turn only when what it sees differs. " +
-                `Otherwise pick a time at least ${MIN_PLAIN_JOB_MS / 60_000} minutes apart.`,
-            };
-          }
+        if (!command && !id) return { ok: false, summary: "Give it a `command`: the shell command to run at that time." };
+        if (command) {
+          const why = makesTimerOrWake(command, true);
+          if (why) return { ok: false, summary: `A script may not contain ${why}. A scheduled script runs by itself; it does not start a model.` };
         }
         const enabled = args.enabled === undefined ? true : Boolean(args.enabled);
         if (id) {
-          const changed = jobs.update(id, { name: name || undefined, cron: cron || undefined, prompt, watch, enabled });
+          const mine = jobs.list().find((j) => j.id === id);
+          if (!mine) return { ok: false, summary: `There is no job ${id}.` };
+          // A task the person made that wakes a model is theirs: an agent may pause it, not change what it does.
+          if (!mine.command && (name || cron || command)) {
+            return {
+              ok: false,
+              summary: `${id} wakes a model each time it runs, so it is the person's: change it on the Schedule page. ` +
+                "You can pause it with unschedule and keep: true.",
+            };
+          }
+          const changed = jobs.update(id, { name: name || undefined, cron: cron || undefined, command: command || undefined, enabled });
           if (!changed.ok) return { ok: false, summary: changed.error ?? `There is no job ${id}.` };
           return {
             ok: !changed.error,
             summary: changed.error
               ? `Saved, but its time is not valid: ${changed.error}`
-              : `Changed ${id}. It runs "${prompt}" on ${cron || "its time"}.`,
+              : `Changed ${id}. It runs on ${cron || mine.cron}${command ? `: ${command}` : ""}.`,
             preview: `schedule ${id} changed`,
           };
         }
-        const made = jobs.create({ name, cron, prompt, watch, enabled });
+        const made = jobs.create({ name, cron, command, enabled });
         if (!made.id) return { ok: false, summary: made.error ?? "It could not be created." };
         return {
           ok: !made.error,
           summary: made.error
             ? `Made ${made.id}, but its time is not valid: ${made.error}. Change the cron or remove it.`
-            : `Made ${made.id}${watch ? ` watching the ${watch.kind} ${watch.target}` : ""}. ` +
-              "It runs in a session of its own and what it says appears there; you do not have to wait for it.",
+            : `Made ${made.id}: it runs \`${command}\` on ${cron}, by itself, with no model. ` +
+              "Its runs and what it printed are on the Schedule page; a failure is told to the person. You do not have to wait for it.",
           preview: `schedule ${made.id}`,
         };
       }
@@ -2326,6 +2341,7 @@ async function runToolUnredacted(
             "Scheduled tasks and watchers:",
             ...list.map((j) =>
               `- ${j.id} "${j.name}" -- ${j.cron}, next ${when(j.next_run)}, last ${when(j.last_run)}` +
+              `${j.command ? `, script: ${j.command}` : ", wakes a model each time (the person's: you may only pause it)"}` +
               `${j.watch ? `, watching the ${j.watch.kind} ${j.watch.target}` : ""}` +
               `${j.enabled ? "" : ", PAUSED"}${j.running ? ", running now" : ""}` +
               `${j.cron_error ? ` -- its time is not valid: ${j.cron_error}` : ""}` +
@@ -3712,11 +3728,12 @@ export async function capabilityBriefing(): Promise<string> {
       "live voice on, your replies are already read aloud; do not repeat them with speak.",
   );
   lines.push(
-    "- Work that happens later: always available. Tools: schedule, schedules, unschedule. A scheduled job is a task and a " +
-      "cron time, run as a turn of its own in a new session; a watcher looks at a page, a file or a command and runs its task " +
-      "only when what it sees changed. Set one whenever what you were asked for is not due yet or has to be checked again -- " +
-      "instead of a sleep, a poll, or saying you cannot. Nothing runs while the machine is off. Say that you set it, and what it " +
-      "will do.",
+    "- Work that happens later: always available. Tools: schedule, schedules, unschedule. What you set is a script: a cron time " +
+      "and a shell command the console runs by itself, with no model and no chat, so it costs nothing. Put the checking in the " +
+      "script and let it print only when something is worth saying (a failure is told to the person). You cannot set a task that " +
+      "wakes a model each time, or make a timer another way (crontab, at, systemd): that spends tokens whether or not there is " +
+      "anything to do; if it really needs a model, tell the person, who can make it on the Schedule page. Nothing runs while the " +
+      "machine is off. Say that you set it, and what it will do.",
   );
   lines.push(
     "- Work that outlives the turn: always available. Tools: run_background, background_jobs, background_output, " +

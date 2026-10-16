@@ -103,7 +103,7 @@ task is about the PDF editor's shim or overlay.
 | Voice | `speech.ts` (TTS), `dictation.ts` (STT) |
 | Network/security | `crosssite.ts`, `tls.ts`, `hosts.ts`, `push.ts`, `webpush.ts` |
 | Desktop relay | `desktop.ts` |
-| Misc | `logs.ts`, `trace.ts`, `replay.ts`, `inventory.ts`, `host.ts`, `thumbs.ts`, `widgets.ts`, `attach.ts`, `fileref.ts`, `newfile.ts`, `ephemeral.ts` |
+| Misc | `logs.ts`, `trace.ts`, `replay.ts`, `inventory.ts`, `host.ts`, `thumbs.ts`, `widgets.ts`, `attach.ts`, `fileref.ts`, `newfile.ts`, `loadfile.ts`, `ephemeral.ts` |
 
 ## `src/` (client)
 

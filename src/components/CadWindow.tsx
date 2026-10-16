@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
 import { SaveButton, keptAs, settle } from "./SaveButton";
+import { LoadButton } from "./LoadButton";
 import { cadStateNow, onCadHand, onCadState, useCadState } from "../lib/caddesk";
 import { useAgentCursor } from "../lib/agentCursor";
 import { useCursorWho, whoColors, getCursorWho } from "../lib/cursorWho";
@@ -190,6 +191,7 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
         <span className="pdf-bar-name">{shapes === 1 ? "1 shape" : `${shapes} shapes`}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
+        <LoadButton app="cad" session={sessionId} phone={phone} />
         <SaveButton onSave={keep} phone={phone} disabled={shapes === 0} />
         {phone && (
           <button

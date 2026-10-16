@@ -409,6 +409,30 @@ async function historyByHand(session: string, engine: CadEngine, name: string): 
   return { res, said: `Done by hand in the 3D window, where the person watched: ${reply.did.join("; ")}.` + (reply.skipped ? ` (${reply.skipped})` : "") };
 }
 
+/**
+ * The person loads a model they kept (`.model.json`, or a document exported as JSON): it becomes the chat's model, as one
+ * step of its history, and the window shows it.
+ */
+export async function loadModel(session: string, data: Buffer): Promise<{ ok: boolean; error?: string; shapes?: number }> {
+  if (!validSession(session)) return { ok: false, error: "Autora 3D needs a chat to work in." };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(data.toString("utf8"));
+  } catch {
+    return { ok: false, error: "That is not a model Autora 3D kept (a .model.json file)." };
+  }
+  const c = await loadCore();
+  const doc = c.parseDoc(raw);
+  if (!doc) return { ok: false, error: "That file is not an Autora 3D model." };
+  const engine = await engineOf(session);
+  const entry = entryFor(session);
+  setOpen(session, true);
+  entry.by = "agent";
+  entry.cue = null;
+  engine.setDoc(doc);
+  return { ok: true, shapes: countShapes(engine.getDoc()) };
+}
+
 interface CadToolHooks {
   /** Show a saved file in the thread. */
   showFile?: (file: { id: string; name: string; mime: string; size: number }) => void;
@@ -587,6 +611,11 @@ export function cadRoutes(app: Express, opts: {
       const art = keepCopy({
         session: id, title: chatTitle(id), fallback: "Model", ext: "glb",
         data: Buffer.from(r.data ?? "", "base64"), mime: EXPORT_MIME.glb, note: "Saved from Autora 3D",
+      });
+      // The model itself too, as JSON: a GLB opens in other programs, this is what Load takes back in.
+      keepCopy({
+        session: id, title: chatTitle(id), fallback: "Model", ext: "model.json",
+        data: Buffer.from(JSON.stringify(engine.toJSON(), null, 2), "utf8"), mime: "application/json", note: "Saved from Autora 3D (the model, to load again)",
       });
       res.json({ artifact: art.id, name: art.name });
     } catch (err) {

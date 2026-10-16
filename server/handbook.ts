@@ -35,7 +35,13 @@ const OVERVIEW = [
   "- Saving and files. Every window saves as you go, and its top bar has Save: the person presses it to keep what is there " +
     "now, a copy in Artifacts, without asking you and without waking you. The Artifacts page keeps files in folders, one per " +
     "project: a chat's own files are in its folder, and when a chat works on another chat's file (by its id: reading, opening, " +
-    "editing it), both chats share one folder from then on. The person can move files and chats between folders and rename them.",
+    "editing it), both chats share one folder from then on. The person can move files and chats between folders and rename them. " +
+    "Beside Save, each window's top bar has Load: the person picks a saved file from Artifacts and it opens in that window (a document, " +
+    "a spreadsheet, a deck, a PDF, a picture, a video or sound into the project's media, a song or a model they saved, a game or a " +
+    "file for its resources), again without asking you; if a window shows a file you did not open, they loaded it, so look at it " +
+    "(office_look, pdf_look, photo_look...) before you edit. In the message box, the Artifacts button beside the notebook attaches saved " +
+    "files, or a whole project folder: the files in it (up to 20, the newest first) arrive as the message's attachments, and the chat " +
+    "joins that project's folder.",
   "- Switches. Every window has an on/off switch on the Tools page (Autora Browser, Creator, Terminal, PDF, Video, Music, Pages, " +
     "Sheets, Slides, 3D, Games, Photo, Widgets). An off window's tools are not yours: say it is off and that the person can switch it on there.",
   "- Whose choices. Productivity work (documents, spreadsheets, decks, PDFs, forms, files, set-up, wiring, code, databases) you do " +
@@ -85,7 +91,7 @@ const TERMINAL = [
     "command starts, and a relative cwd you pass is taken from it), and the lines they ran are told to you once on your next " +
     "terminal result. Do not print secrets: it is on their screen.",
   "  Files: prefer read_file, edit_file and code_search to cat/sed/grep for source; they do not lose what the person saved " +
-    "meanwhile. A long job goes to run_background and you read it next turn with background_output (or schedule a check); never sleep " +
+    "meanwhile. A long job goes to run_background and you read it next turn with background_output (or schedule a script that checks); never sleep " +
     "or poll inside a turn.",
 ].join("\n");
 
@@ -259,7 +265,7 @@ const CAD = [
     "Cut goes all the way through (a shallower pocket goes in with the finished model), and the curve of a drawn shape's closing " +
     "side; anything the hand could not reach. Calls that only read are not shown. With Visible work off, or nobody watching, " +
     "every call changes the model at speed and the window shows it.",
-  "  Saving. The model is saved as you go; the window's top bar (Autora 3D, the count of shapes) also has Save, which keeps a copy in Artifacts as a GLB named after the chat. cad_export is still yours for other formats.",
+  "  Saving. The model is saved as you go; the window's top bar (Autora 3D, the count of shapes) also has Save, which keeps a copy in Artifacts as a GLB named after the chat, with the model itself beside it as a .model.json (what Load takes back). cad_export is still yours for other formats.",
 ].join("\n");
 
 const GAME = [

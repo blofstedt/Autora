@@ -147,6 +147,25 @@ function commit(session: string, e: Entry, next: Project, who: "agent" | "person
   changed(session);
 }
 
+/** The person loads a song they kept (a `.song.json`): it becomes the chat's song, in its window. */
+export function loadSong(session: string, data: Buffer): { ok: boolean; error?: string; name?: string } {
+  if (!validSession(session)) return { ok: false, error: "Autora Music needs a chat to work in." };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(data.toString("utf8"));
+  } catch {
+    return { ok: false, error: "That is not a song Autora Music kept (a .song.json file)." };
+  }
+  const project = normalizeProject(raw);
+  if (!project) return { ok: false, error: "That file has no tracks in it, so it is not a song Autora Music kept." };
+  const e = entryFor(session);
+  e.focus = { trackId: null, clipId: null };
+  setOpen(session, true);
+  // "agent" is what makes the window take a song it did not make itself; whose it is does not matter to it.
+  commit(session, e, project, "agent");
+  return { ok: true, name: project.name };
+}
+
 /** The chat is gone: let go of its song, and of the file it was kept in. */
 export function dropStudio(session: string) {
   rejectAll(session, "The chat was closed.");

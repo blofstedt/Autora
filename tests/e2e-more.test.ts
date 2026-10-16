@@ -99,6 +99,23 @@ async function main() {
       assert.equal(job.runs.length, 1);
       app.decide = null;
     });
+    await test("a script job runs its command with no model and no chat, and what it printed is kept with the run", async () => {
+      const asked = app.seen.length;
+      const made = await app.api("POST", "/api/jobs", { name: "Say hi", cron: "0 4 * * *", command: "echo hello from the script" });
+      assert.equal(made.status, 200);
+      const ran = await app.api("POST", `/api/jobs/${made.body.id}/run`);
+      assert.equal(ran.status, 200, JSON.stringify(ran.body));
+      assert.match(ran.body.output, /hello from the script/);
+      const job = (await app.api("GET", "/api/jobs")).body.find((j: any) => j.id === made.body.id);
+      assert.equal(job.command, "echo hello from the script");
+      assert.equal(job.last_session, null, "a script opens no chat");
+      assert.equal(job.runs.length, 1);
+      assert.equal(job.runs[0].ok, true);
+      assert.equal(app.seen.length, asked, "no model was asked");
+      const bad = await app.api("POST", "/api/jobs", { name: "Fails", cron: "0 4 * * *", command: "echo nope; exit 3" });
+      const failed = await app.api("POST", `/api/jobs/${bad.body.id}/run`);
+      assert.equal(failed.status, 400);
+    });
     await test("a schedule that is not a schedule says so instead of silently never running", async () => {
       const made = await app.api("POST", "/api/jobs", { name: "Bad", cron: "every tuesday-ish", prompt: "x" });
       assert.equal(made.status, 200);
