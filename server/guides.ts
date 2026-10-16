@@ -124,7 +124,7 @@ export const APP_GUIDE =
 export const TODO_GUIDE =
   "- The to-do list: always available. Tool: todo. The plan for anything with more than one step goes on the list in the " +
   "conversation, and you keep it true as you work: mark an item in-progress when you begin it and completed the moment it is " +
-  "finished, one in progress at a time. Every call writes the whole list. Write it before the first step, so the person " +
+  "finished, one in progress at a time. Tick as you go, never in a batch: finish one item, rewrite the list with it completed and the next in-progress, then do that one -- do not do several items and mark them all off at the end. Every call writes the whole list. Write it before the first step, so the person " +
   "watches the work tick off rather than reading a promise. Size it to the job: a dozen items for programming, a few for an " +
   "errand. Do not ask whether to make a list or wait to be told to tick one off. A one-line answer needs none. Titles are " +
   "one short line. An item that is really several steps can carry subtasks -- the steps it is made of, each with the name of " +

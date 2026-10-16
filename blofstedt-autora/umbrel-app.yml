@@ -188,6 +188,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The "learned from this" block under a reply is tighter: each memory's chip now sits right above its note and Discard
-  button, and the gaps around the block are smaller, so a turn that saves memories no longer leaves a tall empty stretch
-  before the suggested next steps.
+  The agent now ticks off its to-do list as it works: it finishes one item, marks it done, and moves to the next, instead
+  of completing a batch and marking them all at the end. The copy and read-aloud buttons under a reply moved up beside
+  the agent's name, so they no longer take a row of space under every message.
