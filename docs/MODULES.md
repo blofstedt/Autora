@@ -367,8 +367,8 @@ Spectra's fetched renderer is most of what is on disk.
   have. Otherwise the tool runs its own `bash -lc` at speed and its lines are printed in dim magenta (`termAgentBegin/Chunk/End`). And what the person ran, told back once on its next terminal result (`termNews`, from the lines sent with
   Enter: best-effort). Completion, history, colours and full-screen programs are the shell's own. A touch screen gets a key row (Esc, Tab, Ctrl+C,
   arrows, `| / ~`). The socket to the page carries only `{open, cwd, rev, running}` (`termdesk`). Class names are `tm-*` (`term-*` is the thread's cell).
-- `autora-3d/` and `server/caddesk.ts`: **Autora 3D**, the 3D modelling window (a sketch-and-extrude CAD modeller) and the agent's
-  `cad_*` tools. `autora-3d/` is a **copy** of github.com/blofstedt/3D-Modeling, which is also its own app: never edit it here (the tool rail and the agent's hand are the exceptions so far: `docs/autora-3d-tool-rail.patch` and `docs/autora-3d-hand.patch` are to be applied upstream), change
+- `autora-3d/` and `server/caddesk.ts`: **Autora 3D**, the 3D modelling window (a desktop has a parts pane down the left, `components/LeftPane.tsx`: Shapes, Objects and Library as named thumbnails, Edit inside a group; a library copy is independent unless `linked:true`) (a sketch-and-extrude CAD modeller) and the agent's
+  `cad_*` tools. `autora-3d/` is a **copy** of github.com/blofstedt/3D-Modeling, which is also its own app: never edit it here (the tool rail and the agent's hand are the exceptions so far: `docs/autora-3d-tool-rail.patch`, `docs/autora-3d-hand.patch` and `docs/autora-3d-parts.patch`, in that order, are to be applied upstream), change
   it there and run `node scripts/sync-autora-3d.mjs [checkout]` (it also regenerates `server/specs/cad.ts`, one `cad_*` tool for
   each call the modeller declares, so the two cannot drift). `npm run build` builds it into `dist/autora-3d/` (the window's page) and
   `dist/autora-3d-engine/` (`engine.mjs` + `manifold.wasm`: the headless model, loaded by the server at run time, so the server is

@@ -188,9 +188,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora Games now has the same round tool bar as the other apps. GDevelop's two rows of tabs and small icons are gone:
-  the bar has Play, Add object, Objects, Properties, Layers, Abilities, Scenes, Undo, Redo and Delete, and All tools
-  holds the rest (scene settings, 2D/3D view, grid, zoom, pictures and sounds, game settings, export as a web game).
-  The game's rules sheet is under Advanced. Play now runs your game inside the window, with Restart, Full screen and
-  Stop, instead of a pop-up. The Add object dialog no longer opens on an empty Asset Store with a red error: it starts
-  on objects from scratch, and the new object lands on the scene.
+  Autora 3D has a parts pane down the left on a desktop. Shapes and Objects (groups of shapes) show as thumbnails you can
+  pick and rename by double-clicking the name, and a bookmark under either keeps it in the Library, which sits beside
+  them. A tap on a Library thumbnail adds an independent copy of it: ordinary shapes you can change freely, nothing
+  following the original. You can also open a group and edit inside it (Edit inside, then Exit group or Esc), so you work
+  on one part of an object without taking it apart. The agent's library tools make independent copies by default too.

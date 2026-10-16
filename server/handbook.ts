@@ -245,7 +245,13 @@ const CAD = [
     "the bottom on a phone) that shows only as many tools as fit: Shape, Draw, Move, Group, Repeat, Size & position and Delete on a phone, " +
     "with Join, Subtract, Isolate, Hide, Material and Export too on a desktop, where they can pin any tool. The last button, All tools, " +
     "opens every tool: Shape, Draw, Library; Move, Group, Repeat, Delete; Join, Subtract, Isolate, Hide, Show hidden, Make copies " +
-    "separate; Size & position, Properties, Material, Pick edges, Push & pull; Save to library, Edit object, Separate; Export & file. " +
+    "separate; Size & position, Properties, Material, Pick edges, Push & pull; Save to library, Edit inside, Edit object, Separate; Export & file. " +
+    "On a desktop a parts pane runs down the left, with three tabs of thumbnails: Shapes (each shape; a tap picks it, a double-click on its " +
+    "name renames it), Objects (each group, the same, plus Edit inside) and Library (objects kept for every project, whose globe keeps one " +
+    "in every project and whose bin removes it); the bookmark under a shape or an object saves it to the library, and a tap on a Library " +
+    "thumbnail adds an independent copy: ordinary shapes and a plain group that nothing follows (linked:true on cad_library_place and " +
+    "cad_library_save is the older linked kind). Edit inside (or Exit group, Esc) opens a group so that only its shapes show and each is " +
+    "picked on its own. A phone has the Library as a card of its bar instead. " +
     "A tool that does not apply yet (Join with one shape picked) is dimmed. Name a tool by its button and say \"open All tools\" if " +
     "it is not on their bar. Everything they can do you can do with the cad_* tools, whatever is shown.",
   "  With Visible work on and the window open where the person is looking, every call that changes the model is done there by " +
@@ -256,7 +262,7 @@ const CAD = [
     "number typed for cad_face_set and cad_face_push; names, All corners and Duplicate in Properties; colours and finishes in " +
     "Material; a turn by dragging the ring; a bevel by tapping the edge's handle and dragging Curved edge or Flat bevel; a repeat " +
     "by stepping its count, dragging its dots and keeping the copies; Join, Subtract (once per cutter), Group, Ungroup, Delete and " +
-    "its question, Hide and Show hidden; Save to library, the Library card's objects, globe and remove, Edit object and Separate; " +
+    "its question, Hide and Show hidden; Save to library, the Library's objects, globe and remove (in the parts pane, or the Library card on a phone), Edit object and Separate; " +
     "Undo and Redo in the top bar; a cad_batch one command at a time; cad_doc_clear by picking everything and Delete. To reach " +
     "something your hand may let go of the pick, close a card, fit the model in view, scroll in or out, or look from another " +
     "side, so the person's view can move. Then the finished model goes in, keeping the ids the window gave what the hand made. " +

@@ -25,7 +25,8 @@ import { installBridge } from './core/bridge';
 import { embedded, useAutoraEmbed } from './embed';
 import type { AgentHost } from './core/agent';
 import Sidebar from './components/Sidebar';
-import Rail, { type RailProps } from './components/Rail';
+import Rail, { type RailProps, usePhone } from './components/Rail';
+import LeftPane, { type PaneTab } from './components/LeftPane';
 import TopBar from './components/TopBar';
 import ConfirmDeleteModal from './components/ConfirmDeleteModal';
 import { useHistory } from './hooks/useHistory';
@@ -45,6 +46,7 @@ import { applyEdgeChange, edgeKey } from './utils/edges';
 import { BodyTransform, resizeBody, selectionBounds } from './utils/transform';
 import {
   Box,
+  Boxes,
   EyeOff,
   Focus,
   Info,
@@ -182,6 +184,12 @@ export default function App() {
   const [selectedFace, setSelectedFace] = useState<FaceSel | null>(null);
   /** When set, only these bodies are shown, in both 2D and 3D. */
   const [isolatedIds, setIsolatedIds] = useState<string[] | null>(null);
+  /** The group being edited from the inside: only its shapes show, and each is picked on its own. */
+  const [enteredGroup, setEnteredGroup] = useState<string | null>(null);
+  /** The parts pane down the left of a desktop: which list it shows, and whether it is open. */
+  const phone = usePhone();
+  const [paneOpen, setPaneOpen] = useState(true);
+  const [paneTab, setPaneTab] = useState<PaneTab>('shapes');
   const [hint, setHint] = useState('');
   /** Which bar menu is open (one at a time). */
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -221,10 +229,12 @@ export default function App() {
   const displayBodies = useMemo(
     () => {
       // Isolating a shape keeps its live copies; while its repeat is being edited, ghosts stand in for them.
-      const shown = isolatedIds ? bodies.filter((b) => isolatedIds.includes(b.id) || (!!b.repeatOf && isolatedIds.includes(b.repeatOf))) : bodies;
+      const inside = enteredGroup ? new Set(groups.find((g) => g.id === enteredGroup)?.bodyIds ?? []) : null;
+      const within = inside ? bodies.filter((b) => inside.has(b.id)) : bodies;
+      const shown = isolatedIds ? within.filter((b) => isolatedIds.includes(b.id) || (!!b.repeatOf && isolatedIds.includes(b.repeatOf))) : within;
       return editingRepeatOf ? shown.filter((b) => b.repeatOf !== editingRepeatOf) : shown;
     },
-    [bodies, isolatedIds, editingRepeatOf]
+    [bodies, groups, isolatedIds, editingRepeatOf, enteredGroup]
   );
 
   // A repeat can't outlive the shape it copies (deleted or undone away).
@@ -245,6 +255,17 @@ export default function App() {
       return alive.length === prev.length ? prev : alive.length ? alive : null;
     });
   }, [bodies]);
+
+  // A group that is gone (deleted, dissolved, undone away) cannot be edited from the inside any more.
+  useEffect(() => {
+    if (enteredGroup && !groups.some((g) => g.id === enteredGroup)) setEnteredGroup(null);
+  }, [groups, enteredGroup]);
+
+  /** The groups as they look from inside the entered one: it is the top, so a tap picks the shape or the group just under it. */
+  const scopedGroups = useMemo(
+    () => (enteredGroup ? groups.filter((g) => g.id !== enteredGroup).map((g) => (g.parentId === enteredGroup ? { ...g, parentId: undefined } : g)) : groups),
+    [groups, enteredGroup]
+  );
 
   const selectedBody = displayBodies.find((b) => b.id === selectedBodyId) || null;
   const selectedBodies = selectedBodyIds.map((id) => displayBodies.find((b) => b.id === id)).filter((b): b is Body3D => !!b);
@@ -356,8 +377,8 @@ export default function App() {
     }
     // Clicking a member of a group picks the whole group.
     // Tapping it again steps one group deeper, down to the shape itself.
-    const picked = pickInGroups(bodies, groups, id, selectedBodyIds);
-    const members = isMultiSelect ? withGroupMates(groups, bodies, id) : picked.ids;
+    const picked = pickInGroups(bodies, scopedGroups, id, selectedBodyIds);
+    const members = isMultiSelect ? withGroupMates(scopedGroups, bodies, id) : picked.ids;
 
     if (!isMultiSelect) {
       setSelectedBodyId(id);
@@ -560,9 +581,9 @@ export default function App() {
     if (!selectedGroup && !single) return;
     const made = runOp((d, ids) => ops.saveToLibrary(d, ids, selectedGroup ? { group: selectedGroup.id } : { id: single!.id }));
     if (!made) return;
-    selectGroup(made.group);
+    if (made.updated) selectGroup(made.group);
     const name = docRef.current.library.find((i) => i.id === made.item)?.name ?? 'object';
-    notify(made.updated ? `Updated “${name}”: every linked copy follows.` : `Saved “${name}” to the library. Place more from Shape.`);
+    notify(made.updated ? `Updated “${name}”: every linked copy follows.` : `Saved “${name}” to the library. Add copies from the Library.`);
   };
 
   const handlePlaceItem = (item: string) => {
@@ -573,7 +594,8 @@ export default function App() {
       const base = fromShared ? ops.importLibrary(d, { items: [{ ...fromShared, shared: true }] }).doc : d;
       return ops.placeFromLibrary(base, ids, { item, onTopOf: onTop });
     });
-    if (made) selectGroup(made.group);
+    if (made?.shapes.length) selectMany(made.shapes);
+    else if (made) selectGroup(made.group);
   };
 
   const handleShareItem = (item: string) => {
@@ -612,6 +634,42 @@ export default function App() {
       selectGroup(made.group);
       notify('Now separate from the library.');
     }
+  };
+
+  /** Opens a group for editing from the inside: its shapes alone are shown, and each is picked on its own. */
+  const enterGroup = (groupId: string) => {
+    const g = docRef.current.groups.find((x) => x.id === groupId);
+    if (!g || g.joined || g.instanceOf) {
+      notify(g?.instanceOf || g?.place ? 'A linked library object is one piece. Use Separate first.' : 'Select a group to edit inside it.');
+      return;
+    }
+    setEnteredGroup(groupId);
+    setIsolatedIds(null);
+    selectOnly(null);
+    notify(`Editing inside “${g.name}”. Press Esc or Exit group when you are done.`);
+  };
+  const exitGroup = () => {
+    const g = groups.find((x) => x.id === enteredGroup);
+    setEnteredGroup(null);
+    if (g?.bodyIds.length) selectMany(g.bodyIds);
+  };
+
+  // The parts pane: shapes and objects, named and kept in the library from there.
+  const handlePaneRename = (kind: 'shape' | 'object' | 'item', id: string, name: string) => {
+    if (kind === 'shape') handleUpdateBody(id, { name });
+    else if (kind === 'object') void runOp((d) => ops.renameGroup(d, { group: id, name }));
+    else if (docRef.current.library.some((i) => i.id === id)) void runOp((d) => ops.renameLibraryItem(d, { item: id, name }));
+    else {
+      const rest = loadShared().map((i) => (i.id === id ? { ...i, name, rev: Date.now() } : i));
+      saveShared(rest);
+      setSharedItems(rest);
+    }
+  };
+  const handlePaneSave = (kind: 'shape' | 'object', id: string) => {
+    const made = runOp((d, ids) => ops.saveToLibrary(d, ids, kind === 'object' ? { group: id } : { id }));
+    if (!made) return;
+    const name = docRef.current.library.find((i) => i.id === made.item)?.name ?? 'object';
+    notify(`Saved “${name}” to the library.`);
   };
 
   const handleUngroup = (groupId: string) => {
@@ -811,6 +869,7 @@ export default function App() {
       else if (selectedEdges.length) setSelectedEdges([]);
       else if (selectedFace) setSelectedFace(null);
       else if (selectedBodyIds.length) selectOnly(null);
+      else if (enteredGroup) exitGroup();
       else if (isolatedIds) isolate(null);
       return;
     }
@@ -914,6 +973,11 @@ export default function App() {
         .join(', ') + (isolatedIds.length > 2 ? ` +${isolatedIds.length - 2}` : '')
     : '';
 
+  const libraryEntries = [
+    ...library.map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: !!i.shared, inProject: true, thumb: thumbnailUrl(i, 88) })),
+    ...sharedItems.filter((i) => !library.some((x) => x.id === i.id)).map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: true, inProject: false, thumb: thumbnailUrl(i, 88) })),
+  ];
+
   const railProps: RailProps = {
     openId: openMenu,
     setOpenId: setOpenMenu,
@@ -950,16 +1014,16 @@ export default function App() {
     moveOn: moveOn && selectedBodyIds.length > 0,
     addOnTop: selectedFace?.kind === 'top' && selectedBodyIds.length === 1,
     onAddShape: addShape,
-    library: [
-          ...library.map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: !!i.shared, inProject: true, thumb: thumbnailUrl(i, 88) })),
-          ...sharedItems.filter((i) => !library.some((x) => x.id === i.id)).map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: true, inProject: false, thumb: thumbnailUrl(i, 88) })),
-        ],
+    library: libraryEntries,
     onPlaceItem: handlePlaceItem,
     onShareItem: handleShareItem,
     onRemoveItem: handleRemoveItem,
     onToggleMove: () => setMoveOn((v) => !v),
     onIsolate: toggleIsolate,
     grouped: !!selectedGroupId,
+    entered: !!enteredGroup,
+    onEnterGroup: () => (enteredGroup ? exitGroup() : selectedGroup ? enterGroup(selectedGroup.id) : notify('Select a group to edit inside it.')),
+    onOpenLibrary: () => { setPaneOpen(true); setPaneTab('library'); },
     hiddenCount: hiddenCount,
     onHide: hideSelected,
     onShowHidden: showHidden,
@@ -984,6 +1048,25 @@ export default function App() {
       <TopBar {...railProps} />
 
       <div className="flex-1 min-h-0 flex">
+        {!phone && paneOpen && (
+          <LeftPane
+            tab={paneTab}
+            onTab={setPaneTab}
+            onClose={() => setPaneOpen(false)}
+            bodies={bodies}
+            groups={groups}
+            selectedBodyIds={selectedBodyIds}
+            entered={enteredGroup}
+            onPickShapes={(ids) => selectMany(ids)}
+            onRename={handlePaneRename}
+            onSave={handlePaneSave}
+            onEnter={(id) => (enteredGroup === id ? exitGroup() : enterGroup(id))}
+            library={libraryEntries}
+            onPlaceItem={handlePlaceItem}
+            onShareItem={handleShareItem}
+            onRemoveItem={handleRemoveItem}
+          />
+        )}
         {/* Viewport */}
         <main className="relative flex-1 min-w-0 min-h-0 bg-slate-950">
           <div className="absolute inset-0">
@@ -1057,6 +1140,23 @@ export default function App() {
           {/* Bottom-center stack: isolation state and toasts */}
           <div className="absolute z-30 left-1/2 -translate-x-1/2 bottom-3 w-[calc(100%-1.5rem)] max-w-xl flex flex-col items-center gap-2 pointer-events-none [&>*]:pointer-events-auto">
             <AnimatePresence>
+              {enteredGroup && (
+                <motion.div
+                  key="entered"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  className="flex items-center gap-2.5 pl-3 pr-1.5 py-1.5 rounded-xl bg-accent-500/20 border border-accent-400/40 backdrop-blur text-[13px] text-accent-100 shadow-xl max-w-full"
+                >
+                  <Boxes size={14} className="shrink-0" />
+                  <span className="truncate">
+                    Editing inside: <strong className="font-semibold text-white">{groups.find((g) => g.id === enteredGroup)?.name}</strong>
+                  </span>
+                  <button type="button" onClick={exitGroup} className="h-7 px-2.5 rounded-full bg-white/12 hover:bg-white/20 text-xs font-medium text-white shrink-0">
+                    Exit group
+                  </button>
+                </motion.div>
+              )}
               {isolatedIds && (
                 <motion.div
                   key="isolated"

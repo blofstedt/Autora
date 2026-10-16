@@ -1,0 +1,705 @@
+diff --git a/autora-3d/src/App.tsx b/autora-3d/src/App.tsx
+index 8728a3c..9555cf6 100644
+--- a/autora-3d/src/App.tsx
++++ b/autora-3d/src/App.tsx
+@@ -25,7 +25,8 @@ import { installBridge } from './core/bridge';
+ import { embedded, useAutoraEmbed } from './embed';
+ import type { AgentHost } from './core/agent';
+ import Sidebar from './components/Sidebar';
+-import Rail, { type RailProps } from './components/Rail';
++import Rail, { type RailProps, usePhone } from './components/Rail';
++import LeftPane, { type PaneTab } from './components/LeftPane';
+ import TopBar from './components/TopBar';
+ import ConfirmDeleteModal from './components/ConfirmDeleteModal';
+ import { useHistory } from './hooks/useHistory';
+@@ -45,6 +46,7 @@ import { applyEdgeChange, edgeKey } from './utils/edges';
+ import { BodyTransform, resizeBody, selectionBounds } from './utils/transform';
+ import {
+   Box,
++  Boxes,
+   EyeOff,
+   Focus,
+   Info,
+@@ -182,6 +184,12 @@ export default function App() {
+   const [selectedFace, setSelectedFace] = useState<FaceSel | null>(null);
+   /** When set, only these bodies are shown, in both 2D and 3D. */
+   const [isolatedIds, setIsolatedIds] = useState<string[] | null>(null);
++  /** The group being edited from the inside: only its shapes show, and each is picked on its own. */
++  const [enteredGroup, setEnteredGroup] = useState<string | null>(null);
++  /** The parts pane down the left of a desktop: which list it shows, and whether it is open. */
++  const phone = usePhone();
++  const [paneOpen, setPaneOpen] = useState(true);
++  const [paneTab, setPaneTab] = useState<PaneTab>('shapes');
+   const [hint, setHint] = useState('');
+   /** Which bar menu is open (one at a time). */
+   const [openMenu, setOpenMenu] = useState<string | null>(null);
+@@ -221,10 +229,12 @@ export default function App() {
+   const displayBodies = useMemo(
+     () => {
+       // Isolating a shape keeps its live copies; while its repeat is being edited, ghosts stand in for them.
+-      const shown = isolatedIds ? bodies.filter((b) => isolatedIds.includes(b.id) || (!!b.repeatOf && isolatedIds.includes(b.repeatOf))) : bodies;
++      const inside = enteredGroup ? new Set(groups.find((g) => g.id === enteredGroup)?.bodyIds ?? []) : null;
++      const within = inside ? bodies.filter((b) => inside.has(b.id)) : bodies;
++      const shown = isolatedIds ? within.filter((b) => isolatedIds.includes(b.id) || (!!b.repeatOf && isolatedIds.includes(b.repeatOf))) : within;
+       return editingRepeatOf ? shown.filter((b) => b.repeatOf !== editingRepeatOf) : shown;
+     },
+-    [bodies, isolatedIds, editingRepeatOf]
++    [bodies, groups, isolatedIds, editingRepeatOf, enteredGroup]
+   );
+ 
+   // A repeat can't outlive the shape it copies (deleted or undone away).
+@@ -246,6 +256,17 @@ export default function App() {
+     });
+   }, [bodies]);
+ 
++  // A group that is gone (deleted, dissolved, undone away) cannot be edited from the inside any more.
++  useEffect(() => {
++    if (enteredGroup && !groups.some((g) => g.id === enteredGroup)) setEnteredGroup(null);
++  }, [groups, enteredGroup]);
++
++  /** The groups as they look from inside the entered one: it is the top, so a tap picks the shape or the group just under it. */
++  const scopedGroups = useMemo(
++    () => (enteredGroup ? groups.filter((g) => g.id !== enteredGroup).map((g) => (g.parentId === enteredGroup ? { ...g, parentId: undefined } : g)) : groups),
++    [groups, enteredGroup]
++  );
++
+   const selectedBody = displayBodies.find((b) => b.id === selectedBodyId) || null;
+   const selectedBodies = selectedBodyIds.map((id) => displayBodies.find((b) => b.id === id)).filter((b): b is Body3D => !!b);
+ 
+@@ -356,8 +377,8 @@ export default function App() {
+     }
+     // Clicking a member of a group picks the whole group.
+     // Tapping it again steps one group deeper, down to the shape itself.
+-    const picked = pickInGroups(bodies, groups, id, selectedBodyIds);
+-    const members = isMultiSelect ? withGroupMates(groups, bodies, id) : picked.ids;
++    const picked = pickInGroups(bodies, scopedGroups, id, selectedBodyIds);
++    const members = isMultiSelect ? withGroupMates(scopedGroups, bodies, id) : picked.ids;
+ 
+     if (!isMultiSelect) {
+       setSelectedBodyId(id);
+@@ -560,9 +581,9 @@ export default function App() {
+     if (!selectedGroup && !single) return;
+     const made = runOp((d, ids) => ops.saveToLibrary(d, ids, selectedGroup ? { group: selectedGroup.id } : { id: single!.id }));
+     if (!made) return;
+-    selectGroup(made.group);
++    if (made.updated) selectGroup(made.group);
+     const name = docRef.current.library.find((i) => i.id === made.item)?.name ?? 'object';
+-    notify(made.updated ? `Updated “${name}”: every linked copy follows.` : `Saved “${name}” to the library. Place more from Shape.`);
++    notify(made.updated ? `Updated “${name}”: every linked copy follows.` : `Saved “${name}” to the library. Add copies from the Library.`);
+   };
+ 
+   const handlePlaceItem = (item: string) => {
+@@ -573,7 +594,8 @@ export default function App() {
+       const base = fromShared ? ops.importLibrary(d, { items: [{ ...fromShared, shared: true }] }).doc : d;
+       return ops.placeFromLibrary(base, ids, { item, onTopOf: onTop });
+     });
+-    if (made) selectGroup(made.group);
++    if (made?.shapes.length) selectMany(made.shapes);
++    else if (made) selectGroup(made.group);
+   };
+ 
+   const handleShareItem = (item: string) => {
+@@ -614,6 +636,42 @@ export default function App() {
+     }
+   };
+ 
++  /** Opens a group for editing from the inside: its shapes alone are shown, and each is picked on its own. */
++  const enterGroup = (groupId: string) => {
++    const g = docRef.current.groups.find((x) => x.id === groupId);
++    if (!g || g.joined || g.instanceOf) {
++      notify(g?.instanceOf || g?.place ? 'A linked library object is one piece. Use Separate first.' : 'Select a group to edit inside it.');
++      return;
++    }
++    setEnteredGroup(groupId);
++    setIsolatedIds(null);
++    selectOnly(null);
++    notify(`Editing inside “${g.name}”. Press Esc or Exit group when you are done.`);
++  };
++  const exitGroup = () => {
++    const g = groups.find((x) => x.id === enteredGroup);
++    setEnteredGroup(null);
++    if (g?.bodyIds.length) selectMany(g.bodyIds);
++  };
++
++  // The parts pane: shapes and objects, named and kept in the library from there.
++  const handlePaneRename = (kind: 'shape' | 'object' | 'item', id: string, name: string) => {
++    if (kind === 'shape') handleUpdateBody(id, { name });
++    else if (kind === 'object') void runOp((d) => ops.renameGroup(d, { group: id, name }));
++    else if (docRef.current.library.some((i) => i.id === id)) void runOp((d) => ops.renameLibraryItem(d, { item: id, name }));
++    else {
++      const rest = loadShared().map((i) => (i.id === id ? { ...i, name, rev: Date.now() } : i));
++      saveShared(rest);
++      setSharedItems(rest);
++    }
++  };
++  const handlePaneSave = (kind: 'shape' | 'object', id: string) => {
++    const made = runOp((d, ids) => ops.saveToLibrary(d, ids, kind === 'object' ? { group: id } : { id }));
++    if (!made) return;
++    const name = docRef.current.library.find((i) => i.id === made.item)?.name ?? 'object';
++    notify(`Saved “${name}” to the library.`);
++  };
++
+   const handleUngroup = (groupId: string) => {
+     if (runOp((d, ids) => ops.ungroupShapes(d, ids, { group: groupId }))) notify('Group dissolved.');
+   };
+@@ -811,6 +869,7 @@ export default function App() {
+       else if (selectedEdges.length) setSelectedEdges([]);
+       else if (selectedFace) setSelectedFace(null);
+       else if (selectedBodyIds.length) selectOnly(null);
++      else if (enteredGroup) exitGroup();
+       else if (isolatedIds) isolate(null);
+       return;
+     }
+@@ -914,6 +973,11 @@ export default function App() {
+         .join(', ') + (isolatedIds.length > 2 ? ` +${isolatedIds.length - 2}` : '')
+     : '';
+ 
++  const libraryEntries = [
++    ...library.map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: !!i.shared, inProject: true, thumb: thumbnailUrl(i, 88) })),
++    ...sharedItems.filter((i) => !library.some((x) => x.id === i.id)).map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: true, inProject: false, thumb: thumbnailUrl(i, 88) })),
++  ];
++
+   const railProps: RailProps = {
+     openId: openMenu,
+     setOpenId: setOpenMenu,
+@@ -950,16 +1014,16 @@ export default function App() {
+     moveOn: moveOn && selectedBodyIds.length > 0,
+     addOnTop: selectedFace?.kind === 'top' && selectedBodyIds.length === 1,
+     onAddShape: addShape,
+-    library: [
+-          ...library.map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: !!i.shared, inProject: true, thumb: thumbnailUrl(i, 88) })),
+-          ...sharedItems.filter((i) => !library.some((x) => x.id === i.id)).map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: true, inProject: false, thumb: thumbnailUrl(i, 88) })),
+-        ],
++    library: libraryEntries,
+     onPlaceItem: handlePlaceItem,
+     onShareItem: handleShareItem,
+     onRemoveItem: handleRemoveItem,
+     onToggleMove: () => setMoveOn((v) => !v),
+     onIsolate: toggleIsolate,
+     grouped: !!selectedGroupId,
++    entered: !!enteredGroup,
++    onEnterGroup: () => (enteredGroup ? exitGroup() : selectedGroup ? enterGroup(selectedGroup.id) : notify('Select a group to edit inside it.')),
++    onOpenLibrary: () => { setPaneOpen(true); setPaneTab('library'); },
+     hiddenCount: hiddenCount,
+     onHide: hideSelected,
+     onShowHidden: showHidden,
+@@ -984,6 +1048,25 @@ export default function App() {
+       <TopBar {...railProps} />
+ 
+       <div className="flex-1 min-h-0 flex">
++        {!phone && paneOpen && (
++          <LeftPane
++            tab={paneTab}
++            onTab={setPaneTab}
++            onClose={() => setPaneOpen(false)}
++            bodies={bodies}
++            groups={groups}
++            selectedBodyIds={selectedBodyIds}
++            entered={enteredGroup}
++            onPickShapes={(ids) => selectMany(ids)}
++            onRename={handlePaneRename}
++            onSave={handlePaneSave}
++            onEnter={(id) => (enteredGroup === id ? exitGroup() : enterGroup(id))}
++            library={libraryEntries}
++            onPlaceItem={handlePlaceItem}
++            onShareItem={handleShareItem}
++            onRemoveItem={handleRemoveItem}
++          />
++        )}
+         {/* Viewport */}
+         <main className="relative flex-1 min-w-0 min-h-0 bg-slate-950">
+           <div className="absolute inset-0">
+@@ -1057,6 +1140,23 @@ export default function App() {
+           {/* Bottom-center stack: isolation state and toasts */}
+           <div className="absolute z-30 left-1/2 -translate-x-1/2 bottom-3 w-[calc(100%-1.5rem)] max-w-xl flex flex-col items-center gap-2 pointer-events-none [&>*]:pointer-events-auto">
+             <AnimatePresence>
++              {enteredGroup && (
++                <motion.div
++                  key="entered"
++                  initial={{ opacity: 0, y: 8 }}
++                  animate={{ opacity: 1, y: 0 }}
++                  exit={{ opacity: 0, y: 8 }}
++                  className="flex items-center gap-2.5 pl-3 pr-1.5 py-1.5 rounded-xl bg-accent-500/20 border border-accent-400/40 backdrop-blur text-[13px] text-accent-100 shadow-xl max-w-full"
++                >
++                  <Boxes size={14} className="shrink-0" />
++                  <span className="truncate">
++                    Editing inside: <strong className="font-semibold text-white">{groups.find((g) => g.id === enteredGroup)?.name}</strong>
++                  </span>
++                  <button type="button" onClick={exitGroup} className="h-7 px-2.5 rounded-full bg-white/12 hover:bg-white/20 text-xs font-medium text-white shrink-0">
++                    Exit group
++                  </button>
++                </motion.div>
++              )}
+               {isolatedIds && (
+                 <motion.div
+                   key="isolated"
+diff --git a/autora-3d/src/agentHand.ts b/autora-3d/src/agentHand.ts
+index 0a41dcc..ad40d0b 100644
+--- a/autora-3d/src/agentHand.ts
++++ b/autora-3d/src/agentHand.ts
+@@ -663,6 +663,25 @@ const faceOf = (id: string, spec: unknown): FaceSel => {
+   throw new Skip('that face is not one the window knows');
+ };
+ 
++/**
++ * Where an object of the library is, by hand: in the parts pane on a desktop (its Library tab, a card whose button says
++ * "Add a copy of ..."), else in the Library card of a phone's bar. `place` is the button that adds a copy; `row`
++ * is what holds the remove and globe buttons.
++ */
++async function libraryEntry(name: string): Promise<{ place: HTMLElement | null; scope: HTMLElement } | null> {
++  const pane = document.querySelector<HTMLElement>('aside[aria-label="Parts"]');
++  if (pane) {
++    const tab = Array.from(pane.querySelectorAll<HTMLElement>('[role="tab"]')).find((t) => t.textContent?.trim().startsWith('Library'));
++    if (tab && tab.getAttribute('aria-selected') !== 'true') await press(tab, 'Opening the Library');
++    const place = await waitFor(() => pane.querySelector<HTMLElement>(`button[aria-label="Add a copy of ${name}"]`));
++    const scope = place?.parentElement ?? null;
++    return scope ? { place, scope } : null;
++  }
++  const lib = await card('Library');
++  const row = libraryRow(lib, name);
++  return row ? { place: row.querySelector<HTMLElement>('button'), scope: row } : null;
++}
++
+ /** Library rows: the place button carries the object's name. */
+ const libraryRow = (cardEl: HTMLElement, name: string) =>
+   Array.from(cardEl.querySelectorAll<HTMLElement>('div.flex.items-center.gap-1')).find((row) => row.querySelector('button span.truncate')?.textContent?.trim() === name) ?? null;
+@@ -1029,6 +1048,7 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+         break;
+       }
+       case 'library_save': {
++        if (args.linked === true) throw new Skip('a linked copy is made by the model; the window keeps an independent copy');
+         const gid = str(args.group);
+         const label = str(args.name);
+         if (gid) {
+@@ -1055,21 +1075,14 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+           await pickFace(api, host, { kind: 'top' });
+           did.push('picked the top face to place it on');
+         }
+-        const known = new Set(api.doc().groups.map((g) => g.id));
+-        const lib = await card('Library');
+-        const row = libraryRow(lib, item.name);
+-        await press(row?.querySelector<HTMLElement>('button') ?? null, `Placing ${item.name}`);
+-        const placed = await waitFor(() => api.doc().groups.find((g) => !known.has(g.id) && g.libraryId === item.id), 4000);
++        if (args.linked === true) throw new Skip('a linked copy is made by the model; the window places independent copies');
++        const knownGroups = new Set(api.doc().groups.map((g) => g.id));
++        const knownBodies = new Set(api.doc().bodies.map((b) => b.id));
++        const entry = await libraryEntry(item.name);
++        await press(entry?.place ?? null, `Adding a copy of ${item.name}`);
++        const placed = await waitFor(() => api.doc().bodies.find((b) => !knownBodies.has(b.id)) ?? api.doc().groups.find((g) => !knownGroups.has(g.id)), 4000);
+         if (!placed) throw new Skip('the object was not placed');
+         did.push(`placed ${item.name} from the Library`);
+-        const goalGroup = goal?.groups.find((g) => g.libraryId === item.id && !api.doc().groups.some((x) => x.id === g.id));
+-        if (goalGroup) {
+-          const angle = goalGroup.place?.angle ?? 0;
+-          if (Math.abs(angle) > 1e-6) await turnByRing(api, (angle * 180) / Math.PI, did);
+-          const { X, Y, Z } = sizesOf(goal!.bodies.filter((b) => b.instanceOf === goalGroup.id)) as Record<string, number>;
+-          await typeSizes({ X, Y, Z }, did);
+-          if (goalGroup.name !== placed.name) await renameGroupInTopBar(goalGroup.name, did);
+-        }
+         break;
+       }
+       case 'object_unlink': {
+@@ -1084,14 +1097,14 @@ export async function runHand(name: string, args: Record<string, unknown>, api:
+       case 'library_remove': {
+         const item = api.doc().library.find((i) => i.id === args.item);
+         if (!item) throw new Skip('there is no such library object');
+-        const lib = await card('Library');
+-        const row = libraryRow(lib, item.name);
++        const entry = await libraryEntry(item.name);
++        const row = entry?.scope ?? null;
+         if (!row) throw new Skip('the object was not in the Library');
+         if (name === 'library_remove') {
+           await press(row.querySelector<HTMLElement>(`button[aria-label^="Remove ${item.name}"]`), `Removing ${item.name}`);
+           did.push(`pressed remove beside ${item.name} in the Library`);
+         } else {
+-          const globe = row.querySelector<HTMLElement>('button[aria-pressed]');
++          const globe = row.querySelector<HTMLElement>('button[aria-label*="every project"]');
+           const want = args.shared !== false;
+           if (globe && (globe.getAttribute('aria-pressed') === 'true') !== want) {
+             await press(globe, want ? 'Keeping it in every project' : 'Keeping it only here');
+diff --git a/autora-3d/src/components/LeftPane.tsx b/autora-3d/src/components/LeftPane.tsx
+new file mode 100644
+index 0000000..37a4a54
+--- /dev/null
++++ b/autora-3d/src/components/LeftPane.tsx
+@@ -0,0 +1,229 @@
++/**
++ * @license
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++import React, { memo, useEffect, useRef, useState } from 'react';
++import { BookmarkPlus, Globe, LogIn, PanelLeftClose, Trash2 } from 'lucide-react';
++import { Body3D, ShapeGroup } from '../types';
++import { thumbnailDataUrl } from '../utils/thumbnail';
++import { groupChain } from '../utils/groups';
++
++/**
++ * The parts of the model, as thumbnails down the left of a desktop: Shapes (each one, named and picked here), Objects
++ * (groups of shapes, which can be opened to edit inside) and the Library (kept for every project; a tap adds an
++ * independent copy). Both a shape and an object can be named, and both can be kept in the library.
++ */
++
++export type PaneTab = 'shapes' | 'objects' | 'library';
++
++export interface LibraryEntry {
++  id: string;
++  name: string;
++  shapes: number;
++  shared: boolean;
++  inProject: boolean;
++  thumb: string;
++}
++
++export interface LeftPaneProps {
++  tab: PaneTab;
++  onTab: (tab: PaneTab) => void;
++  onClose: () => void;
++  bodies: Body3D[];
++  groups: ShapeGroup[];
++  selectedBodyIds: string[];
++  /** The group being edited from the inside, if one is. */
++  entered: string | null;
++  onPickShapes: (ids: string[]) => void;
++  onRename: (kind: 'shape' | 'object' | 'item', id: string, name: string) => void;
++  onSave: (kind: 'shape' | 'object', id: string) => void;
++  onEnter: (groupId: string) => void;
++  library: LibraryEntry[];
++  onPlaceItem: (id: string) => void;
++  onShareItem: (id: string) => void;
++  onRemoveItem: (id: string) => void;
++}
++
++const sameBodies = (a: Body3D[], b: Body3D[]) => a.length === b.length && a.every((x, i) => x === b[i]);
++
++/** A small picture of some shapes, redrawn only when one of those shapes changes. */
++const Thumb = memo(
++  ({ bodies, name }: { bodies: Body3D[]; name: string }) => (
++    <img src={thumbnailDataUrl(bodies, 96)} alt="" aria-hidden="true" title={name} className="w-full aspect-square rounded-xl bg-slate-950/70" draggable={false} />
++  ),
++  (a, b) => a.name === b.name && sameBodies(a.bodies, b.bodies)
++);
++
++/** A name that becomes a field when double-clicked (or when asked to by `editing`), and is kept on Enter or on leaving it. */
++function Name({ value, label, onCommit }: { value: string; label: string; onCommit: (name: string) => void }) {
++  const [editing, setEditing] = useState(false);
++  const [text, setText] = useState(value);
++  const input = useRef<HTMLInputElement>(null);
++  useEffect(() => {
++    if (editing) input.current?.select();
++  }, [editing]);
++  const keep = () => {
++    setEditing(false);
++    const next = text.trim();
++    if (next && next !== value) onCommit(next);
++    else setText(value);
++  };
++  if (!editing) {
++    return (
++      <span
++        className="block truncate text-[12px] font-medium text-slate-100 cursor-text"
++        title={`${value} (double-click to rename)`}
++        onDoubleClick={() => { setText(value); setEditing(true); }}
++      >
++        {value}
++      </span>
++    );
++  }
++  return (
++    <input
++      ref={input}
++      value={text}
++      aria-label={`Name of ${label}`}
++      onChange={(e) => setText(e.target.value)}
++      onBlur={keep}
++      onKeyDown={(e) => {
++        e.stopPropagation();
++        if (e.key === 'Enter') keep();
++        if (e.key === 'Escape') { setText(value); setEditing(false); }
++      }}
++      className="w-full h-6 rounded-md bg-white/10 border border-accent-400 px-1.5 text-[12px] text-white focus:outline-none"
++    />
++  );
++}
++
++const IconBtn = ({ label, onClick, children, danger, pressed }: { label: string; onClick: () => void; children: React.ReactNode; danger?: boolean; pressed?: boolean }) => (
++  <button
++    type="button"
++    aria-pressed={pressed}
++    aria-label={label}
++    title={label}
++    onClick={(e) => { e.stopPropagation(); onClick(); }}
++    className={`w-7 h-7 rounded-full flex items-center justify-center text-slate-400 transition-colors ${danger ? 'hover:text-rose-300 hover:bg-rose-500/15' : 'hover:text-white hover:bg-white/10'}`}
++  >
++    {children}
++  </button>
++);
++
++function Card({ selected, children, onPick, label }: { selected?: boolean; children: React.ReactNode; onPick: () => void; label: string }) {
++  return (
++    <div className={`rounded-2xl p-1.5 flex flex-col gap-1 border transition-colors ${selected ? 'bg-accent-500/20 border-accent-400/60' : 'bg-white/5 border-transparent hover:bg-white/8'}`}>
++      <button type="button" aria-label={label} aria-pressed={!!selected} onClick={onPick} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
++        {(children as React.ReactNode[])[0]}
++      </button>
++      {(children as React.ReactNode[]).slice(1)}
++    </div>
++  );
++}
++
++export default function LeftPane(props: LeftPaneProps) {
++  const { tab, bodies, groups, selectedBodyIds, entered } = props;
++  const inJoined = (b: Body3D) => !!b.groupId && groupChain(props.groups, b.groupId).some((g) => g.joined);
++  const joined = groups.filter((g) => g.joined && !groupChain(groups, g.parentId).some((x) => x.joined));
++  // A joined shape is several pieces acting as one: it is listed once, as a shape.
++  const shapes: { id: string; name: string; bodies: Body3D[]; ids: string[]; group?: string; where?: string }[] = [
++    ...bodies
++      .filter((b) => !b.repeatOf && !inJoined(b))
++      .map((b) => ({ id: b.id, name: b.name, bodies: [b], ids: [b.id], where: groups.find((g) => g.id === b.groupId)?.name })),
++    ...joined.map((g) => ({ id: g.id, name: g.name, bodies: bodies.filter((b) => g.bodyIds.includes(b.id)), ids: g.bodyIds, group: g.id })),
++  ];
++  const objects = groups.filter((g) => !g.joined && !g.instanceOf && !groupChain(groups, g.parentId).some((x) => x.joined));
++  const picked = (ids: string[]) => ids.length > 0 && ids.length === selectedBodyIds.length && ids.every((i) => selectedBodyIds.includes(i));
++
++  const tabs: { id: PaneTab; label: string; count: number }[] = [
++    { id: 'shapes', label: 'Shapes', count: shapes.length },
++    { id: 'objects', label: 'Objects', count: objects.length },
++    { id: 'library', label: 'Library', count: props.library.length },
++  ];
++
++  return (
++    <aside aria-label="Parts" className="w-64 shrink-0 min-h-0 flex flex-col bg-slate-900/70 border-r border-white/8">
++      <div className="flex items-center gap-1 p-2">
++        <div role="tablist" aria-label="Parts" className="flex-1 flex gap-1 p-0.5 rounded-full bg-white/6">
++          {tabs.map((t) => (
++            <button
++              key={t.id}
++              type="button"
++              role="tab"
++              aria-selected={tab === t.id}
++              onClick={() => props.onTab(t.id)}
++              className={`flex-1 h-7 rounded-full text-[12px] font-medium transition-colors ${tab === t.id ? 'bg-accent-500 text-white' : 'text-slate-300 hover:text-white'}`}
++            >
++              {t.label} <span className="opacity-70">{t.count}</span>
++            </button>
++          ))}
++        </div>
++        <IconBtn label="Hide the parts pane" onClick={props.onClose}><PanelLeftClose size={15} /></IconBtn>
++      </div>
++
++      <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-3">
++        {tab === 'shapes' && (
++          shapes.length === 0
++            ? <p className="px-2 py-4 text-xs text-slate-400">No shapes yet. Add one from Shape.</p>
++            : <div className="grid grid-cols-2 gap-2">
++                {shapes.map((s) => (
++                  <Card key={s.id} label={`Pick ${s.name}`} selected={picked(s.ids)} onPick={() => props.onPickShapes(s.ids)}>
++                    <Thumb bodies={s.bodies} name={s.name} />
++                    <Name value={s.name} label={s.name} onCommit={(n) => props.onRename(s.group ? 'object' : 'shape', s.group ?? s.id, n)} />
++                    <div className="flex items-center justify-between">
++                      <span className="truncate text-[10px] text-slate-500">{s.where ?? ''}</span>
++                      <IconBtn label={`Save ${s.name} to the library`} onClick={() => props.onSave(s.group ? 'object' : 'shape', s.group ?? s.id)}><BookmarkPlus size={14} /></IconBtn>
++                    </div>
++                  </Card>
++                ))}
++              </div>
++        )}
++
++        {tab === 'objects' && (
++          objects.length === 0
++            ? <p className="px-2 py-4 text-xs text-slate-400">No objects yet. Select two or more shapes and press Group to make one.</p>
++            : <div className="grid grid-cols-2 gap-2">
++                {objects.map((g) => {
++                  const inside = bodies.filter((b) => g.bodyIds.includes(b.id));
++                  return (
++                    <Card key={g.id} label={`Pick ${g.name}`} selected={picked(g.bodyIds)} onPick={() => props.onPickShapes(g.bodyIds)}>
++                      <Thumb bodies={inside} name={g.name} />
++                      <Name value={g.name} label={g.name} onCommit={(n) => props.onRename('object', g.id, n)} />
++                      <div className="flex items-center justify-between">
++                        <span className="text-[10px] text-slate-500">{inside.length} {inside.length === 1 ? 'shape' : 'shapes'}</span>
++                        <span className="flex">
++                          <IconBtn label={entered === g.id ? `Editing inside ${g.name}` : `Edit inside ${g.name}`} onClick={() => props.onEnter(g.id)}><LogIn size={14} /></IconBtn>
++                          <IconBtn label={`Save ${g.name} to the library`} onClick={() => props.onSave('object', g.id)}><BookmarkPlus size={14} /></IconBtn>
++                        </span>
++                      </div>
++                    </Card>
++                  );
++                })}
++              </div>
++        )}
++
++        {tab === 'library' && (
++          props.library.length === 0
++            ? <p className="px-2 py-4 text-xs text-slate-400">Nothing saved yet. Use the bookmark on a shape or an object to keep it here for every project.</p>
++            : <div className="grid grid-cols-2 gap-2">
++                {props.library.map((item) => (
++                  <Card key={item.id} label={`Add a copy of ${item.name}`} onPick={() => props.onPlaceItem(item.id)}>
++                    <img src={item.thumb} alt="" aria-hidden="true" className="w-full aspect-square rounded-xl bg-slate-950/70" draggable={false} />
++                    <Name value={item.name} label={item.name} onCommit={(n) => props.onRename('item', item.id, n)} />
++                    <div className="flex items-center justify-between">
++                      <span className="text-[10px] text-slate-500">{item.shapes} {item.shapes === 1 ? 'shape' : 'shapes'}</span>
++                      <span className="flex">
++                        {item.inProject
++                          ? <IconBtn label={item.shared ? `${item.name} is in every project: keep it in this project only` : `Keep ${item.name} in every project`} pressed={item.shared} onClick={() => props.onShareItem(item.id)}><Globe size={14} className={item.shared ? 'text-accent-300' : ''} /></IconBtn>
++                          : <span className="w-7 h-7 flex items-center justify-center text-accent-300" title="From the app-wide library"><Globe size={14} /></span>}
++                        <IconBtn danger label={item.inProject ? `Remove ${item.name} from this project's library` : `Remove ${item.name} from every project`} onClick={() => props.onRemoveItem(item.id)}><Trash2 size={14} /></IconBtn>
++                      </span>
++                    </div>
++                  </Card>
++                ))}
++              </div>
++        )}
++      </div>
++    </aside>
++  );
++}
+diff --git a/autora-3d/src/components/Rail.tsx b/autora-3d/src/components/Rail.tsx
+index 7e3a3ac..9d47b11 100644
+--- a/autora-3d/src/components/Rail.tsx
++++ b/autora-3d/src/components/Rail.tsx
+@@ -18,6 +18,8 @@ import {
+   LayoutGrid,
+   Layers3,
+   Library,
++  LogIn,
++  LogOut,
+   Move,
+   Move3d,
+   Octagon,
+@@ -78,6 +80,11 @@ export interface RailProps extends TopBarProps {
+   onIsolate: () => void;
+   /** The selection is already a group, so the Group tool becomes Ungroup. */
+   grouped: boolean;
++  /** A group is open for editing from the inside. */
++  entered: boolean;
++  onEnterGroup: () => void;
++  /** A desktop shows the library in the parts pane: this opens it there. */
++  onOpenLibrary: () => void;
+   hiddenCount: number;
+   onHide: () => void;
+   onShowHidden: () => void;
+@@ -119,7 +126,7 @@ const PAD = { phone: 8, desktop: 5 };
+ const KEYS: Record<string, string> = { draw: 'D', move: 'M', group: 'G', repeat: 'R', join: 'J', subtract: 'S', isolate: 'I', hide: 'H', delete: 'Del' };
+ const nameOf = (t: { id: string; label: string; disabled?: boolean; hint?: string }) => (t.disabled && t.hint ? `${t.label} · ${t.hint}` : KEYS[t.id] ? `${t.label} (${KEYS[t.id]})` : t.label);
+ 
+-const usePhone = () => {
++export const usePhone = () => {
+   const q = '(max-width: 639px)';
+   const [phone, setPhone] = useState(() => matchMedia(q).matches);
+   useEffect(() => {
+@@ -155,9 +162,10 @@ export default function Rail(props: RailProps) {
+   const tools: Tool[] = [
+     { id: 'shapes', label: 'Shape', group: 'Build', icon: Shapes, color: C.shape, phone: true, desktop: true, on: openId === 'shapes', run: toggleOpen('shapes') },
+     { id: 'draw', label: 'Draw', group: 'Build', icon: PenTool, color: C.draw, phone: true, desktop: true, on: props.drawOn, run: props.onDraw },
+-    { id: 'library', label: 'Library', group: 'Build', icon: Library, color: C.gold, on: openId === 'library', run: toggleOpen('library') },
++    { id: 'library', label: 'Library', group: 'Build', icon: Library, color: C.gold, on: openId === 'library', run: phone ? toggleOpen('library') : props.onOpenLibrary },
+     { id: 'move', label: 'Move', group: 'Edit', icon: Move3d, color: C.select, phone: true, desktop: true, on: props.moveOn, disabled: n < 1, hint: picked, run: props.onToggleMove },
+     { id: 'group', label: props.grouped ? 'Ungroup' : 'Group', group: 'Edit', icon: props.grouped ? Ungroup : Boxes, color: C.text, phone: true, desktop: true, disabled: !props.grouped && n < 2, hint: addHint, run: props.onGroup },
++    { id: 'enter', label: props.entered ? 'Exit group' : 'Edit inside', group: 'Edit', icon: props.entered ? LogOut : LogIn, color: C.text, on: props.entered, disabled: !props.entered && !props.grouped, hint: 'Select a group', run: props.onEnterGroup },
+     { id: 'repeat', label: 'Repeat', group: 'Edit', icon: Repeat, color: C.note, phone: true, desktop: true, on: props.repeatOn, disabled: !props.repeatOn && n < 1, hint: picked, run: props.onPattern },
+     { id: 'join', label: 'Join', group: 'Combine', icon: Combine, color: C.insert, desktop: true, disabled: n < 2, hint: addHint, run: props.onJoin },
+     { id: 'subtract', label: 'Subtract', group: 'Combine', icon: SquareMinus, color: C.remove, desktop: true, disabled: n < 2, hint: addHint, run: props.onSubtract },
+@@ -242,7 +250,7 @@ export default function Rail(props: RailProps) {
+       case 'library':
+         return (
+           <div className="p-3 w-[min(19rem,calc(100vw-1.5rem))]">
+-            <p className="px-2 pb-2 text-xs text-slate-400">{props.library.length ? 'Your objects · placed copies stay linked · globe = in every project' : 'Nothing saved yet. Select a group or a shape and use Save to library.'}</p>
++            <p className="px-2 pb-2 text-xs text-slate-400">{props.library.length ? 'Your objects · tap to add a copy · globe = in every project' : 'Nothing saved yet. Select a group or a shape and use Save to library.'}</p>
+             <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
+               {props.library.map((item) => (
+                 <div key={item.id} className="flex items-center gap-1">
+diff --git a/autora-3d/src/core/ops.ts b/autora-3d/src/core/ops.ts
+index 7e4f33a..e59d8bb 100644
+--- a/autora-3d/src/core/ops.ts
++++ b/autora-3d/src/core/ops.ts
+@@ -783,7 +783,7 @@ const groupOf = (doc: Doc, id: unknown): ShapeGroup => {
+  * Saves a group (or one shape) to the library, and makes it the first placed copy. A group that was opened for editing
+  * (`object_unlink`) updates its item instead, so every copy follows.
+  */
+-export function saveToLibrary(doc: Doc, ids: IdGen, a: { group?: string; id?: string; name?: string }): OpResult<{ item: string; group: string; updated: boolean }> {
++export function saveToLibrary(doc: Doc, ids: IdGen, a: { group?: string; id?: string; name?: string; linked?: boolean }): OpResult<{ item: string; group: string; updated: boolean }> {
+   let group: ShapeGroup | null = null;
+   let single: Body3D | undefined;
+   if (a.group !== undefined) {
+@@ -792,13 +792,17 @@ export function saveToLibrary(doc: Doc, ids: IdGen, a: { group?: string; id?: st
+     if (group.instanceOf) return fail('That group is inside a linked library object.');
+   } else {
+     single = editable(doc, a.id);
+-    if (single.groupId) return fail(`"${single.id}" is in a group.`, `Save the group (${single.groupId}) instead, or ungroup it first.`);
++    if (single.groupId && a.linked) return fail(`"${single.id}" is in a group.`, `Save the group (${single.groupId}) instead, or ungroup it first.`);
+   }
+   const made = templateOf(doc.bodies, doc.groups, group, single);
+   if (typeof made === 'string') return fail(made);
+   const existing = group?.libraryId ? doc.library.find((i) => i.id === group!.libraryId) : undefined;
+   const name = (a.name ?? existing?.name ?? group?.name ?? single?.name ?? 'Object').trim() || 'Object';
+   const item: LibraryItem = { id: existing?.id ?? ids('item'), name, shared: existing?.shared, rev: Date.now(), ...made.item };
++  if (!a.linked && !existing) {
++    // Independent (the default): the library keeps its own copy and the shapes stay exactly as they are.
++    return { doc: { ...doc, library: [...doc.library, item] }, result: { item: item.id, group: group?.id ?? single!.id, updated: false } };
++  }
+   const gone = new Set((group ? group.bodyIds : [single!.id]));
+   const innerGroups = new Set(group ? descendantGroups(doc.groups, group.id).map((g) => g.id) : []);
+   const gid = group?.id ?? ids('group');
+@@ -822,6 +826,8 @@ export interface PlaceArgs {
+   /** Put it on the top of this shape. */
+   onTopOf?: string;
+   name?: string;
++  /** Keep the copy following its library object. Default: an independent copy, ordinary shapes that nothing follows. */
++  linked?: boolean;
+ }
+ 
+ /** Places a linked copy of a library object: beside what is there by default, or on top of a shape. */
+@@ -852,7 +858,11 @@ export function placeFromLibrary(doc: Doc, ids: IdGen, a: PlaceArgs): OpResult<{
+   const gid = ids('group');
+   const group: ShapeGroup = { id: gid, name: a.name ?? item.name, bodyIds: [], libraryId: item.id, place: { x: round2(x), y: round2(y), z: round2(z), angle: (num(a.angle, 'angle', 0) * Math.PI) / 180 } };
+   const next = settle({ ...doc, groups: [...doc.groups, group] });
+-  return { doc: next, result: { group: gid, shapes: next.bodies.filter((b) => b.instanceOf === gid).map((b) => b.id) } };
++  const placed = { doc: next, result: { group: gid, shapes: next.bodies.filter((b) => b.instanceOf === gid).map((b) => b.id) } };
++  if (a.linked) return placed;
++  // Independent: let it go at once, so the copy is plain shapes in a plain group.
++  const loose = unlinkObject(next, ids, { group: gid, forget: true });
++  return { doc: settle(loose.doc), result: { group: gid, shapes: loose.result.shapes } };
+ }
+ 
+ /**
+diff --git a/autora-3d/src/core/tools.ts b/autora-3d/src/core/tools.ts
+index 00df69c..fcb4931 100644
+--- a/autora-3d/src/core/tools.ts
++++ b/autora-3d/src/core/tools.ts
+@@ -185,13 +185,13 @@ export const TOOL_SPECS: ToolSpec[] = [
+   },
+   {
+     name: 'library_save',
+-    description: 'Save a group (or one ungrouped shape) to the project library under its name. It stays in the scene as the first linked copy. If the group was opened with object_unlink it updates its library object instead, and every linked copy follows.',
+-    inputSchema: obj({ group: { type: 'string' }, id: { type: 'string', description: 'A single ungrouped shape, when there is no group.' }, name: { type: 'string' } }),
++    description: 'Save a group (or one ungrouped shape) to the project library under its name. The library keeps its own copy and the shapes stay as they are. With linked:true the group instead becomes the first linked copy. If the group was opened with object_unlink it updates its library object instead, and every linked copy follows.',
++    inputSchema: obj({ group: { type: 'string' }, id: { type: 'string', description: 'A single ungrouped shape, when there is no group.' }, name: { type: 'string' }, linked: { type: 'boolean', description: 'Make the saved group a linked copy. Default false.' } }),
+   },
+   {
+     name: 'library_place',
+-    description: 'Place a linked copy of a library object (default: beside the scene; or on top of a shape). A linked copy moves, turns and deletes as one piece and follows its library object; to change the object use object_unlink then library_save.',
+-    inputSchema: obj({ item: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' }, angle: { type: 'number', description: 'Degrees, counter-clockwise from above.' }, onTopOf: { type: 'string' }, name: { type: 'string' } }, ['item']),
++    description: 'Place a copy of a library object (default: beside the scene; or on top of a shape). The copy is independent: ordinary shapes in a group that nothing follows, free to edit. With linked:true it is a linked copy instead: it moves, turns and deletes as one piece and follows its library object (to change the object use object_unlink then library_save).',
++    inputSchema: obj({ item: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' }, angle: { type: 'number', description: 'Degrees, counter-clockwise from above.' }, onTopOf: { type: 'string' }, name: { type: 'string' }, linked: { type: 'boolean' } }, ['item']),
+   },
+   {
+     name: 'object_unlink',
+@@ -329,7 +329,7 @@ export function runDocTool(ctx: ToolContext, name: string, rawArgs: unknown): To
+     case 'library_list':
+       return { doc: ctx.doc, result: { items: libraryItems(doc) } };
+     case 'library_save':
+-      return done(ops.saveToLibrary(doc, ids, a as { group?: string; id?: string; name?: string }));
++      return done(ops.saveToLibrary(doc, ids, a as { group?: string; id?: string; name?: string; linked?: boolean }));
+     case 'library_place':
+       return done(ops.placeFromLibrary(doc, ids, a as ops.PlaceArgs));
+     case 'object_unlink':
+diff --git a/autora-3d/src/utils/thumbnail.ts b/autora-3d/src/utils/thumbnail.ts
+index 43e00ea..8ab4610 100644
+--- a/autora-3d/src/utils/thumbnail.ts
++++ b/autora-3d/src/utils/thumbnail.ts
+@@ -102,3 +102,6 @@ export function thumbnailUrl(item: { bodies: Body3D[] }, size = 96): string {
+   if (!url) bySize.set(size, (url = `data:image/svg+xml;utf8,${encodeURIComponent(thumbnailSvg(item.bodies, size))}`));
+   return url;
+ }
++
++/** The same picture as a data URL for shapes that are not a library object (a shape or a group in the scene). Not remembered: the caller keeps it while the shapes are the same. */
++export const thumbnailDataUrl = (bodies: Body3D[], size = 96): string => `data:image/svg+xml;utf8,${encodeURIComponent(thumbnailSvg(bodies, size))}`;

@@ -663,6 +663,25 @@ const faceOf = (id: string, spec: unknown): FaceSel => {
   throw new Skip('that face is not one the window knows');
 };
 
+/**
+ * Where an object of the library is, by hand: in the parts pane on a desktop (its Library tab, a card whose button says
+ * "Add a copy of ..."), else in the Library card of a phone's bar. `place` is the button that adds a copy; `row`
+ * is what holds the remove and globe buttons.
+ */
+async function libraryEntry(name: string): Promise<{ place: HTMLElement | null; scope: HTMLElement } | null> {
+  const pane = document.querySelector<HTMLElement>('aside[aria-label="Parts"]');
+  if (pane) {
+    const tab = Array.from(pane.querySelectorAll<HTMLElement>('[role="tab"]')).find((t) => t.textContent?.trim().startsWith('Library'));
+    if (tab && tab.getAttribute('aria-selected') !== 'true') await press(tab, 'Opening the Library');
+    const place = await waitFor(() => pane.querySelector<HTMLElement>(`button[aria-label="Add a copy of ${name}"]`));
+    const scope = place?.parentElement ?? null;
+    return scope ? { place, scope } : null;
+  }
+  const lib = await card('Library');
+  const row = libraryRow(lib, name);
+  return row ? { place: row.querySelector<HTMLElement>('button'), scope: row } : null;
+}
+
 /** Library rows: the place button carries the object's name. */
 const libraryRow = (cardEl: HTMLElement, name: string) =>
   Array.from(cardEl.querySelectorAll<HTMLElement>('div.flex.items-center.gap-1')).find((row) => row.querySelector('button span.truncate')?.textContent?.trim() === name) ?? null;
@@ -1029,6 +1048,7 @@ export async function runHand(name: string, args: Record<string, unknown>, api: 
         break;
       }
       case 'library_save': {
+        if (args.linked === true) throw new Skip('a linked copy is made by the model; the window keeps an independent copy');
         const gid = str(args.group);
         const label = str(args.name);
         if (gid) {
@@ -1055,21 +1075,14 @@ export async function runHand(name: string, args: Record<string, unknown>, api: 
           await pickFace(api, host, { kind: 'top' });
           did.push('picked the top face to place it on');
         }
-        const known = new Set(api.doc().groups.map((g) => g.id));
-        const lib = await card('Library');
-        const row = libraryRow(lib, item.name);
-        await press(row?.querySelector<HTMLElement>('button') ?? null, `Placing ${item.name}`);
-        const placed = await waitFor(() => api.doc().groups.find((g) => !known.has(g.id) && g.libraryId === item.id), 4000);
+        if (args.linked === true) throw new Skip('a linked copy is made by the model; the window places independent copies');
+        const knownGroups = new Set(api.doc().groups.map((g) => g.id));
+        const knownBodies = new Set(api.doc().bodies.map((b) => b.id));
+        const entry = await libraryEntry(item.name);
+        await press(entry?.place ?? null, `Adding a copy of ${item.name}`);
+        const placed = await waitFor(() => api.doc().bodies.find((b) => !knownBodies.has(b.id)) ?? api.doc().groups.find((g) => !knownGroups.has(g.id)), 4000);
         if (!placed) throw new Skip('the object was not placed');
         did.push(`placed ${item.name} from the Library`);
-        const goalGroup = goal?.groups.find((g) => g.libraryId === item.id && !api.doc().groups.some((x) => x.id === g.id));
-        if (goalGroup) {
-          const angle = goalGroup.place?.angle ?? 0;
-          if (Math.abs(angle) > 1e-6) await turnByRing(api, (angle * 180) / Math.PI, did);
-          const { X, Y, Z } = sizesOf(goal!.bodies.filter((b) => b.instanceOf === goalGroup.id)) as Record<string, number>;
-          await typeSizes({ X, Y, Z }, did);
-          if (goalGroup.name !== placed.name) await renameGroupInTopBar(goalGroup.name, did);
-        }
         break;
       }
       case 'object_unlink': {
@@ -1084,14 +1097,14 @@ export async function runHand(name: string, args: Record<string, unknown>, api: 
       case 'library_remove': {
         const item = api.doc().library.find((i) => i.id === args.item);
         if (!item) throw new Skip('there is no such library object');
-        const lib = await card('Library');
-        const row = libraryRow(lib, item.name);
+        const entry = await libraryEntry(item.name);
+        const row = entry?.scope ?? null;
         if (!row) throw new Skip('the object was not in the Library');
         if (name === 'library_remove') {
           await press(row.querySelector<HTMLElement>(`button[aria-label^="Remove ${item.name}"]`), `Removing ${item.name}`);
           did.push(`pressed remove beside ${item.name} in the Library`);
         } else {
-          const globe = row.querySelector<HTMLElement>('button[aria-pressed]');
+          const globe = row.querySelector<HTMLElement>('button[aria-label*="every project"]');
           const want = args.shared !== false;
           if (globe && (globe.getAttribute('aria-pressed') === 'true') !== want) {
             await press(globe, want ? 'Keeping it in every project' : 'Keeping it only here');

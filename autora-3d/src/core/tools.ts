@@ -185,13 +185,13 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
   {
     name: 'library_save',
-    description: 'Save a group (or one ungrouped shape) to the project library under its name. It stays in the scene as the first linked copy. If the group was opened with object_unlink it updates its library object instead, and every linked copy follows.',
-    inputSchema: obj({ group: { type: 'string' }, id: { type: 'string', description: 'A single ungrouped shape, when there is no group.' }, name: { type: 'string' } }),
+    description: 'Save a group (or one ungrouped shape) to the project library under its name. The library keeps its own copy and the shapes stay as they are. With linked:true the group instead becomes the first linked copy. If the group was opened with object_unlink it updates its library object instead, and every linked copy follows.',
+    inputSchema: obj({ group: { type: 'string' }, id: { type: 'string', description: 'A single ungrouped shape, when there is no group.' }, name: { type: 'string' }, linked: { type: 'boolean', description: 'Make the saved group a linked copy. Default false.' } }),
   },
   {
     name: 'library_place',
-    description: 'Place a linked copy of a library object (default: beside the scene; or on top of a shape). A linked copy moves, turns and deletes as one piece and follows its library object; to change the object use object_unlink then library_save.',
-    inputSchema: obj({ item: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' }, angle: { type: 'number', description: 'Degrees, counter-clockwise from above.' }, onTopOf: { type: 'string' }, name: { type: 'string' } }, ['item']),
+    description: 'Place a copy of a library object (default: beside the scene; or on top of a shape). The copy is independent: ordinary shapes in a group that nothing follows, free to edit. With linked:true it is a linked copy instead: it moves, turns and deletes as one piece and follows its library object (to change the object use object_unlink then library_save).',
+    inputSchema: obj({ item: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' }, angle: { type: 'number', description: 'Degrees, counter-clockwise from above.' }, onTopOf: { type: 'string' }, name: { type: 'string' }, linked: { type: 'boolean' } }, ['item']),
   },
   {
     name: 'object_unlink',
@@ -329,7 +329,7 @@ export function runDocTool(ctx: ToolContext, name: string, rawArgs: unknown): To
     case 'library_list':
       return { doc: ctx.doc, result: { items: libraryItems(doc) } };
     case 'library_save':
-      return done(ops.saveToLibrary(doc, ids, a as { group?: string; id?: string; name?: string }));
+      return done(ops.saveToLibrary(doc, ids, a as { group?: string; id?: string; name?: string; linked?: boolean }));
     case 'library_place':
       return done(ops.placeFromLibrary(doc, ids, a as ops.PlaceArgs));
     case 'object_unlink':

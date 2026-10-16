@@ -102,3 +102,6 @@ export function thumbnailUrl(item: { bodies: Body3D[] }, size = 96): string {
   if (!url) bySize.set(size, (url = `data:image/svg+xml;utf8,${encodeURIComponent(thumbnailSvg(item.bodies, size))}`));
   return url;
 }
+
+/** The same picture as a data URL for shapes that are not a library object (a shape or a group in the scene). Not remembered: the caller keeps it while the shapes are the same. */
+export const thumbnailDataUrl = (bodies: Body3D[], size = 96): string => `data:image/svg+xml;utf8,${encodeURIComponent(thumbnailSvg(bodies, size))}`;

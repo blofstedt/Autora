@@ -1024,7 +1024,7 @@ export const cadSPECS: ToolSpec[] = [
   {
     "name": "cad_library_save",
     "group": "files",
-    "description": "Save a group (or one ungrouped shape) to the project library under its name. It stays in the scene as the first linked copy. If the group was opened with cad_object_unlink it updates its library object instead, and every linked copy follows.",
+    "description": "Save a group (or one ungrouped shape) to the project library under its name. The library keeps its own copy and the shapes stay as they are. With linked:true the group instead becomes the first linked copy. If the group was opened with cad_object_unlink it updates its library object instead, and every linked copy follows.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -1037,6 +1037,10 @@ export const cadSPECS: ToolSpec[] = [
         },
         "name": {
           "type": "string"
+        },
+        "linked": {
+          "type": "boolean",
+          "description": "Make the saved group a linked copy. Default false."
         }
       },
       "required": []
@@ -1045,7 +1049,7 @@ export const cadSPECS: ToolSpec[] = [
   {
     "name": "cad_library_place",
     "group": "files",
-    "description": "Place a linked copy of a library object (default: beside the scene; or on top of a shape). A linked copy moves, turns and deletes as one piece and follows its library object; to change the object use cad_object_unlink then cad_library_save.",
+    "description": "Place a copy of a library object (default: beside the scene; or on top of a shape). The copy is independent: ordinary shapes in a group that nothing follows, free to edit. With linked:true it is a linked copy instead: it moves, turns and deletes as one piece and follows its library object (to change the object use cad_object_unlink then cad_library_save).",
     "parameters": {
       "type": "object",
       "properties": {
@@ -1070,6 +1074,9 @@ export const cadSPECS: ToolSpec[] = [
         },
         "name": {
           "type": "string"
+        },
+        "linked": {
+          "type": "boolean"
         }
       },
       "required": [
