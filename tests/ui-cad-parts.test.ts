@@ -48,21 +48,20 @@ async function main() {
     };
     const doc = async () => (await app.api("GET", `/api/cad/${s}/doc`)).body.doc as { bodies: Body[]; groups: Group[]; library: Array<{ id: string; name: string }> };
 
-    await run("two blocks and a peg", [
-      { name: "cad_shape_add", args: { kind: "box", width: 20, depth: 20, height: 10, name: "Left" } },
-      { name: "cad_shape_add", args: { kind: "box", width: 20, depth: 20, height: 10, x: 40, name: "Right" } },
-      { name: "cad_shape_add", args: { kind: "box", width: 10, depth: 10, height: 30, x: 100, name: "Peg" } },
-    ]);
+    // One batch, so the window takes the three shapes as one change.
+    const add = (name: string, x: number, w: number, h: number) => ({ tool: "shape_add", args: { kind: "box", width: w, depth: w, height: h, x, name } });
+    await run("two blocks and a peg", [{ name: "cad_batch", args: { commands: [add("Left", 0, 20, 10), add("Right", 40, 20, 10), add("Peg", 100, 10, 30)] } }]);
     const ids = (await doc()).bodies.filter((b) => b.name !== "Peg").map((b) => b.id);
     await run("group the blocks", [{ name: "cad_group_create", args: { ids, name: "Pair" } }]);
     for (let i = 0; i < 200 && !page.frames().some((f) => f.url().includes("/autora-3d/")); i++) await sleep(100);
-    await sleep(2500);
+    await sleep(4000);
     const f = (): Frame => page.frames().find((fr) => fr.url().includes("/autora-3d/"))!;
 
     await test("the pane lists each shape and each object with a thumbnail and its name", async () => {
       const pane = f().locator('aside[aria-label="Parts"]');
       await pane.waitFor({ timeout: 15_000 });
       assert.equal(await pane.locator('[role="tab"]').count(), 3);
+      await pane.getByRole("tab", { name: /Shapes/ }).click();
       assert.equal(await pane.locator("img").count(), 3, "three shapes");
       assert.ok(await pane.getByText("Peg", { exact: true }).count());
       await pane.getByRole("tab", { name: /Objects/ }).click();
