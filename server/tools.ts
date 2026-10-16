@@ -3729,11 +3729,9 @@ export async function capabilityBriefing(): Promise<string> {
   );
   lines.push(
     "- Work that happens later: always available. Tools: schedule, schedules, unschedule. What you set is a script: a cron time " +
-      "and a shell command the console runs by itself, with no model and no chat, so it costs nothing. Put the checking in the " +
-      "script and let it print only when something is worth saying (a failure is told to the person). You cannot set a task that " +
-      "wakes a model each time, or make a timer another way (crontab, at, systemd): that spends tokens whether or not there is " +
-      "anything to do; if it really needs a model, tell the person, who can make it on the Schedule page. Nothing runs while the " +
-      "machine is off. Say that you set it, and what it will do.",
+      "and a shell command run with no model, so it costs nothing (a failure is told to the person). You cannot set a task that " +
+      "wakes a model, or a timer another way (crontab, at, systemd); if it needs a model, tell the person (the Schedule page). " +
+      "Nothing runs while the machine is off. Say that you set it, and what it will do.",
   );
   lines.push(
     "- Work that outlives the turn: always available. Tools: run_background, background_jobs, background_output, " +

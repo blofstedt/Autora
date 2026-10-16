@@ -27,7 +27,10 @@ const SCHEMA_BUDGET_CHARS = 48_200;
 // Raised again, to 22_000: on CI the browser, memory and voice groups are all available, and their guides are in the briefing (20,871 chars there before Autora Photo's line, about 18,000 on a machine without a browser).
 // Raised again, to 24_000: the tool bars add each window's bar and All-tools grid to the guides; CI measured 23,354 chars, about 21,500 on a machine without a browser.
 // Raised again, to 25_000 (2026-10-11): five commits had added their weight without it -- 4da9831 and 9ededd7 (the working agent's cursor and what it says it is doing there), 01d5cb4 (no Threads from handed-down work), 2f5b8b8 (to-do cards carry their steps; the bar counts credit left), 6896367 (the memory card opens the memory; the lead routes work to agents). CI measured 24,249 chars (~6,062 tokens) against the old 24,000.
-const BRIEFING_BUDGET_CHARS = 25_000;
+// Raised again, to 26_000 (2026-10-16): the overview's "Saving and files" (Save, project folders, Load in every window, the
+// composer's Artifacts button) and the scripts-only schedule line, both trimmed; CI measured 26,473 before the trim, about
+// 25,700 after (24,151 on a machine without a browser).
+const BRIEFING_BUDGET_CHARS = 26_000;
 
 console.log("tool budget");
 
