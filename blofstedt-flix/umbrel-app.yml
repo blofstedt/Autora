@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.3.3"
+version: "0.3.4"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -46,12 +46,9 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  What's new since 0.3.2. The Torrents page now shows a 12-month storage graph
-  and, for every download, who is holding it and when the hold lapses, so you
-  can see what is taking up space and why. The player fills the screen with a
-  pinch and shows the actors' photos. Flix downloads ahead for you and stands
-  down when the disk is getting full, and downloads can be kept in sync with a
-  Downloads folder on the host. An episode counts as watched at 100% instead of
-  a moment early. Installing Flix from the browser works again: the app no
-  longer swallows Chrome's install prompt, so "Add to home screen" is offered
-  and Flix opens like an app instead of a browser tab.
+  What's new since 0.3.3. The home page fills up: shows are grouped by genre
+  from the whole library instead of only the ones BroadcasTheNet has streamed,
+  and it always ends with More to watch and Newest additions, so it is never a
+  single row. The featured backdrop is sharp again, because a show is no longer
+  given TheTVDB's thin logo strip stretched across the page. Search sits in the
+  middle of the top bar and results appear as you type.
