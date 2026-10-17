@@ -1,21 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconX } from "./Icons";
 import { every } from "../lib/poll";
-
-type Notice = {
-  id: number;
-  ts: number;
-  tone: "ok" | "error" | "info";
-  title: string;
-  detail: string;
-  session: string | null;
-};
+import { batchNotices, type Notice } from "../lib/noticeBatch";
 
 const POLL_MS = 10_000;
 /** Long enough to read a line, short enough that it is gone before you look. */
 const SHOW_MS = 5_000;
-/** The leaving animation's own length, so it is unmounted once it is behind
-    the message box again rather than sitting there invisible. */
+/** The leaving animation's own length, so it is unmounted once it has slid
+    back off the top rather than sitting there invisible. */
 const OUT_MS = 320;
 
 /**
@@ -26,10 +18,12 @@ const OUT_MS = 320;
  * what happens while the page is open is shown -- the first poll is the
  * starting line, not a backlog.
  *
- * It is centred on the message box and rises from behind it (styles.css does
- * the clipping), so it never covers the last thing said -- and the sentence
- * wraps to three lines before it is ellipsised, because the task's name is
- * the whole point of the card and one line of it was usually cut off.
+ * It drops from the top of the screen, under the header, so it never covers
+ * the message box or the last thing said. Runs that piled up while you were
+ * away (the poll pauses with the tab) arrive as one card per task --
+ * "ran 5x from ... to ..." -- not a screenful. The sentence wraps to three
+ * lines before it is ellipsised, because the task's name is the whole point
+ * of the card.
  */
 export function Notices({ onOpenSession }: { onOpenSession: (id: string) => void }) {
   const [shown, setShown] = useState<Notice[]>([]);
@@ -54,8 +48,9 @@ export function Notices({ onOpenSession }: { onOpenSession: (id: string) => void
           const first = after.current === null;
           after.current = body.latest;
           if (first || body.notices.length === 0) return;
-          setShown((prev) => [...prev, ...body.notices].slice(-3));
-          for (const n of body.notices) window.setTimeout(() => dismiss(n.id), SHOW_MS);
+          const batched = batchNotices(body.notices);
+          setShown((prev) => [...prev, ...batched].slice(-3));
+          for (const n of batched) window.setTimeout(() => dismiss(n.id), SHOW_MS);
         })
         .catch(() => undefined);
     void poll();

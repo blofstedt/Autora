@@ -188,7 +188,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Small fixes. The to-do list now opens and ticks off tasks that finished while you were away from the screen (on the
-  phone app, say) when you come back. The "Condensed N earlier messages" note is gone from the thread; it still happens
-  in the background. The dot before "New memories…" is gone. On a phone, the eye button (Visible work) is a true circle
-  instead of an oval, and the line under the tab names breaks beneath the open tab so its name reads as that tool's tab.
+  Scheduled-task notices now drop in from the top of the screen, under the header, instead of rising from behind the
+  message box, so they no longer sit over what you are typing. When a task ran several times while you were away, you get
+  one card ("Daily digest finished ×5 -- ran 5× from 9:02 AM to 9:40 AM") instead of a stack of them.

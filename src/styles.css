@@ -5383,31 +5383,29 @@ span.learned-open { cursor: default; }
 .mind-review-actions { display: flex; gap: 6px; }
 
 /* A scheduled task finished while you were elsewhere.
-   A slim card that sits on the message box and comes up from behind it: the
-   container is the clip, its bottom edge is the box's top edge, so the toast
-   is only ever drawn above the box and leaves the way it arrived. It is
-   centred on the box rather than on the window -- the box is what it belongs
-   to, and with a dock open the two are not the same line. Every offset comes
-   from the composer itself (App.tsx measures it into --composer-h, -l and -w)
-   rather than from a size guessed here. */
+   A slim card that drops in from the top of the screen, just under the header,
+   centred on the window, so it never covers the message box or the last thing
+   said. The container is the clip: its top edge is the header's bottom edge,
+   so a toast is only ever drawn below the header and leaves the way it
+   arrived. */
 .notices {
   position: fixed; z-index: var(--z-modal);
-  left: calc(var(--composer-l, 0px) + var(--composer-w, 100vw) / 2);
+  left: 50%;
   transform: translateX(-50%);
-  bottom: var(--composer-h, 104px);
+  top: var(--top-h);
   display: flex; flex-direction: column; gap: 6px;
-  width: min(440px, calc(var(--composer-w, 100vw) - 16px));
-  padding-top: 12px;                 /* room for the shadow above it */
-  overflow: hidden;                  /* the message box's top edge is the line */
+  width: min(440px, calc(100vw - 16px));
+  padding-bottom: 12px;              /* room for the shadow below it */
+  overflow: hidden;                  /* the header's bottom edge is the line */
   pointer-events: none;
 }
 @keyframes notice-up {
-  from { opacity: 0; transform: translateY(calc(100% + 14px)); }
+  from { opacity: 0; transform: translateY(calc(-100% - 14px)); }
   to { opacity: 1; transform: none; }
 }
 @keyframes notice-down {
   from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(calc(100% + 14px)); }
+  to { opacity: 0; transform: translateY(calc(-100% - 14px)); }
 }
 .notice {
   display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 10px;
