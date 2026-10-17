@@ -6,12 +6,17 @@ services:
     environment:
       APP_HOST: blofstedt-flix_app_1
       APP_PORT: 8096
+      # Flix has its own accounts, sign-in links and profile PINs, so Umbrel's
+      # own login is not put in front of it (that made everyone sign in twice).
+      # Only safe while Flix is reachable from the home network and Tailscale
+      # alone: do not publish it with a port forward or Tailscale Funnel.
+      PROXY_AUTH_ADD: "false"
 
   app:
     # Built by viberific/Flix's own workflow from the repo's package.json
     # version. Bump this tag (and `version` above) only once that tag exists
     # in the registry, or an update will fail with "manifest unknown".
-    image: ghcr.io/viberific/flix:0.1.8
+    image: ghcr.io/viberific/flix:0.3.0
     restart: unless-stopped
     environment:
       # The one address Flix will answer on. Every other host name it is
