@@ -16,8 +16,16 @@ services:
     # Built by viberific/Flix's own workflow from the repo's package.json
     # version. Bump this tag (and `version` above) only once that tag exists
     # in the registry, or an update will fail with "manifest unknown".
-    image: ghcr.io/viberific/flix:0.3.8
+    image: ghcr.io/viberific/flix:0.3.9
     restart: unless-stopped
+    # The torrent peer port. Flix keeps qBittorrent on 6881 (QB_LISTEN_PORT)
+    # so it never changes between restarts, and this publishes it so a port
+    # forward on the router actually reaches it. TCP and UDP both: peers
+    # arrive on either. If 6881 is taken on the box, change the number on the
+    # left here and set QB_LISTEN_PORT to the same number above.
+    ports:
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
     environment:
       # The one address Flix will answer on. Every other host name it is
       # reached by -- Umbrel's own app-proxy port above all -- gets a 308 here,

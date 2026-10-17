@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.3.8"
+version: "0.3.9"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -46,9 +46,10 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  Cast to a TV. When a Chromecast or Google TV is on the home network, the
-  player has a Cast button: pick the TV and the episode you are watching starts
-  there at the same moment, while the phone pauses. The TV fetches the video
-  from this box over the home network, which is what LAN_URL is for; it is set
-  to this box here. If your router ever gives the box a new address, set
-  LAN_URL to match or the Cast button will not appear.
+  Seeding should finally count. "Seeding may be limited: the download port
+  looks closed" was right: the torrent client was on a random port that
+  nothing published. It now listens on 6881 every time, this app publishes
+  that port on the box, and it asks the router to open it by itself (UPnP).
+  If the warning stays, the router is the only thing left: send TCP and UDP
+  6881 to this box, or switch UPnP on in the router. Torrents are still only
+  removed after the 130 hours or the 1:1 ratio.
