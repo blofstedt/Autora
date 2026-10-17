@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.3.2"
+version: "0.3.3"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -46,24 +46,12 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  Made for the whole family. Each person gets a one-time sign-in link from the
-  admin (no password to type), and a shared phone or TV asks "Who's watching?";
-  a profile can have a PIN. Flix no longer sits behind Umbrel's own login, so
-  there is one sign-in, not two. Shows are listed only when their whole first
-  season is available, season packs are listed episode by episode and
-  downloaded whole so they can be seeded, and every episode now has a title,
-  summary and picture. Playback recovers by itself: a source that delivers
-  nothing is swapped for the next-best one, the next episode starts
-  downloading while you watch, and a flag in the player reports a problem to
-  the admin. Subtitles (embedded or .srt files), audio language, Skip intro,
-  10-second jumps and HDR tone-mapping are in. Home has My List, Because you
-  watched, Up next and New episode badges, and works with a TV remote. The
-  admin sees storage, BTN and seeding health on the Torrents page, with a
-  banner when something needs attention, and the database is backed up daily.
-  The home screen no longer repeats shows: each appears once, with Trending
-  first, then the newest from Netflix, Disney+ and Apple TV+, then the rest
-  under the one genre that fits best. Installing Flix to the phone's home
-  screen works again (the app manifest is now fetched with the sign-in cookie).
-  Installing Flix from the browser works again: the app no longer swallows
-  Chrome's install prompt, so "Add to home screen" is offered and Flix opens
-  like an app instead of a browser tab.
+  What's new since 0.3.2. The Torrents page now shows a 12-month storage graph
+  and, for every download, who is holding it and when the hold lapses, so you
+  can see what is taking up space and why. The player fills the screen with a
+  pinch and shows the actors' photos. Flix downloads ahead for you and stands
+  down when the disk is getting full, and downloads can be kept in sync with a
+  Downloads folder on the host. An episode counts as watched at 100% instead of
+  a moment early. Installing Flix from the browser works again: the app no
+  longer swallows Chrome's install prompt, so "Add to home screen" is offered
+  and Flix opens like an app instead of a browser tab.
