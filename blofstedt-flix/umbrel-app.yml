@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.3.1"
+version: "0.3.2"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -64,3 +64,6 @@ releaseNotes: >-
   first, then the newest from Netflix, Disney+ and Apple TV+, then the rest
   under the one genre that fits best. Installing Flix to the phone's home
   screen works again (the app manifest is now fetched with the sign-in cookie).
+  Installing Flix from the browser works again: the app no longer swallows
+  Chrome's install prompt, so "Add to home screen" is offered and Flix opens
+  like an app instead of a browser tab.

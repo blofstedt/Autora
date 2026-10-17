@@ -16,7 +16,7 @@ services:
     # Built by viberific/Flix's own workflow from the repo's package.json
     # version. Bump this tag (and `version` above) only once that tag exists
     # in the registry, or an update will fail with "manifest unknown".
-    image: ghcr.io/viberific/flix:0.3.1
+    image: ghcr.io/viberific/flix:0.3.2
     restart: unless-stopped
     environment:
       # The one address Flix will answer on. Every other host name it is
