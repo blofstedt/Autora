@@ -99,7 +99,6 @@ export function LearnedCell({
   return (
     <div className="learned">
       <button type="button" className="learned-head" onClick={onOpen} title="Open the Mind">
-        <span className="mem-pulse-dot" aria-hidden="true" />
         New memories…
       </button>
       {shown.map((item) => {

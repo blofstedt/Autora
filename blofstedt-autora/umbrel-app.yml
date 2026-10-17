@@ -188,8 +188,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  What the agent learned from a turn now shows in one rounded "New memories…" box: a coloured dot and a line for each
-  memory, with an x at the end to forget it. The agent can now connect two memories when it notices they belong together
-  (a new memory_link tool, shown in the Mind), and is told to write, fix and confirm its own skills as memories of kind
-  skill. Earlier in this release: the to-do list is ticked off one item at a time, and the copy and read-aloud buttons
-  sit beside the agent's name.
+  Small fixes. The to-do list now opens and ticks off tasks that finished while you were away from the screen (on the
+  phone app, say) when you come back. The "Condensed N earlier messages" note is gone from the thread; it still happens
+  in the background. The dot before "New memories…" is gone. On a phone, the eye button (Visible work) is a true circle
+  instead of an oval, and the line under the tab names breaks beneath the open tab so its name reads as that tool's tab.
