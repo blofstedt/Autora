@@ -188,5 +188,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Two tidy-ups to the tools bar on a phone. The eye button (Visible work) is now a true circle instead of an oval, and
-  the line under the tab names breaks beneath the tab that is open, so its name reads as the tab of the tool below it.
+  Small fixes. The to-do list now opens and ticks off tasks that finished while you were away from the screen (on the
+  phone app, say) when you come back. The "Condensed N earlier messages" note is gone from the thread; it still happens
+  in the background. The dot before "New memories…" is gone. On a phone, the eye button (Visible work) is a true circle
+  instead of an oval, and the line under the tab names breaks beneath the open tab so its name reads as that tool's tab.
