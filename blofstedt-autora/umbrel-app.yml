@@ -188,6 +188,5 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Scheduled-task notices now drop in from the top of the screen, under the header, instead of rising from behind the
-  message box, so they no longer sit over what you are typing. When a task ran several times while you were away, you get
-  one card ("Daily digest finished ×5 -- ran 5× from 9:02 AM to 9:40 AM") instead of a stack of them.
+  Agents no longer make cron jobs on their own: they ask you first and only schedule a script once you agree. Cron jobs
+  stay plain scripts that run with no model and cost no tokens; anything that should start an agent is a trigger.

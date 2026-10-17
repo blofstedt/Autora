@@ -13,6 +13,7 @@ export const scheduleSPECS: ToolSpec[] = [
     name: "schedule",
     group: "schedule",
     description:
+      "ONLY after the person has agreed (ask them first with ask_user; never make one on your own initiative). " +
       "Run a script on a cron time, by itself: a shell command the console runs " +
       "on the clock with no model and no chat, so it costs nothing to run. Use " +
       "it for work that is the same every time (\"every weekday at 8am, run the " +
@@ -52,6 +53,10 @@ export const scheduleSPECS: ToolSpec[] = [
           description: "One of your scripts' ids, to change it instead of making a new one.",
         },
         enabled: { type: "boolean", description: "Whether it should run. Default true." },
+        approved: {
+          type: "boolean",
+          description: "Required to make a new one: true only after the person said yes when you asked with ask_user.",
+        },
       },
       // Not required: a call that asks for a prompt gets the explanation of why it cannot, not "command is missing".
       required: [],

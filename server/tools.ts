@@ -2318,6 +2318,17 @@ async function runToolUnredacted(
             preview: `schedule ${id} changed`,
           };
         }
+        /* A recurring job is a standing change to the person's machine, so it is made only after they have said yes:
+           the agent asks first (ask_user) and passes `approved` once they have agreed. */
+        if (args.approved !== true && args.approved !== "true") {
+          return {
+            ok: false,
+            summary:
+              "Not made yet: ask the person first. Use ask_user to say what the script would do (`" + command + "`), when it " +
+              `would run (${cron}), and why, and only make it if they agree; then call schedule again with approved: true. ` +
+              "If what you need is an agent to act when something happens, that is a trigger (the person's to set up), not a cron job.",
+          };
+        }
         const made = jobs.create({ name, cron, command, enabled });
         if (!made.id) return { ok: false, summary: made.error ?? "It could not be created." };
         return {
@@ -3743,7 +3754,9 @@ export async function capabilityBriefing(): Promise<string> {
   );
   lines.push(
     "- Work that happens later: always available. Tools: schedule, schedules, unschedule. What you set is a script: a cron time " +
-      "and a shell command run with no model, so it costs nothing (a failure is told to the person). You cannot set a task that " +
+      "and a shell command run with no model, so it costs nothing (a failure is told to the person). Never make one on your own " +
+      "initiative: ask the person first (ask_user), and pass approved: true only once they agree. Cron jobs are scripts; triggers " +
+      "are what start an agent. You cannot set a task that " +
       "wakes a model, or a timer another way (crontab, at, systemd); if it needs a model, tell the person (the Schedule page). " +
       "Nothing runs while the machine is off. Say that you set it, and what it will do.",
   );

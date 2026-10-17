@@ -31,11 +31,19 @@ let passed = 0;
 async function test(name: string, fn: () => Promise<void> | void) { await fn(); passed += 1; console.log(`  ok  ${name}`); }
 
 await test("a script on a cron time is made, as often as every minute: it costs no tokens", async () => {
-  const r = await run({ name: "Backup", cron: "* * * * *", command: "tar czf /tmp/b.tgz ~/notes" });
+  const r = await run({ name: "Backup", cron: "* * * * *", command: "tar czf /tmp/b.tgz ~/notes", approved: true });
   assert.equal(r.ok, true, r.summary);
   assert.equal(made.length, 1);
   assert.equal(made[0].command, "tar czf /tmp/b.tgz ~/notes");
   assert.match(r.summary, /no model/);
+});
+
+await test("a new script is not made until the person has agreed: the agent is told to ask first", async () => {
+  const before = made.length;
+  const r = await run({ name: "Unasked", cron: "0 8 * * *", command: "echo hi" });
+  assert.equal(r.ok, false);
+  assert.match(r.summary, /ask_user/);
+  assert.equal(made.length, before);
 });
 
 await test("a task with a prompt, which wakes a model, is refused, and the refusal points at a script", async () => {
@@ -65,7 +73,7 @@ await test("a script may not start a model or a chat", async () => {
     "curl https://api.anthropic.com/v1/messages -d '{}'",
     "claude -p 'summarise the logs'",
   ]) {
-    const r = await run({ name: "Sneaky", cron: "0 * * * *", command });
+    const r = await run({ name: "Sneaky", cron: "0 * * * *", command, approved: true });
     assert.equal(r.ok, false, command);
   }
   assert.equal(made.length, 1);
