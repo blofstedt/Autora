@@ -16,7 +16,7 @@ services:
     # Built by viberific/Flix's own workflow from the repo's package.json
     # version. Bump this tag (and `version` above) only once that tag exists
     # in the registry, or an update will fail with "manifest unknown".
-    image: ghcr.io/viberific/flix:0.3.9
+    image: ghcr.io/viberific/flix:0.3.10
     restart: unless-stopped
     # The torrent peer port. Flix keeps qBittorrent on 6881 (QB_LISTEN_PORT)
     # so it never changes between restarts, and this publishes it so a port
@@ -47,4 +47,8 @@ services:
       - "${APP_DATA_DIR}/data:/data"
       # The media, shared by qBittorrent (writes) and Flix (streams). Must be
       # the same path inside the container for both, which it is: /downloads.
-      - "${APP_DATA_DIR}/downloads:/downloads"
+      # It is Umbrel's own Downloads folder, so everything Flix fetches shows
+      # up in the Files app next to anything else you download. UmbrelOS will
+      # not let an app move, rename or delete a folder it was given this way --
+      # Flix never deletes anything it downloaded anyway.
+      - "${UMBREL_ROOT}/home/Downloads:/downloads"

@@ -4,8 +4,16 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.3.9"
+version: "0.3.10"
 port: 8096
+folderAccess:
+  - id: umbrel-downloads
+    name: Downloads
+    note: Torrents are saved in Umbrel's shared Downloads folder, so everything
+      Flix fetches shows up in the Files app. Available in Flix at /downloads.
+    mounts:
+      - service: app
+        targetPath: /downloads
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
   BroadcasTheNet. Search BTN's catalog, pick a show, press play — Flix starts a
@@ -46,10 +54,9 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  Seeding should finally count. "Seeding may be limited: the download port
-  looks closed" was right: the torrent client was on a random port that
-  nothing published. It now listens on 6881 every time, this app publishes
-  that port on the box, and it asks the router to open it by itself (UPnP).
-  If the warning stays, the router is the only thing left: send TCP and UDP
-  6881 to this box, or switch UPnP on in the router. Torrents are still only
-  removed after the 130 hours or the 1:1 ratio.
+  Downloads now land in Umbrel's Downloads folder, next to everything else
+  you keep, and nothing already downloaded is touched. A season is never
+  fetched whole any more: Flix takes the episode you press play on and starts
+  the next one once you are 60% through this one, because every byte has to be
+  seeded for 130 hours or to 1:1. Removal refuses outright when the torrent
+  engine cannot be read, so seeding cannot be cut short by a failed lookup.
