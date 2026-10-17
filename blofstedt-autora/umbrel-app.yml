@@ -188,7 +188,5 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Three small fixes. The to-do list now opens and ticks off the tasks that finished while you were away from the screen
-  (on the phone app, say) when you come back, instead of silently skipping them. The "Condensed N earlier messages"
-  note no longer appears in the thread: older messages are still folded into working memory in the background. And the
-  coloured dot before "New memories…" is gone; the dots beside each memory stay.
+  Two tidy-ups to the tools bar on a phone. The eye button (Visible work) is now a true circle instead of an oval, and
+  the line under the tab names breaks beneath the tab that is open, so its name reads as the tab of the tool below it.

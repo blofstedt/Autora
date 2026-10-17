@@ -6189,8 +6189,11 @@ button.dock-card:hover { border-color: var(--border-strong); }
 }
 .stage-bar {
   display: flex; align-items: flex-end; gap: 3px;
-  padding: 6px 8px 0;
+  padding: 6px 8px 1px;
   overflow-x: auto; scrollbar-width: none;
+  /* The line under the tabs is drawn here, in the bar, because the bar scrolls and clips: the tab that is up
+     reaches down over it, so the line breaks under that tab's name and the name reads as the panel's tab. */
+  background: linear-gradient(var(--border), var(--border)) bottom / 100% 1px no-repeat;
 }
 .stage-bar::-webkit-scrollbar { display: none; }
 
@@ -6255,7 +6258,6 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .stage-body {
   max-height: min(46dvh, 440px);
   overflow-y: auto; overscroll-behavior: contain;
-  border-top: 1px solid var(--border);
 }
 .stage-body[hidden], .stage-pane[hidden] { display: none; }
 .stage-pane > .cell, .stage-pane > .todo-cell {
@@ -6477,10 +6479,10 @@ button.dock-card:hover { border-color: var(--border-strong); }
 /* Visible work on: the accent, because it is the agent's cursor that is being shown. */
 .pane-follow.visible-work.is-on, .stage-follow.visible-work.is-on { color: var(--accent-light); border-color: var(--accent-line); background: var(--accent-soft); }
 .stage-follow.visible-work { margin-left: auto; }
-.stage-follow.visible-work.is-compact { padding: 0 9px; }
+.stage-follow.visible-work.is-compact { width: 28px; padding: 0; justify-content: center; }
 .stage-follow.visible-work + .stage-follow { margin-left: 6px; }
 .immersive-follow.visible-work { display: inline-flex; align-items: center; gap: 5px; }
-.immersive-follow.visible-work.is-compact { padding: 0 9px; }
+.immersive-follow.visible-work.is-compact { aspect-ratio: 1; padding: 0; justify-content: center; }
 .immersive-follow.visible-work.is-on { opacity: 1; }
 @keyframes appPaneIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 
