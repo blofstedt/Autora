@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.3.7"
+version: "0.3.8"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -46,10 +46,9 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  Two things on a phone are fixed. The Torrents page no longer scrolls
-  sideways: a long release name or a wide status badge used to push the page
-  past the edge of the screen, and the cards now wrap to fit whatever width the
-  phone is. And the warning banner at the top of that page can be dismissed: a
-  tap on its x puts it away for the rest of the session, it stays away as you
-  move between pages and across a reload, and it returns by itself when a new
-  problem needs attention.
+  Cast to a TV. When a Chromecast or Google TV is on the home network, the
+  player has a Cast button: pick the TV and the episode you are watching starts
+  there at the same moment, while the phone pauses. The TV fetches the video
+  from this box over the home network, which is what LAN_URL is for; it is set
+  to this box here. If your router ever gives the box a new address, set
+  LAN_URL to match or the Cast button will not appear.

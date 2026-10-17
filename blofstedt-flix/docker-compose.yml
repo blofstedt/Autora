@@ -16,7 +16,7 @@ services:
     # Built by viberific/Flix's own workflow from the repo's package.json
     # version. Bump this tag (and `version` above) only once that tag exists
     # in the registry, or an update will fail with "manifest unknown".
-    image: ghcr.io/viberific/flix:0.3.7
+    image: ghcr.io/viberific/flix:0.3.8
     restart: unless-stopped
     environment:
       # The one address Flix will answer on. Every other host name it is
@@ -26,6 +26,13 @@ services:
       # holds a real Let's Encrypt certificate for it. Leave empty to serve
       # whatever address arrives. See the app's README.
       PUBLIC_URL: "https://umbrel-1.tail16900.ts.net:9443"
+      # Where the box is on the home network, with no certificate and no
+      # proxy in the way. A Chromecast or Google TV fetches the video itself
+      # and cannot reach the tailnet name, so the player hands it this instead.
+      # If the router gives the box a new address, change this line to match
+      # (Settings > Network in umbrelOS shows it); casting is the only thing
+      # that uses it. Empty means the Cast button never appears.
+      LAN_URL: "http://10.0.0.247:8096"
     volumes:
       # The sqlite database (users, library, saved keys), an optional .env
       # and qBittorrent's config — everything that survives an update.
