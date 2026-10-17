@@ -99,7 +99,16 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
     timer.current = window.setTimeout(pump, STEP_MS);
   };
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
+  /* Away from the screen (another app on a phone) nothing is drawn and timers are throttled, so tasks finished then
+     would be counted as seen. They are left unseen until the person is back, and the list opens for them then. */
+  const [visible, setVisible] = useState(() => typeof document === "undefined" || document.visibilityState !== "hidden");
   useEffect(() => {
+    const onChange = () => setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
+  useEffect(() => {
+    if (!visible) return;
     const before = doneIds.current;
     const now = new Set(items.filter((t) => t.status === "completed").map((t) => t.id));
     doneIds.current = now;
@@ -116,7 +125,7 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
     timer.current = window.setTimeout(pump, running ? 0 : open ? 0 : OPEN_MS);
     // `open` is read only to leave a list the person opened alone.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [done]);
+  }, [done, visible]);
   const shownItems = unrevealed.length
     ? items.map((t) => (unrevealed.includes(t.id) ? { ...t, status: "in-progress" as const } : t))
     : items;

@@ -4597,23 +4597,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           console.warn(`[context] ${session.id}: compaction failed: ${report.error}`);
           return;
         }
-        const size = (n: number) => n.toLocaleString("en-US");
-        /* The fold usually shrinks the prompt and sometimes does not: the
-           record it wrote can be longer than the turns it replaced. Said
-           either way, rather than as a drop that did not happen -- "6,000
-           tokens down to 7,500" is not a sentence. */
-        const shrink = report.tokensBefore - report.tokensAfter;
         console.log(
           `[context] ${session.id}: folded ${report.folded} messages ` +
             `(~${report.tokensBefore} -> ~${report.tokensAfter} tokens)`,
         );
+        // No message: it happens in the background, and only the header's gauge shows it.
         emitEvent(session, "system.log", "system", {
-          message:
-            `Condensed ${report.folded} earlier message${report.folded === 1 ? "" : "s"} ` +
-            "into working memory, in the background " +
-            (shrink > 0
-              ? `(about ${size(report.tokensBefore)} tokens of context down to ${size(report.tokensAfter)}).`
-              : `(about ${size(report.tokensBefore)} tokens of context; the prompt stands at ${size(report.tokensAfter)} now).`),
           context: { ...context.gauge("", report.tokensAfter), condensed: true },
         });
       };
