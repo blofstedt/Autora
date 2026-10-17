@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.3.5"
+version: "0.3.6"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -46,7 +46,7 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  The search bar is centred in the top of the window again. It used to be held
-  in the middle by two spacers, so it sat a little to the right at rest and grew
-  away to the right while you typed; on a wide screen it now sits on the middle
-  of the window and opens both ways. Results still appear as you type.
+  Playing an episode no longer stops with "qBittorrent refused the torrent" when
+  the file was already downloaded. The new qBittorrent answers a torrent it
+  accepted in a way Flix read as a refusal, so the play button gave up before
+  the download started.
