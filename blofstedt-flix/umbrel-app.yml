@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.1.7"
+version: "0.1.8"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -45,8 +45,9 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  The home screen now works like a streaming service: shows are grouped into
-  rows by genre, each scrolling sideways, and the rows fade in as you reach
-  them. Tapping a show opens a proper page for it — artwork, the summary, the
-  cast, and a YouTube trailer when one can be found. Transitions, button press
-  states and hover effects are smoother throughout.
+  Flix can be reached at several addresses at once, and the phone kept landing
+  on https://<device>:8096, where Umbrel's certificate only covers umbrel.local
+  and so always warned. Flix now sends every other address to the one HTTPS
+  address it is given by PUBLIC_URL, keeping the path and query.
+  Loopback and Docker-internal names are left alone, so nothing inside the box
+  is affected.
