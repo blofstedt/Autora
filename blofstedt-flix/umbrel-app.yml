@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.3.0"
+version: "0.3.1"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -60,3 +60,7 @@ releaseNotes: >-
   watched, Up next and New episode badges, and works with a TV remote. The
   admin sees storage, BTN and seeding health on the Torrents page, with a
   banner when something needs attention, and the database is backed up daily.
+  The home screen no longer repeats shows: each appears once, with Trending
+  first, then the newest from Netflix, Disney+ and Apple TV+, then the rest
+  under the one genre that fits best. Installing Flix to the phone's home
+  screen works again (the app manifest is now fetched with the sign-in cookie).
