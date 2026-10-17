@@ -4,7 +4,7 @@ name: Flix
 tagline: Your own streaming service, sourced straight from BTN
 icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-flix/icon.svg
 category: media
-version: "0.3.4"
+version: "0.3.5"
 port: 8096
 description: >-
   Flix is a private, Jellyfin-style media server whose only source is
@@ -46,9 +46,7 @@ repo: https://github.com/viberific/Flix
 support: https://github.com/viberific/Flix/issues
 gallery: []
 releaseNotes: >-
-  What's new since 0.3.3. The home page fills up: shows are grouped by genre
-  from the whole library instead of only the ones BroadcasTheNet has streamed,
-  and it always ends with More to watch and Newest additions, so it is never a
-  single row. The featured backdrop is sharp again, because a show is no longer
-  given TheTVDB's thin logo strip stretched across the page. Search sits in the
-  middle of the top bar and results appear as you type.
+  The search bar is centred in the top of the window again. It used to be held
+  in the middle by two spacers, so it sat a little to the right at rest and grew
+  away to the right while you typed; on a wide screen it now sits on the middle
+  of the window and opens both ways. Results still appear as you type.
